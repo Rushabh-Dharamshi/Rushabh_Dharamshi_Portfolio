@@ -1,1 +1,0 @@
-This project is about creating a Stock Management System to keep track of food by storing the data in a SQLite relational database and using Python Packages such as Numpy, Pandas and MatPlotLib to produce data visualisations representing performance and sales reports. Have also used the ARIMA model to forecast sales of a particular food product.
