@@ -1,0 +1,9 @@
+Containins:
+
+.gitignore
+compiler
+encodings
+google-java-format
+jarRepositories
+misc
+vcs
