@@ -19,7 +19,7 @@ public class FlashCardBuilder {
 
         // Create main JPanel
         JPanel mainPanel = new JPanel();
-        mainPanel.setBackground(Color.RED); // Set background color
+        mainPanel.setBackground(Color.GREEN); // Set background color
 
         // Set font
         Font font = new Font("Arial", Font.PLAIN, 18);
