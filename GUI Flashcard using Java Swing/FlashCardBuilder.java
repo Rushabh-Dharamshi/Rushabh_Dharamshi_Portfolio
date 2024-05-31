@@ -15,14 +15,16 @@ public class FlashCardBuilder {
         // Create main JFrame
         frame = new JFrame("Flash Card");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE); // Exit application when frame is closed
-        frame.setResizable(false);
+        frame.setResizable(false); // frame is not resizable
 
         // Create main JPanel
         JPanel mainPanel = new JPanel();
-        mainPanel.setBackground(Color.GREEN); // Set background color
+        mainPanel.setBackground(Color.GREEN); // Set background color to green
 
         // Set font
-        Font font = new Font("Arial", Font.PLAIN, 18);
+        // font size is 18
+        // font is changed from plain to bold
+        Font font = new Font("Arial", Font.BOLD, 18);
 
         // Create JTextArea for entering question
         question = new JTextArea(8, 20);
