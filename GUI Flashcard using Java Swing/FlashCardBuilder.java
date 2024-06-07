@@ -1,7 +1,8 @@
 package com.flashcard;
-
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.util.ArrayList;
 
 public class FlashCardBuilder {
@@ -21,7 +22,7 @@ public class FlashCardBuilder {
         JPanel mainPanel = new JPanel();
         mainPanel.setBackground(Color.GREEN); // Set background color to green
 
-        // Set font
+        // create a font object
         // font size is 18
         // font is changed from plain to bold
         Font font = new Font("Arial", Font.BOLD, 18);
@@ -62,6 +63,26 @@ public class FlashCardBuilder {
         mainPanel.add(answerJLabel);
         mainPanel.add(answerScrollPane);
         mainPanel.add(nextButton);
+        nextButton.addActionListener(new NextCardListener());
+
+        JMenuBar menuBar = new JMenuBar();
+
+        JMenu fileMenu = new JMenu("File");
+        JMenuItem newMenuItem = new JMenuItem("NEW");
+        JMenuItem saveMenuItem = new JMenuItem("SAVE");
+
+        // added menu items to the file menu
+        fileMenu.add(newMenuItem);
+        fileMenu.add(saveMenuItem);
+
+        // add file menu to the menu bar
+        menuBar.add(fileMenu);
+        frame.setJMenuBar(menuBar);
+
+        // event listeners
+        newMenuItem.addActionListener(new NewMenuItemListener());
+        saveMenuItem.addActionListener(new SaveMenuListener());
+
 
         // Add mainPanel to the center of the frame
         frame.getContentPane().add(BorderLayout.CENTER, mainPanel);
@@ -77,5 +98,29 @@ public class FlashCardBuilder {
                 new FlashCardBuilder(); // Create an instance of FlashCardBuilder
             }
         });
+    }
+
+    class NextCardListener implements ActionListener {
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            System.out.println("Button Clicked");
+        }
+    }
+    class NewMenuItemListener implements ActionListener {
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            System.out.println("New Menu Clicked");
+        }
+    }
+    class SaveMenuListener implements ActionListener {
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            System.out.println("Save Menu Clicked");
+
+
+        }
     }
 }
