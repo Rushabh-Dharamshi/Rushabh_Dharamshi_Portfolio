@@ -20,9 +20,12 @@ You will have to save your new flash card arraylist - you can have the same file
 
 
 LEARNING FROM THE FLASHCARDS
-Here, I have added a file containing questions regarding Artificial Intelligence. When I run the FlashCardPlayer file - it will give me the option to load a card set.
-Here, I will select the AI Quiz file and automatically the flashcards will be made. 
+Here, I have added a file containing questions regarding Artificial Intelligence. When I run the FlashCardPlayer file - it will give me the option to load a card set
+after I click on the file button.
 
+Here, I will select the AI Quiz file and automatically the flashcards will be made. 
+You have the option to write your own answer and then compare your answer with the actual answer by clicking on the Check Answer button. 
+You can click on show answer button to reveal the correct answer to the question. 
 
 Tools:
 
