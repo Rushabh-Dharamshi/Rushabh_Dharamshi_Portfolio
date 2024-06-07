@@ -1,18 +1,18 @@
 package com.flashcard;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.Scanner;
 
 public class FlashCardBuilder {
     private JTextArea question; // Text area for entering the question
     private JTextArea answer;   // Text area for entering the answer
-    private ArrayList<FlashCard> flashCardList; // List to store flashcards (not currently used)
+    private ArrayList<FlashCard> flashCardList; // List to store flashcards
     private JFrame frame;   // Main window frame
 
     // Constructor
@@ -62,7 +62,6 @@ public class FlashCardBuilder {
         JLabel questionJLabel = new JLabel("Question");
         JLabel answerJLabel = new JLabel("Answer");
 
-
         // Add components to mainPanel
         mainPanel.add(questionJLabel);
         mainPanel.add(qScrollPane);
@@ -76,10 +75,12 @@ public class FlashCardBuilder {
         JMenu fileMenu = new JMenu("File");
         JMenuItem newMenuItem = new JMenuItem("NEW");
         JMenuItem saveMenuItem = new JMenuItem("SAVE");
+        JMenuItem loadMenuItem = new JMenuItem("LOAD");
 
         // added menu items to the file menu
         fileMenu.add(newMenuItem);
         fileMenu.add(saveMenuItem);
+        fileMenu.add(loadMenuItem);
 
         // add file menu to the menu bar
         menuBar.add(fileMenu);
@@ -88,7 +89,7 @@ public class FlashCardBuilder {
         // event listeners
         newMenuItem.addActionListener(new NewMenuItemListener());
         saveMenuItem.addActionListener(new SaveMenuListener());
-
+        loadMenuItem.addActionListener(new LoadMenuItemListener());
 
         // Add mainPanel to the center of the frame
         frame.getContentPane().add(BorderLayout.CENTER, mainPanel);
@@ -116,47 +117,56 @@ public class FlashCardBuilder {
             flashCardList.add(flashcard);
             clearFlashCard();
 
-            System.out.println("Size of arraylist" + flashCardList.size());
-
-
+            System.out.println("Size of arraylist: " + flashCardList.size());
         }
     }
 
     private void clearFlashCard(){
-        question.setText("Write another Question here");
-        answer.setText("Write another answer here");
+        question.setText("");
+        answer.setText("");
         question.requestFocus();
     }
 
     private void saveFile(File chosenFile){
         try {
             BufferedWriter writer = new BufferedWriter(new FileWriter(chosenFile));
-            Iterator<FlashCard> cardIterator = flashCardList.iterator();
-            while (cardIterator.hasNext()) {
-                FlashCard card = cardIterator.next();
+            for (FlashCard card : flashCardList) {
                 writer.write(card.getQuestion() + "/");
                 writer.write(card.getAnswer() + "\n");
             }
             writer.close();
-
-
-
         } catch (Exception e) {
             System.out.println("Couldn't write to file");
             e.printStackTrace();
+        }
+    }
 
+    private void loadFile(File chosenFile){
+        try {
+            Scanner reader = new Scanner(chosenFile);
+            flashCardList.clear();
+            while (reader.hasNextLine()) {
+                String[] cardData = reader.nextLine().split("/");
+                FlashCard card = new FlashCard(cardData[0], cardData[1]);
+                flashCardList.add(card);
+            }
+            reader.close();
+        } catch (Exception e) {
+            System.out.println("Couldn't read from file");
+            e.printStackTrace();
         }
     }
 
     class NewMenuItemListener implements ActionListener {
-
         @Override
         public void actionPerformed(ActionEvent e) {
+            flashCardList.clear();
+            clearFlashCard();
             System.out.println("New Menu Clicked");
         }
     }
-    class SaveMenuListener implements ActionListener {
 
+    class SaveMenuListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
             FlashCard card = new FlashCard(question.getText(), answer.getText());
@@ -167,6 +177,17 @@ public class FlashCardBuilder {
             saveFile(fileSave.getSelectedFile());
 
             System.out.println("Save Menu Clicked");
+        }
+    }
+
+    class LoadMenuItemListener implements ActionListener {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            JFileChooser fileOpen = new JFileChooser();
+            fileOpen.showOpenDialog(frame);
+            loadFile(fileOpen.getSelectedFile());
+
+            System.out.println("Load Menu Clicked");
         }
     }
 }
