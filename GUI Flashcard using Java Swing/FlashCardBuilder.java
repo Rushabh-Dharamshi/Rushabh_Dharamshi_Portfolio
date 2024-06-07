@@ -49,6 +49,8 @@ public class FlashCardBuilder {
         answerScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
         answerScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
+        flashCardList = new ArrayList<FlashCard>();
+
         // Create JButton for moving to the next card
         JButton nextButton = new JButton("Next Card");
 
@@ -105,8 +107,23 @@ public class FlashCardBuilder {
         @Override
         public void actionPerformed(ActionEvent e) {
             System.out.println("Button Clicked");
+
+            FlashCard flashcard = new FlashCard(question.getText(), answer.getText());
+            flashCardList.add(flashcard);
+            clearFlashCard();
+
+            System.out.println("Size of arraylist" + flashCardList.size());
+
+
         }
     }
+
+    private void clearFlashCard(){
+        question.setText("");
+        answer.setText("");
+        question.requestFocus();
+    }
+
     class NewMenuItemListener implements ActionListener {
 
         @Override
@@ -119,8 +136,6 @@ public class FlashCardBuilder {
         @Override
         public void actionPerformed(ActionEvent e) {
             System.out.println("Save Menu Clicked");
-
-
         }
     }
 }
