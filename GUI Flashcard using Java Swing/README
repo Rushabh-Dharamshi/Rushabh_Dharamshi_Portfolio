@@ -1,7 +1,22 @@
 The purpose of this project is to create a GUI based flashcard app using Java Swing. 
 This will be used to help people learn new key terms and can be used to revise certain topics. 
 
+
+HOW IT WORKS:
+
+MAKING THE FLASHCARDS
+First create the Q&A by going on to the FlashCardBuilder and then typing the questions and answers on the 2 corresponding textAreas.
+Each time you finish writing the question and answer - click on next card.  
+By clicking on the next card - it will add the current FlashCard to a list and will allow you to work on the next one. 
+Once you have finished making the flashcards you can click on file and then click on save and then enter your file name. 
+
+LEARNING FROM THE FLASHCARDS
+Here, I have added a file containing questions regarding Artificial Intelligence. When I run the FlashCardPlayer file - it will give me the option to load a card set.
+Here, I will select the AI Quiz file and automatically the flashcards will be made. 
+
+
 Tools:
 
 IDE: IntelliJ
 GUI: Java Swing
+
