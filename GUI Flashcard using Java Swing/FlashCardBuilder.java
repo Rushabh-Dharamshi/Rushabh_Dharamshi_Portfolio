@@ -3,7 +3,11 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
 import java.util.ArrayList;
+import java.util.Iterator;
 
 public class FlashCardBuilder {
     private JTextArea question; // Text area for entering the question
@@ -119,9 +123,29 @@ public class FlashCardBuilder {
     }
 
     private void clearFlashCard(){
-        question.setText("");
-        answer.setText("");
+        question.setText("Write another Question here");
+        answer.setText("Write another answer here");
         question.requestFocus();
+    }
+
+    private void saveFile(File chosenFile){
+        try {
+            BufferedWriter writer = new BufferedWriter(new FileWriter(chosenFile));
+            Iterator<FlashCard> cardIterator = flashCardList.iterator();
+            while (cardIterator.hasNext()) {
+                FlashCard card = cardIterator.next();
+                writer.write(card.getQuestion() + "/");
+                writer.write(card.getAnswer() + "\n");
+            }
+            writer.close();
+
+
+
+        } catch (Exception e) {
+            System.out.println("Couldn't write to file");
+            e.printStackTrace();
+
+        }
     }
 
     class NewMenuItemListener implements ActionListener {
@@ -135,6 +159,13 @@ public class FlashCardBuilder {
 
         @Override
         public void actionPerformed(ActionEvent e) {
+            FlashCard card = new FlashCard(question.getText(), answer.getText());
+            flashCardList.add(card);
+
+            JFileChooser fileSave = new JFileChooser();
+            fileSave.showSaveDialog(frame);
+            saveFile(fileSave.getSelectedFile());
+
             System.out.println("Save Menu Clicked");
         }
     }
