@@ -26,6 +26,7 @@ public class FlashCardPlayer {
         mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
         Font mFont = new Font("Arial", Font.BOLD, 18);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setResizable(false);
 
         display = new JTextArea(8, 20);
         display.setLineWrap(true);
