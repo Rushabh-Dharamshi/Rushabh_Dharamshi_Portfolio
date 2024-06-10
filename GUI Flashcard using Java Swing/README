@@ -25,7 +25,9 @@ after I click on the file button.
 
 Here, I will select the AI Quiz file and automatically the flashcards will be made. 
 You have the option to write your own answer and then compare your answer with the actual answer by clicking on the Check Answer button. 
-You can click on show answer button to reveal the correct answer to the question. 
+After you check your answer - depending on whether you got the question right or wrong - the score will be added to the tally. 
+Once you finish the quiz - if your score exceeds the highest previous score - then the high score label will get updated and your score will be written to the file
+You also have the opportunity to redo the questions that you got wrong. 
 
 Tools:
 
