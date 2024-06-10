@@ -167,14 +167,13 @@ public class FlashCardPlayer {
                 }
                 JOptionPane.showMessageDialog(frame, "Correct!");
             } else {
-                if (!incorrectlyAnsweredQuestions.contains(currentCard)) {
-                    JOptionPane.showMessageDialog(frame, "Incorrect. The correct answer is: " + currentCard.getAnswer());
-                    incorrectlyAnsweredQuestions.add(currentCard); // Add the incorrectly answered question
-                }
+                JOptionPane.showMessageDialog(frame, "Incorrect. The correct answer is: " + currentCard.getAnswer());
+                incorrectlyAnsweredQuestions.add(currentCard); // Add the incorrectly answered question
             }
             showAnswer.setEnabled(true); // Enable the "Next" button after checking the answer
         }
     }
+
     class RedoNextCardListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
@@ -187,10 +186,11 @@ public class FlashCardPlayer {
         }
     }
 
-
     class OpenMenuListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
+            totalScore = 0; // Reset total score to 0
+            updateScoreLabel(); // Update score label
             JFileChooser fileOpen = new JFileChooser();
             fileOpen.showOpenDialog(frame);
             loadFile(fileOpen.getSelectedFile());
