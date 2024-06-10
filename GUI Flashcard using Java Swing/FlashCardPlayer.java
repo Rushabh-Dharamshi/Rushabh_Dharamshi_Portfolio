@@ -1,11 +1,10 @@
 package com.flashcard;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
+import java.io.*;
 import java.util.ArrayList;
 import java.util.Iterator;
 
@@ -19,57 +18,105 @@ public class FlashCardPlayer {
     private boolean isShowAnswer;
     private JButton showAnswer;
     private JButton checkAnswer;
+    private JLabel scoreLabel;
+    private int score;
+    private int highScore;
+    private ArrayList<FlashCard> incorrectlyAnsweredQuestions;
 
     public FlashCardPlayer() {
         frame = new JFrame("Flash Card Player");
-        JPanel mainPanel = new JPanel();
-        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
-        Font mFont = new Font("Arial", Font.BOLD, 18);
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setResizable(false);
 
-        display = new JTextArea(8, 20);
+        Font mFont = new Font("Arial", Font.BOLD, 18);
+
+        JPanel mainPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints c = new GridBagConstraints();
+        c.fill = GridBagConstraints.BOTH;
+        c.insets = new Insets(10, 10, 10, 10);
+
+        display = new JTextArea(2, 10);
         display.setLineWrap(true);
         display.setWrapStyleWord(true);
         display.setFont(mFont);
-
         JScrollPane qJScrollPane = new JScrollPane(display);
         qJScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
         qJScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
-        showAnswer = new JButton("Show Answer");
-        showAnswer.addActionListener(new NextCardListener());
-
-        userAnswer = new JTextArea(5, 20);
+        userAnswer = new JTextArea(2, 10);
         userAnswer.setLineWrap(true);
         userAnswer.setWrapStyleWord(true);
         userAnswer.setFont(mFont);
-
         JScrollPane aJScrollPane = new JScrollPane(userAnswer);
         aJScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
         aJScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
 
+        showAnswer = new JButton("Next");
+        showAnswer.addActionListener(new NextCardListener());
         checkAnswer = new JButton("Check Answer");
         checkAnswer.addActionListener(new CheckAnswerListener());
 
-        mainPanel.add(qJScrollPane);
-        mainPanel.add(new JLabel("Your Answer:"));
-        mainPanel.add(aJScrollPane);
-        mainPanel.add(showAnswer);
-        mainPanel.add(checkAnswer);
+        scoreLabel = new JLabel("Score: 0");
+        score = 0;
+        highScore = readHighScore();
+        updateScoreLabel();
+
+        c.gridx = 0;
+        c.gridy = 0;
+        c.gridwidth = 2;
+        c.weightx = 1;
+        c.weighty = 0.5;
+        mainPanel.add(qJScrollPane, c);
+
+        c.gridx = 0;
+        c.gridy = 1;
+        c.gridwidth = 1;
+        c.weightx = 0;
+        c.weighty = 0;
+        c.anchor = GridBagConstraints.WEST;
+        mainPanel.add(new JLabel("Your Answer:"), c);
+
+        c.gridx = 1;
+        c.gridy = 1;
+        c.weightx = 1;
+        c.weighty = 0.5;
+        c.anchor = GridBagConstraints.CENTER;
+        mainPanel.add(aJScrollPane, c);
+
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.setLayout(new FlowLayout(FlowLayout.CENTER));
+        buttonPanel.add(showAnswer);
+        buttonPanel.add(checkAnswer);
+
+        c.gridx = 0;
+        c.gridy = 2;
+        c.gridwidth = 2;
+        c.weightx = 0;
+        c.weighty = 0;
+        mainPanel.add(buttonPanel, c);
+
+        c.gridx = 0;
+        c.gridy = 3;
+        c.gridwidth = 2;
+        c.anchor = GridBagConstraints.CENTER;
+        mainPanel.add(scoreLabel, c);
 
         JMenuBar menuBar = new JMenuBar();
         JMenu fileMenu = new JMenu("File");
         JMenuItem loadMenuItem = new JMenuItem("Load Card Set");
         loadMenuItem.addActionListener(new OpenMenuListener());
-
         fileMenu.add(loadMenuItem);
+        JMenuItem redoMenuItem = new JMenuItem("Redo Incorrect Answers");
+        redoMenuItem.addActionListener(new RedoMenuListener());
+        fileMenu.add(redoMenuItem);
         menuBar.add(fileMenu);
 
         frame.setJMenuBar(menuBar);
-        frame.getContentPane().add(BorderLayout.CENTER, mainPanel);
-        frame.setSize(640, 600);
+        frame.getContentPane().add(mainPanel);
+        frame.setSize(640, 400);
         frame.setVisible(true);
+
+        incorrectlyAnsweredQuestions = new ArrayList<>();
     }
 
     public static void main(String[] args) {
@@ -89,6 +136,7 @@ public class FlashCardPlayer {
                 } else {
                     display.setText("That was the last card");
                     showAnswer.setEnabled(false);
+                    checkHighScore();
                 }
             }
         }
@@ -99,9 +147,27 @@ public class FlashCardPlayer {
         public void actionPerformed(ActionEvent e) {
             String userAnswerText = userAnswer.getText();
             if (userAnswerText.equalsIgnoreCase(currentCard.getAnswer())) {
+                score++;
+                updateScoreLabel();
                 JOptionPane.showMessageDialog(frame, "Correct!");
-            } else {
+            }
+            else {
                 JOptionPane.showMessageDialog(frame, "Incorrect. The correct answer is: " + currentCard.getAnswer());
+                incorrectlyAnsweredQuestions.add(currentCard); // Add the incorrectly answered question
+            }
+        }
+    }
+
+    class RedoMenuListener implements ActionListener {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (incorrectlyAnsweredQuestions.isEmpty()) {
+                JOptionPane.showMessageDialog(frame, "You have not answered any questions incorrectly yet.");
+            } else {
+                cardList.addAll(incorrectlyAnsweredQuestions); // Add incorrectly answered questions back to card list
+                cardIterator = cardList.iterator();
+                showNextCard();
+                incorrectlyAnsweredQuestions.clear(); // Clear the list after redo
             }
         }
     }
@@ -135,7 +201,7 @@ public class FlashCardPlayer {
         currentCard = cardIterator.next();
         display.setText(currentCard.getQuestion());
         userAnswer.setText("");
-        showAnswer.setText("Show Answer");
+        showAnswer.setText("Next");
         isShowAnswer = true;
     }
 
@@ -145,4 +211,40 @@ public class FlashCardPlayer {
         cardList.add(card);
         System.out.println("Made a FlashCard from reading the file");
     }
+
+    private int readHighScore() {
+        File file = new File("highscore.txt");
+        if (file.exists()) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+                return Integer.parseInt(reader.readLine());
+            } catch (IOException | NumberFormatException e) {
+                e.printStackTrace();
+            }
+        }
+        return 0;
+    }
+
+    private void writeHighScore(int newHighScore) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter("highscore.txt"))) {
+            writer.write(String.valueOf(newHighScore));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void checkHighScore() {
+        if (score > highScore) {
+            highScore = score;
+            writeHighScore(highScore);
+            JOptionPane.showMessageDialog(frame, "New high score: " + highScore);
+            updateScoreLabel();
+        } else {
+            JOptionPane.showMessageDialog(frame, "Your score: " + score + ". High score: " + highScore);
+        }
+    }
+
+    private void updateScoreLabel() {
+        scoreLabel.setText("Score: " + score + " | High Score: " + highScore);
+    }
 }
+
