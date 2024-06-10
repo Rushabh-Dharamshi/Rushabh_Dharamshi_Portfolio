@@ -19,7 +19,7 @@ public class FlashCardPlayer {
     private JButton showAnswer;
     private JButton checkAnswer;
     private JLabel scoreLabel;
-    private int score;
+    private int totalScore;
     private int highScore;
     private ArrayList<FlashCard> incorrectlyAnsweredQuestions;
 
@@ -57,7 +57,7 @@ public class FlashCardPlayer {
         checkAnswer.addActionListener(new CheckAnswerListener());
 
         scoreLabel = new JLabel("Score: 0");
-        score = 0;
+        totalScore = 0;
         highScore = readHighScore();
         updateScoreLabel();
 
@@ -142,35 +142,51 @@ public class FlashCardPlayer {
         }
     }
 
-    class CheckAnswerListener implements ActionListener {
-        @Override
-        public void actionPerformed(ActionEvent e) {
-            String userAnswerText = userAnswer.getText();
-            if (userAnswerText.equalsIgnoreCase(currentCard.getAnswer())) {
-                score++;
-                updateScoreLabel();
-                JOptionPane.showMessageDialog(frame, "Correct!");
-            }
-            else {
-                JOptionPane.showMessageDialog(frame, "Incorrect. The correct answer is: " + currentCard.getAnswer());
-                incorrectlyAnsweredQuestions.add(currentCard); // Add the incorrectly answered question
-            }
-        }
-    }
-
     class RedoMenuListener implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
             if (incorrectlyAnsweredQuestions.isEmpty()) {
                 JOptionPane.showMessageDialog(frame, "You have not answered any questions incorrectly yet.");
             } else {
+                cardList.clear(); // Clear the card list
                 cardList.addAll(incorrectlyAnsweredQuestions); // Add incorrectly answered questions back to card list
-                cardIterator = cardList.iterator();
-                showNextCard();
-                incorrectlyAnsweredQuestions.clear(); // Clear the list after redo
+                cardIterator = cardList.iterator(); // Use iterator over incorrectly answered questions
+                showNextCard(); // Show the first incorrect question
             }
         }
     }
+
+    class CheckAnswerListener implements ActionListener {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            String userAnswerText = userAnswer.getText();
+            if (userAnswerText.equalsIgnoreCase(currentCard.getAnswer())) {
+                if (!incorrectlyAnsweredQuestions.contains(currentCard)) {
+                    totalScore++; // Increment the total score only if the question was not previously answered incorrectly
+                    updateScoreLabel();
+                }
+                JOptionPane.showMessageDialog(frame, "Correct!");
+            } else {
+                if (!incorrectlyAnsweredQuestions.contains(currentCard)) {
+                    JOptionPane.showMessageDialog(frame, "Incorrect. The correct answer is: " + currentCard.getAnswer());
+                    incorrectlyAnsweredQuestions.add(currentCard); // Add the incorrectly answered question
+                }
+            }
+            showAnswer.setEnabled(true); // Enable the "Next" button after checking the answer
+        }
+    }
+    class RedoNextCardListener implements ActionListener {
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            if (cardIterator.hasNext()) {
+                showNextCard(); // Show the next incorrect question
+            } else {
+                JOptionPane.showMessageDialog(frame, "No more incorrect questions to redo.");
+                showAnswer.setEnabled(false); // Disable the "Next" button when all incorrect questions are redone
+            }
+        }
+    }
+
 
     class OpenMenuListener implements ActionListener {
         @Override
@@ -233,18 +249,18 @@ public class FlashCardPlayer {
     }
 
     private void checkHighScore() {
-        if (score > highScore) {
-            highScore = score;
+        if (totalScore > highScore) {
+            highScore = totalScore;
             writeHighScore(highScore);
             JOptionPane.showMessageDialog(frame, "New high score: " + highScore);
             updateScoreLabel();
         } else {
-            JOptionPane.showMessageDialog(frame, "Your score: " + score + ". High score: " + highScore);
+            JOptionPane.showMessageDialog(frame, "Your score: " + totalScore + ". High score: " + highScore);
         }
     }
 
     private void updateScoreLabel() {
-        scoreLabel.setText("Score: " + score + " | High Score: " + highScore);
+        scoreLabel.setText("Score: " + totalScore + " | High Score: " + highScore);
     }
 }
 
