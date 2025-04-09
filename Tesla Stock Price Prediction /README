@@ -1,9 +1,0 @@
-This project trains machine learning models so that it can be used to forecast Tesla Stock Price when necessary.
-
-Here I have fine-tuned the models using GridSearchCV to improve the RMSE of the models. 
-
-Algorithms and ML Frameworks used:
-
-1. PyTorch
-2. TensorFlow
-3. XGBoost
