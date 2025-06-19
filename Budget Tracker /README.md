@@ -1,2 +1,0 @@
-Budget Tracker Application
-
