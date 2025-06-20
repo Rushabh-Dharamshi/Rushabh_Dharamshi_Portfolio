@@ -14,6 +14,7 @@ import os
 import csv
 from tkinter import filedialog
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import GridSearchCV
 
 
 conn = sqlite3.connect('budget_tracker.db')
@@ -52,11 +53,20 @@ def predict_budget_exceed():
     X = np.array([[i] for i in range(len(months))])
     y = np.array(spending)
 
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
-    model.fit(X, y)
+    param_grid = {
+        'n_estimators': [50, 100, 200],
+        'max_depth': [None, 5, 10],
+        'min_samples_split': [2, 5],
+    }
+    rf = RandomForestRegressor(random_state=42)
+
+    grid_search = GridSearchCV(rf, param_grid, cv=2, scoring='neg_mean_squared_error', n_jobs=-1)
+    grid_search.fit(X, y)
+
+    best_model = grid_search.best_estimator_
 
     next_month_index = len(months)
-    predicted_spending = model.predict([[next_month_index]])[0]
+    predicted_spending = best_model.predict([[next_month_index]])[0]
 
     messagebox.showinfo("Next Month Prediction", f"Predicted Spending for Next Month: £{predicted_spending:.2f}")
     return predicted_spending
