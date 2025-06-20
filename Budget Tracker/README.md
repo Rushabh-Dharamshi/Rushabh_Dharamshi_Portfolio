@@ -1,4 +1,5 @@
 Budget Tracker Application
+--------------------------
 
 This application is designed to help users manage and analyze their monthly expenses by storing data in a local SQLite database.
 It includes tools for importing, processing, visualizing, and predicting spending behavior.
