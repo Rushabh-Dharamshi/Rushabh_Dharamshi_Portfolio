@@ -1,11 +1,9 @@
-These files contain code to make the software. 
+# Project Tools Used
 
-Programming Languages:
-Python
+These files contain the code to build the software.
 
-Databases:
-SQLite DB Browser
+## Technologies Used
 
-GUI:
-Tkinter
-
+- **Programming Languages:** Python  
+- **Databases:** SQLite (using SQLite DB Browser)  
+- **GUI:** Tkinter  
