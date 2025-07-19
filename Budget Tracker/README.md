@@ -1,27 +1,27 @@
-Budget Tracker Application
---------------------------
+# 💰 Budget Tracker Application
 
-This application is designed to help users manage and analyze their monthly expenses by storing data in a local SQLite database.
-It includes tools for importing, processing, visualizing, and predicting spending behavior.
+This application is designed to help users manage and analyze their monthly expenses by storing data in a local SQLite database. It includes tools for importing, processing, visualizing, and predicting spending behavior.
 
-Key Features:
+---
 
-1. Tracks expenses and stores them in a SQLite database for easy retrieval and manipulation.
+## Key Features:
 
-2. Allows importing of expenses from a CSV file, which are automatically added to the database.
+- Tracks expenses and stores them in a SQLite database for easy retrieval and manipulation.
 
-3. Supports exporting all recorded expense data to a CSV file.
+- Allows importing of expenses from a CSV file, which are automatically added to the database.
 
-4. Includes a hardcoded monthly budget of £1050, used to track spending progress.
+- Supports exporting all recorded expense data to a CSV file.
 
-5. Displays a dynamic progress bar indicating how much of the £1050 budget has been spent.
+- Includes a hardcoded monthly budget of **£1050**, used to track spending progress.
 
-6. Provides full CRUD (Create, Read, Update, Delete) functionality for managing expense records.
+- Displays a dynamic progress bar indicating how much of the **£1050** budget has been spent.
 
-7. Identifies and displays the top 3 and bottom 3 spending categories based on total amount spent.
+- Provides full CRUD (Create, Read, Update, Delete) functionality for managing expense records.
 
-8. Generates an item-level word cloud for the most expensive category, where item name size corresponds to its spending contribution.
+- Identifies and displays the top 3 and bottom 3 spending categories based on total amount spent.
 
-9. Uses a machine learning model to predict next month’s total spending based on historical data.
+- Generates an item-level word cloud for the most expensive category, where item name size corresponds to its spending contribution.
 
-10. Produces a PDF report comparing last month’s spending to the current month, including category-wise breakdowns in the form of two pie charts.
+- Uses a machine learning model to predict next month’s total spending based on historical data.
+
+- Produces a PDF report comparing last month’s spending to the current month, including category-wise breakdowns in the form of two pie charts.
