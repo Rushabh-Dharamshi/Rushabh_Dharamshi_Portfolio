@@ -29,4 +29,4 @@ This application is designed to help users manage and analyze their monthly expe
 
 ## Note:
 
-This application is different from the one created during my LSEG internship Hackathon 2025. 
+This project is my personal budget tracker and is distinct from the Budget Tracker application developed during my LSEG internship hackathon in 2025.
