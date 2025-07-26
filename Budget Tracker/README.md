@@ -25,3 +25,8 @@ This application is designed to help users manage and analyze their monthly expe
 - Uses a machine learning model to predict next month’s total spending based on historical data.
 
 - Produces a PDF report comparing last month’s spending to the current month, including category-wise breakdowns in the form of two pie charts.
+
+
+## Note:
+
+This application is different from the one created during my LSEG internship Hackathon 2025. 
