@@ -1,11 +1,27 @@
-## Project Structure
+## 📁 **Project Structure**
 
-The project is organized into two main directories:
+The project is organized into two primary directories, each serving a distinct purpose:
 
-1. 📂 **Code**  
-   This directory contains all the Python files used to create the project.  
-   Navigate here to find the source code, scripts and tech stack related to the implementation.
+### 📂 **Code**
 
-2. 📄 **Documentation**  
-   This directory includes the project description and features of the application.
-   Here you can find documentations regarding this application. 
+This directory contains **all the Python files needed to make the application**, including:
+
+- 🐍 **Core program files**  
+- 🎨 **GUI components**  
+- 🗄️ **Database interaction scripts**  
+- ⚙️ **Utility functions**  
+- 📦 **Dependency and setup files**
+
+Navigate here to explore or modify the codebase, run the application, or extend its functionality.
+
+---
+
+### 📄 **Documentation**
+
+This directory holds all **project documentation** and supplementary materials, such as:
+
+- 📃 **Detailed project description and objectives**  
+- 🛠️ **Feature explanations**  
+- 🏗️ **Design decisions and architecture**
+
+Use this folder to gain a deeper understanding of the application and review requirements or design details.
