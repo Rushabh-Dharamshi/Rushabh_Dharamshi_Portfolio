@@ -22,7 +22,7 @@ A personal application designed to help users manage and analyze their monthly e
 
 - 🎨 Generates an item-level word cloud for the most expensive category, where item name size corresponds to its spending contribution.
 
-- 🤖 Uses a machine learning model to predict next month’s total spending based on historical data.
+- 🤖 Uses a machine learning model (random forest regression) to predict next month’s total spending based on historical data.
 
 - 📄 Produces a PDF report comparing last month’s spending to the current month, including category-wise breakdowns in the form of two pie charts.
 
