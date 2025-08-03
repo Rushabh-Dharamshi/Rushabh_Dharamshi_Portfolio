@@ -33,12 +33,12 @@ This project implements a classic **Client-Server Architecture**:
   - Category
   - Difficulty level
   - Deadline range
+  - Priority
 - 🎨 **Color-coded task cards** to easily distinguish priority levels (High / Medium / Low).
 - 🔽 **Sortable task lists** via dropdown filters (due date, priority, etc.).
 - 📈 **Progress bar** on each task indicating completion percentage visually.
 - 🔍 **Search tasks by ID** for quick task retrieval.
 - ✔️ **Complete button is enabled only when progress hits 100%**, enforcing task completion integrity.
 - ⚠️ **Alert icon (!) for incomplete tasks due today**, helping users identify urgent work.
-- 🧩 **Accessibility considerations** for improved usability and user experience.
 
 ---
