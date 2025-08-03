@@ -1,0 +1,37 @@
+# ===== Client Side =====
+/client/node_modules/
+/client/.pnp
+/client/.pnp.js
+
+/client/coverage/
+/client/build/
+
+# Ignore env files inside client
+/client/.env.local
+/client/.env.development.local
+/client/.env.test.local
+/client/.env.production.local
+
+# Client logs
+/client/npm-debug.log*
+/client/yarn-debug.log*
+/client/yarn-error.log*
+
+# ===== Server Side =====
+/server/node_modules/
+/server/.env
+/server/*.session.sql
+
+# Server logs
+/server/npm-debug.log*
+/server/yarn-debug.log*
+/server/yarn-error.log*
+
+# ===== General =====
+# OS stuff
+.DS_Store
+Thumbs.db
+
+# IDE/editor folders
+.vscode/
+.idea/
