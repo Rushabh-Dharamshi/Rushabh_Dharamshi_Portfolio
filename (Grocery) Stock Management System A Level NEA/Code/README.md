@@ -1,11 +1,11 @@
 ## 🛠️ Tech Stack Used for Stock Management System
 
-- 🐍 **Python** — The primary programming language driving all system functionalities  
-- 🖼️ **Tkinter** — For building the user-friendly desktop graphical interface  
-- 🗄️ **SQLite3** — Lightweight, file-based database for managing stock and supplier data  
-- 📧 **smtplib** — To enable email notifications and communication features  
-- 📂 **CSV** — Handling data import/export in spreadsheet formats  
-- 🔢 **NumPy** — For efficient numerical operations and data processing  
-- 📊 **Matplotlib** — Visualizing stock trends and generating reports  
-- 📈 **Statsmodels (ARIMA model)** — Advanced forecasting to predict stock demands  
-- 🛢️ **SQL** — Database query language for creating and managing data records  
+- 🐍 **Python** — The core programming language powering the entire system  
+- 🖼️ **Tkinter** — For creating the desktop GUI interface  
+- 🗄️ **SQLite3** — Lightweight database engine for storing stock and supplier data  
+- 📧 **smtplib** — Sending emails directly from the system  
+- 📂 **CSV** — Importing sales data from CSV files into the system  
+- 🔢 **NumPy** — Efficient numerical operations and data processing  
+- 📊 **Matplotlib** — Data visualizations for sales and performance reports  
+- 📈 **Statsmodels (ARIMA model)** — Forecasting sales of specific products for better inventory planning  
+- 🛢️ **SQL** — Managing and querying the database  
