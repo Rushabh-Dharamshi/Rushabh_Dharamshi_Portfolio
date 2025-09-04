@@ -564,32 +564,32 @@ btn_frame = tk.Frame(form_frame, bg="#f0f4f8")
 btn_frame.grid(row=len(labels), column=0, columnspan=2, pady=15, sticky='ew')
 
 btn_add = tk.Button(btn_frame, text="Add Expense", command=add_expense, bg="#4a90e2", fg="white", font=('Arial', 11, 'bold'))
-btn_add.grid(row=0, column=0, padx=5, pady=5, sticky='ew')
+btn_add.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 btn_update = tk.Button(btn_frame, text="Update Expense", command=update_expense, bg="#4a90e2", fg="white", font=('Arial', 11, 'bold'))
-btn_update.grid(row=0, column=1, padx=5, pady=5, sticky='ew')
+btn_update.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 btn_delete = tk.Button(btn_frame, text="Delete Expense", command=delete_expense, bg="#d9534f", fg="white", font=('Arial', 11, 'bold'))
-btn_delete.grid(row=1, column=0, padx=5, pady=5, sticky='ew')
+btn_delete.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 btn_clear = tk.Button(btn_frame, text="Clear Inputs", command=clear_inputs, bg="#5bc0de", fg="white", font=('Arial', 11, 'bold'))
-btn_clear.grid(row=1, column=1, padx=5, pady=5, sticky='ew')
+btn_clear.grid(row=3, column=0, padx=5, columnspan=2, pady=5, sticky='ew')
 
 btn_wc = tk.Button(btn_frame, text="Show WordCloud", command=generate_wordcloud, bg="#5cb85c", fg="white", font=('Arial', 11, 'bold'))
-btn_wc.grid(row=2, column=0, padx=5, pady=5, sticky='ew')
+btn_wc.grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 btn_top_bottom = tk.Button(btn_frame, text="Show Top/Bottom Categories", command=display_top_bottom_categories, bg="#f0ad4e", fg="white", font=('Arial', 11, 'bold'))
-btn_top_bottom.grid(row=2, column=1, padx=5, pady=5, sticky='ew')
+btn_top_bottom.grid(row=5, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 btn_budget_check = tk.Button(btn_frame, text="Check Budget Status", command=check_monthly_budget, bg="#428bca", fg="white", font=('Arial', 11, 'bold'))
-btn_budget_check.grid(row=3, column=0, padx=5, pady=5, sticky='ew')
+btn_budget_check.grid(row=6, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 btn_pdf = tk.Button(btn_frame, text="Generate PDF Report", command=generate_pdf_report, bg="#6f42c1", fg="white", font=('Arial', 11, 'bold'))
-btn_pdf.grid(row=3, column=1, padx=5, pady=5, sticky='ew')
+btn_pdf.grid(row=7, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 btn_import_csv = tk.Button(btn_frame, text="Import from CSV", command=import_csv_data,
                            bg="#20c997", fg="white", font=('Arial', 11, 'bold'))
-btn_import_csv.grid(row=4, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
+btn_import_csv.grid(row=8, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 
 for i in range(2):
@@ -615,17 +615,21 @@ label_budget_left = tk.Label(bottom_frame, text="Remaining Budget: £1050.00", b
 label_budget_left.grid(row=0, column=0, sticky='w', padx=20)
 
 btn_export = tk.Button(btn_frame, text="Export to CSV", command=export_to_csv, bg="#17a2b8", fg="white", font=('Arial', 11, 'bold'))
-btn_export.grid(row=5, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
+btn_export.grid(row=9, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
-tk.Button(root, text="🔍 Search Transaction by ID", bg="#17a2b8", fg="white", font=('Arial', 11, 'bold'), command=search_expense_by_id).pack(pady=5)
-tk.Button(root, text="🔁 Show All Records", bg="#17a2b8", fg="white", font=('Arial', 11, 'bold'), command=show_all_records).pack(pady=5)
+btn_predict = tk.Button(btn_frame, text="Predict Budget Exceed", command=predict_budget_exceed, bg="#6610f2", fg="white", font=('Arial', 11, 'bold'))
+btn_predict.grid(row=10, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
+btn_search = tk.Button(btn_frame, text="🔍 Search Transaction by ID", command=search_expense_by_id, bg="#800000", fg="white", font=('Arial', 11, 'bold'))
+btn_search.grid(row=11, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
+
+btn_show_all = tk.Button(btn_frame, text="🔁 Show All Records", command=show_all_records, bg="#000009", fg="white", font=('Arial', 11, 'bold'))
+btn_show_all.grid(row=12, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
 
 label_weekly_spending = tk.Label(bottom_frame, text="Weekly Spending: £0.00", bg="#f0f4f8", fg="#2a3f54", font=('Arial', 14))
 label_weekly_spending.grid(row=0, column=1, sticky='e', padx=20)
 
-btn_predict = tk.Button(btn_frame, text="Predict Budget Exceed", command=predict_budget_exceed, bg="#6610f2", fg="white", font=('Arial', 11, 'bold'))
-btn_predict.grid(row=6, column=0, columnspan=2, padx=5, pady=5, sticky='ew')
+
 
 
 style = ttk.Style(root)
