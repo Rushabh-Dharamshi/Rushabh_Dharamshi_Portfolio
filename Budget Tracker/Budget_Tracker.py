@@ -34,7 +34,6 @@ conn.commit()
 
 def predict_budget_exceed():
     cursor = conn.cursor()
-
     cursor.execute('''
         SELECT strftime('%Y-%m', date) AS month, SUM(amount) 
         FROM expenses 
@@ -43,32 +42,54 @@ def predict_budget_exceed():
     ''')
     data = cursor.fetchall()
 
-    if len(data) < 2:
-        messagebox.showinfo("Prediction", "Not enough data to make a prediction (minimum 2 months).")
+    if not data:
+        messagebox.showinfo("Prediction", "No expense data available for prediction.")
         return None
 
-    months = [row[0] for row in data]
-    spending = [row[1] for row in data]
+    # Generate all months from the first recorded month to the current month
+    first_month_str = data[0][0]
+    first_month = datetime.strptime(first_month_str, "%Y-%m")
+    today = datetime.now()
+    months = []
+    spending_dict = {row[0]: row[1] for row in data}
+
+    current = first_month
+    while current <= today:
+        month_str = current.strftime("%Y-%m")
+        months.append(month_str)
+        current += timedelta(days=32)
+        current = current.replace(day=1)
+
+    # Fill in spending with 0 if month has no data
+    spending = [spending_dict.get(m, 0) for m in months]
+
+    if len(months) < 2:
+        messagebox.showinfo("Prediction", "Not enough data to make a prediction (minimum 2 months).")
+        return None
 
     X = np.array([[i] for i in range(len(months))])
     y = np.array(spending)
 
+    # RandomForestRegressor with GridSearch
     param_grid = {
         'n_estimators': [50, 100, 200],
         'max_depth': [None, 5, 10],
         'min_samples_split': [2, 5],
     }
     rf = RandomForestRegressor(random_state=42)
-
     grid_search = GridSearchCV(rf, param_grid, cv=2, scoring='neg_mean_squared_error', n_jobs=-1)
     grid_search.fit(X, y)
-
     best_model = grid_search.best_estimator_
 
     next_month_index = len(months)
     predicted_spending = best_model.predict([[next_month_index]])[0]
 
-    messagebox.showinfo("Next Month Prediction", f"Predicted Spending for Next Month: £{predicted_spending:.2f}")
+    # Calculate next month's name
+    next_month_date = today.replace(day=1) + timedelta(days=32)
+    next_month_date = next_month_date.replace(day=1)
+    next_month_name = next_month_date.strftime("%B")
+
+    messagebox.showinfo("Next Month Prediction", f"Predicted Spending for {next_month_name}: £{predicted_spending:.2f}")
     return predicted_spending
 
 
