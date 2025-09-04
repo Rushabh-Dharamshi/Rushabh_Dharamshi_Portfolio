@@ -4,6 +4,12 @@ A **Tic-Tac-Toe game** implemented in **C**, demonstrating advanced console prog
 
 ---
 
+## 💡 Project Inspiration
+
+During **COMP2208 Intelligent Systems** at the **University of Southampton**, I learned about the **Minimax algorithm and alpha-beta pruning**. Inspired by this, I decided to create my own Tic-Tac-Toe game to apply these concepts practically, including human vs AI gameplay and logging features.
+
+---
+
 ## 🛠️ Tech Stack
 
 - 🖥️ **Language:** C (C99 standard)  
@@ -46,3 +52,15 @@ A **Tic-Tac-Toe game** implemented in **C**, demonstrating advanced console prog
    - 📈 Displays percentage statistics after each game
 
 ---
+
+## 📂 Project Structure
+
+- 📝 `main.c` – Contains the complete source code to run the Tic-Tac-Toe game  
+- 📂 **Example Game Logs** – Logs generated after playing individual games:
+  - 📄 `game_1_log.txt` – Example of Game 1
+  - 📄 `game_2_log.txt` – Example of Game 2
+  - 📄 `game_8_log.txt` – Example of Game 8
+
+---
+
+This project highlights your ability to code in **C**, implement algorithms like **Minimax with alpha-beta pruning**, handle **timers and undo functionality**, and perform **file I/O for logging game states**.
