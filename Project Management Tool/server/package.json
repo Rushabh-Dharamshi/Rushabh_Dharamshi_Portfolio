@@ -1,0 +1,38 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest --runInBand",
+    "start": "node index.js",
+    "test:unit": "jest --runInBand tests/unit tests/routes",
+    "test:bdd": "jest --runInBand tests/bdd"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@langchain/ollama": "^1.2.4",
+    "compression": "^1.8.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "langchain": "^1.2.25",
+    "mysql": "^2.18.1",
+    "mysql2": "^3.14.3"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-cucumber": "^4.5.0",
+    "supertest": "^7.1.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/tests"
+    ]
+  }
+}

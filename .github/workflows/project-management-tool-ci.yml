@@ -1,0 +1,67 @@
+name: Project Management Tool CI
+
+on:
+  push:
+    paths:
+      - "Project Management Tool/**"
+      - ".github/workflows/project-management-tool-ci.yml"
+  pull_request:
+    paths:
+      - "Project Management Tool/**"
+      - ".github/workflows/project-management-tool-ci.yml"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-tests:
+    name: Backend Tests (Unit + BDD)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            Project Management Tool/server/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: Project Management Tool/server
+        run: npm ci
+
+      - name: Run backend test suite
+        working-directory: Project Management Tool/server
+        run: npm test
+
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            Project Management Tool/client/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: Project Management Tool/client
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: Project Management Tool/client
+        env:
+          CI: true
+          REACT_APP_API_BASE_URL: http://localhost:5000
+        run: npm run build
