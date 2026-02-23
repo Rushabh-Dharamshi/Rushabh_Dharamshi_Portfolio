@@ -1,16 +1,13 @@
 name: Project Management Tool CI/CD
 
 on:
+  workflow_dispatch:
   push:
     branches:
-      - "**"
-    paths:
-      - "Project Management Tool/**"
-      - ".github/workflows/project-management-tool-ci.yml"
+      - main
   pull_request:
-    paths:
-      - "Project Management Tool/**"
-      - ".github/workflows/project-management-tool-ci.yml"
+    branches:
+      - main
 
 concurrency:
   group: ci-cd-${{ github.workflow }}-${{ github.ref }}
@@ -302,3 +299,5 @@ jobs:
         run: |
           echo "Backend URL: ${{ steps.deploy_backend.outputs.backend_url }}"
           echo "Frontend URL: ${{ steps.deploy_frontend.outputs.frontend_url }}"
+
+
