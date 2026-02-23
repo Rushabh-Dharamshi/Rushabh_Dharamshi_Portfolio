@@ -10,6 +10,7 @@ const request = require('supertest');
 const { createApp } = require('../../src/server');
 const { initializeSchema } = require('../../src/db/initialize');
 const pool = require('../../src/db/pool');
+const { closeRiskWorkerPool } = require('../../src/services/riskScoringService');
 
 describe('API Integration', () => {
   let app;
@@ -30,6 +31,7 @@ describe('API Integration', () => {
 
   afterAll(async () => {
     await resetDatabase();
+    await closeRiskWorkerPool();
     await pool.end();
   });
 
@@ -123,3 +125,4 @@ describe('API Integration', () => {
     expect(response.body.error).toContain('Status can be set to done only when progress is 100');
   });
 });
+
