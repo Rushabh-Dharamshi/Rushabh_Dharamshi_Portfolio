@@ -51,15 +51,10 @@ function RagAssistant({ assistantContext }) {
       }
 
       const answer = String(data.answer || '').trim() || 'No answer was returned from the assistant.';
-      const sourceNote = Array.isArray(data.sources) && data.sources.length
-        ? ` Sources: ${data.sources.join(', ')}`
-        : '';
-      const latencyLabel = Number.isFinite(Number(data.latency_ms)) ? `${Number(data.latency_ms)}ms` : 'n/a';
-      const modeLabel = data.mode ? ` [${data.mode}]` : '';
 
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', text: `${answer}${sourceNote} (${latencyLabel})${modeLabel}` },
+        { role: 'assistant', text: answer },
       ]);
     } catch (error) {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Assistant error: ${error.message}` }]);

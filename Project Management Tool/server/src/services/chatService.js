@@ -143,6 +143,47 @@ function safeToLower(value) {
   return String(value || '').toLowerCase();
 }
 
+function detectStatusIntent(question) {
+  const text = safeToLower(question);
+
+  const mapping = [
+    { aliases: ['in progress', 'in_progress', 'in-progress', 'ongoing'], status: 'in_progress', label: 'in progress' },
+    { aliases: ['blocked', 'stuck'], status: 'blocked', label: 'blocked' },
+    { aliases: ['done', 'completed', 'complete', 'finished'], status: 'done', label: 'done' },
+    { aliases: ['backlog', 'todo', 'to do'], status: 'backlog', label: 'in backlog' },
+  ];
+
+  return mapping.find((item) => item.aliases.some((alias) => text.includes(alias))) || null;
+}
+
+function shouldEnumerateTasks(question) {
+  const text = safeToLower(question);
+  const intentHints = ['what', 'which', 'list', 'show', 'name', 'names'];
+  const taskHints = ['task', 'tasks', 'work item', 'work items'];
+
+  return intentHints.some((hint) => text.includes(hint)) && taskHints.some((hint) => text.includes(hint));
+}
+
+async function buildExactStatusAnswer(question, scopedProjectId) {
+  const statusIntent = detectStatusIntent(question);
+  if (!statusIntent || !shouldEnumerateTasks(question)) {
+    return null;
+  }
+
+  const tasks = await taskRepository.listTasks({ projectId: scopedProjectId || undefined });
+  const matching = tasks.filter((task) => String(task.status) === statusIntent.status);
+
+  const scopeLabel = scopedProjectId ? 'for the selected project' : 'across all projects';
+
+  if (!matching.length) {
+    return `There are no tasks currently ${statusIntent.label} ${scopeLabel}.`;
+  }
+
+  const header = `There ${matching.length === 1 ? 'is' : 'are'} ${matching.length} task${matching.length === 1 ? '' : 's'} currently ${statusIntent.label} ${scopeLabel}. Their names are:`;
+  const lines = matching.map((task, index) => `${index + 1}. ${task.title}`);
+
+  return [header, ...lines].join('\n');
+}
 function deriveScopeProjectId({ message, context, projects, conversation }) {
   const fromContext = Number(context?.selected_project_id);
   if (Number.isFinite(fromContext) && fromContext > 0) {
@@ -292,6 +333,7 @@ function buildGenerationPrompt({ question, retrievedDocs, conversationContext, u
     'Answer using the live SQL context and retrieved RAG context below.',
     'If information is missing, say so clearly and suggest what to ask next.',
     'Keep responses concise and actionable.',
+    'Do not include source URIs, latency, mode labels, or internal metadata unless explicitly asked.',
     '',
     'User question:',
     question,
@@ -420,6 +462,16 @@ async function answerMessage(message, options = {}) {
     const scopedProject = Number.isFinite(Number(scopedProjectId))
       ? projects.find((project) => Number(project.id) === Number(scopedProjectId))
       : null;
+
+    const exactStatusAnswer = await buildExactStatusAnswer(question, scopedProjectId);
+    if (exactStatusAnswer) {
+      appendConversation(conversation, question, exactStatusAnswer, recentMessages);
+      return {
+        answer: exactStatusAnswer,
+        sources: ['live-sql-context'],
+        cached: false,
+      };
+    }
 
     const retrievedDocs = await retrieveContexts({
       question,
