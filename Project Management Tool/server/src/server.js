@@ -61,25 +61,27 @@ function createApp() {
   app.use(cors(createCorsOptions()));
   app.use(express.json({ limit: '1mb' }));
 
-  const globalLimiter = rateLimit({
-    windowMs: security.globalRateWindowMs,
-    max: security.globalRateMax,
-    standardHeaders: true,
-    legacyHeaders: false,
-  });
+  if (nodeEnv !== 'test') {
+    const globalLimiter = rateLimit({
+      windowMs: security.globalRateWindowMs,
+      max: security.globalRateMax,
+      standardHeaders: true,
+      legacyHeaders: false,
+    });
 
-  const chatLimiter = rateLimit({
-    windowMs: security.globalRateWindowMs,
-    max: security.chatRateMax,
-    standardHeaders: true,
-    legacyHeaders: false,
-    message: {
-      error: 'Too many chat requests, slow down and try again.',
-    },
-  });
+    const chatLimiter = rateLimit({
+      windowMs: security.globalRateWindowMs,
+      max: security.chatRateMax,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: {
+        error: 'Too many chat requests, slow down and try again.',
+      },
+    });
 
-  app.use(globalLimiter);
-  app.use('/api/chat', chatLimiter);
+    app.use(globalLimiter);
+    app.use('/api/chat', chatLimiter);
+  }
 
   app.use((req, res, next) => {
     const requestStart = Date.now();

@@ -6,6 +6,7 @@ class WorkerPool {
     this.size = Math.max(1, size);
     this.queue = [];
     this.workers = [];
+    this.isClosing = false;
 
     for (let index = 0; index < this.size; index += 1) {
       this.workers.push(this.createWorker());
@@ -41,12 +42,14 @@ class WorkerPool {
       }
 
       slot.busy = false;
-      this.replaceWorker(slot);
-      this.dispatch();
+      if (!this.isClosing) {
+        this.replaceWorker(slot);
+        this.dispatch();
+      }
     });
 
     worker.on('exit', (code) => {
-      if (code !== 0) {
+      if (!this.isClosing && code !== 0) {
         this.replaceWorker(slot);
       }
     });
@@ -64,6 +67,10 @@ class WorkerPool {
   }
 
   run(payload) {
+    if (this.isClosing) {
+      return Promise.reject(new Error('Worker pool is shutting down'));
+    }
+
     return new Promise((resolve, reject) => {
       this.queue.push({ payload, resolve, reject });
       this.dispatch();
@@ -71,7 +78,7 @@ class WorkerPool {
   }
 
   dispatch() {
-    if (this.queue.length === 0) {
+    if (this.isClosing || this.queue.length === 0) {
       return;
     }
 
@@ -87,8 +94,16 @@ class WorkerPool {
   }
 
   async close() {
+    this.isClosing = true;
+
+    while (this.queue.length > 0) {
+      const task = this.queue.shift();
+      task.reject(new Error('Worker pool closed before completing queued task'));
+    }
+
     await Promise.all(this.workers.map((slot) => slot.worker.terminate()));
   }
 }
 
 module.exports = WorkerPool;
+

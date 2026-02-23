@@ -30,9 +30,12 @@ describe('API Integration', () => {
   });
 
   afterAll(async () => {
-    await resetDatabase();
-    await closeRiskWorkerPool();
-    await pool.end();
+    try {
+      await resetDatabase();
+    } finally {
+      await closeRiskWorkerPool();
+      await pool.end();
+    }
   });
 
   test('GET /health returns service status', async () => {
