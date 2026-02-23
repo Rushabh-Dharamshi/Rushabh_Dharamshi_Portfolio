@@ -204,14 +204,37 @@ jobs:
     needs:
       - ci-test-gate
       - frontend-build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.GCP_PROJECT_ID != '' && secrets.GCP_SA_KEY != '' && secrets.CLOUDSQL_INSTANCE != '' && secrets.MYSQL_USER != '' && secrets.VERTEX_RAG_CORPUS_ID != '' && secrets.RAG_GCS_URI_PREFIX != ''
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
 
     environment:
       name: production
 
+    env:
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+      CLOUDSQL_INSTANCE: ${{ secrets.CLOUDSQL_INSTANCE }}
+      MYSQL_USER: ${{ secrets.MYSQL_USER }}
+      VERTEX_RAG_CORPUS_ID: ${{ secrets.VERTEX_RAG_CORPUS_ID }}
+      RAG_GCS_URI_PREFIX: ${{ secrets.RAG_GCS_URI_PREFIX }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Validate required deploy secrets
+        run: |
+          missing=0
+          for key in GCP_PROJECT_ID GCP_SA_KEY CLOUDSQL_INSTANCE MYSQL_USER VERTEX_RAG_CORPUS_ID RAG_GCS_URI_PREFIX; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required secret: $key"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            echo "Deployment blocked: required secrets are missing."
+            exit 1
+          fi
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -299,5 +322,6 @@ jobs:
         run: |
           echo "Backend URL: ${{ steps.deploy_backend.outputs.backend_url }}"
           echo "Frontend URL: ${{ steps.deploy_frontend.outputs.frontend_url }}"
+
 
 
