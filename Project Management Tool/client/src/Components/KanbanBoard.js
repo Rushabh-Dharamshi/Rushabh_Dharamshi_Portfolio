@@ -23,7 +23,7 @@ function KanbanBoard({ tasks, onStatusChange, onEdit }) {
                 return (
                   <button key={task.id} className="kanban-item" onClick={() => onEdit(task)}>
                     <strong>{task.title}</strong>
-                    <small>{task.project_name || 'General'} • {task.priority}</small>
+                    <small>{task.project_name || 'Unassigned'} â€¢ {task.priority}</small>
                     <small>{new Date(task.due_date).toLocaleDateString()}</small>
                     <select
                       value={task.status || 'backlog'}
@@ -50,3 +50,4 @@ function KanbanBoard({ tasks, onStatusChange, onEdit }) {
 }
 
 export default KanbanBoard;
+

@@ -37,7 +37,7 @@ function toDataset(rows, fallbackLabel) {
   };
 }
 
-function TaskStats({ analytics }) {
+function TaskStats({ analytics, scopeLabel }) {
   const category = toDataset(analytics?.category, 'No Data');
   const status = toDataset(analytics?.status, 'No Data');
   const trend = analytics?.completedTrend || [];
@@ -45,6 +45,11 @@ function TaskStats({ analytics }) {
 
   return (
     <section className="dashboard-grid" aria-label="Analytics dashboard">
+      <article className="panel-card chart-card wide">
+        <h3>Analytics Scope</h3>
+        <p>{scopeLabel || 'All Projects'}</p>
+      </article>
+
       <article className="panel-card chart-card">
         <h3>Category Mix</h3>
         <Doughnut

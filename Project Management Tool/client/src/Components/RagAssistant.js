@@ -44,11 +44,22 @@ function RagAssistant({ assistantContext }) {
         }),
       });
 
-      const data = await response.json();
-      const sourceNote = data.sources?.length ? ` Sources: ${data.sources.join(', ')}` : '';
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(data.details || data.error || `Chat request failed (${response.status})`);
+      }
+
+      const answer = String(data.answer || '').trim() || 'No answer was returned from the assistant.';
+      const sourceNote = Array.isArray(data.sources) && data.sources.length
+        ? ` Sources: ${data.sources.join(', ')}`
+        : '';
+      const latencyLabel = Number.isFinite(Number(data.latency_ms)) ? `${Number(data.latency_ms)}ms` : 'n/a';
+      const modeLabel = data.mode ? ` [${data.mode}]` : '';
+
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', text: `${data.answer}${sourceNote} (${data.latency_ms}ms)` },
+        { role: 'assistant', text: `${answer}${sourceNote} (${latencyLabel})${modeLabel}` },
       ]);
     } catch (error) {
       setMessages((prev) => [...prev, { role: 'assistant', text: `Assistant error: ${error.message}` }]);
@@ -61,7 +72,7 @@ function RagAssistant({ assistantContext }) {
     <section className="panel-card assistant-panel">
       <div className="panel-header">
         <h3>RAG Project Assistant</h3>
-        <p>LangChain RAG over your own project database using local Ollama models.</p>
+        <p>Vertex AI RAG grounded on your project database with Gemini generation.</p>
       </div>
 
       <div className="chat-log">
@@ -87,5 +98,3 @@ function RagAssistant({ assistantContext }) {
 }
 
 export default RagAssistant;
-
-

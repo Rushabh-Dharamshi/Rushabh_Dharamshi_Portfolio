@@ -29,7 +29,7 @@ function TaskList({ tasks, onToggleComplete, onDelete, onEdit, onStatusChange })
               </Badge>
             </div>
 
-            <p className="work-meta">#{task.id} • {task.project_name || 'General'} • {task.assignee || 'Unassigned'}</p>
+            <p className="work-meta">#{task.id} â€¢ {task.project_name || 'Unassigned'} â€¢ {task.assignee || 'Unassigned'}</p>
             <p className="work-desc">{task.description}</p>
 
             <div className="status-row">
@@ -51,7 +51,7 @@ function TaskList({ tasks, onToggleComplete, onDelete, onEdit, onStatusChange })
             </div>
 
             <p className={`work-due ${overdue ? 'overdue' : ''}`}>
-              Due: {dueDate.toLocaleDateString()} {overdue ? '• Overdue' : ''}
+              Due: {dueDate.toLocaleDateString()} {overdue ? 'â€¢ Overdue' : ''}
             </p>
 
             <div className="card-actions">
@@ -79,3 +79,4 @@ function TaskList({ tasks, onToggleComplete, onDelete, onEdit, onStatusChange })
 }
 
 export default TaskList;
+

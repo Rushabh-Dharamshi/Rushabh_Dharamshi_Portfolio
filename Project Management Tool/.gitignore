@@ -35,3 +35,7 @@ Thumbs.db
 # IDE/editor folders
 .vscode/
 .idea/
+
+# Generated RAG export artifacts
+/server/rag_exports/
+

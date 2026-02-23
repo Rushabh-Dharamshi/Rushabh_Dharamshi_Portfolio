@@ -72,8 +72,9 @@ function App() {
     return response.json();
   }, []);
 
-  const fetchAnalytics = useCallback(async () => {
-    const response = await fetch(apiUrl('/api/analytics/overview'));
+  const fetchAnalytics = useCallback(async (projectId = '') => {
+    const query = projectId ? `?project_id=${projectId}` : '';
+    const response = await fetch(apiUrl(`/api/analytics/overview${query}`));
     if (!response.ok) {
       throw new Error('Failed to fetch analytics');
     }
@@ -104,7 +105,7 @@ function App() {
       const [taskRows, projectRows, analyticsData] = await Promise.all([
         fetchTasks(projectId),
         fetchProjects(),
-        fetchAnalytics(),
+        fetchAnalytics(projectId),
       ]);
 
       setTasks(taskRows);
@@ -226,7 +227,7 @@ function App() {
         throw new Error(data.error || 'Failed to update status');
       }
 
-      await Promise.all([fetchAnalytics().then(setAnalytics), refreshRisk()]);
+      await Promise.all([fetchAnalytics(selectedProjectId).then(setAnalytics), refreshRisk()]);
     } catch (statusError) {
       setError(statusError.message);
       await loadWorkspace(selectedProjectId);
@@ -253,6 +254,39 @@ function App() {
       setProjects((prev) => [...prev, data]);
       setMessage('Project created.');
       setTimeout(() => setMessage(''), 2500);
+    } catch (projectError) {
+      setError(projectError.message);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    const projectId = Number(selectedProjectId);
+    if (!Number.isFinite(projectId) || projectId <= 0) {
+      setError('Select a project to delete.');
+      return;
+    }
+
+    const project = projects.find((item) => Number(item.id) === projectId);
+    const projectName = project?.name || `#${projectId}`;
+
+    if (!window.confirm(`Delete project "${projectName}"? This only works when the project has no tasks.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(apiUrl(`/projects/${projectId}`), {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete project');
+      }
+
+      setSelectedProjectId('');
+      setMessage(`Project "${projectName}" deleted.`);
+      setTimeout(() => setMessage(''), 2500);
+      await Promise.all([loadWorkspace(''), refreshRisk()]);
     } catch (projectError) {
       setError(projectError.message);
     }
@@ -295,6 +329,14 @@ function App() {
       return new Date(left.due_date) - new Date(right.due_date);
     });
   }, [tasks, search, sortBy]);
+  const selectedProject = useMemo(
+    () => projects.find((project) => Number(project.id) === Number(selectedProjectId)) || null,
+    [projects, selectedProjectId]
+  );
+
+  const analyticsScopeLabel = selectedProject
+    ? `Specific Project: ${selectedProject.name}`
+    : 'All Projects';
   const assistantContext = useMemo(() => ({
     selected_project_id: selectedProjectId ? Number(selectedProjectId) : null,
     active_view: viewMode,
@@ -318,7 +360,7 @@ function App() {
         <header className="top-banner">
           <div>
             <h1>Project Management Tool</h1>
-            <p>Portfolio-grade project management with analytics, ML risk intelligence, and free local RAG assistant.</p>
+            <p>Portfolio-grade project management with analytics, ML risk intelligence, and a Vertex AI RAG assistant.</p>
           </div>
           <div className="banner-badges">
             <Badge bg="dark">{tasks.length} items</Badge>
@@ -335,7 +377,7 @@ function App() {
           </div>
         ) : (
           <>
-            <TaskStats analytics={analytics} />
+            <TaskStats analytics={analytics} scopeLabel={analyticsScopeLabel} />
 
             <section className="panel-card controls-row">
               <Row className="g-3 align-items-end">
@@ -351,6 +393,16 @@ function App() {
                       <option key={project.id} value={project.id}>{project.name}</option>
                     ))}
                   </Form.Select>
+                  <div className="mt-2">
+                    <Button
+                      variant="outline-danger"
+                      size="sm"
+                      onClick={handleDeleteProject}
+                      disabled={!selectedProjectId}
+                    >
+                      Delete Selected Project
+                    </Button>
+                  </div>
                 </Col>
                 <Col md={3}>
                   <Form.Label>Search</Form.Label>
@@ -443,6 +495,7 @@ function App() {
 }
 
 export default App;
+
 
 
 

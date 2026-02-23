@@ -1,106 +1,84 @@
-const { ChatOllama, OllamaEmbeddings } = require('@langchain/ollama');
-const { ChatPromptTemplate } = require('@langchain/core/prompts');
-const { RunnableSequence } = require('@langchain/core/runnables');
-const { StringOutputParser } = require('@langchain/core/output_parsers');
-const taskRepository = require('../repositories/taskRepository');
+const { GoogleAuth } = require('google-auth-library');
 const projectRepository = require('../repositories/projectRepository');
+const taskRepository = require('../repositories/taskRepository');
 
-const INDEX_TTL_MS = 45 * 1000;
 const CONVERSATION_TTL_MS = 45 * 60 * 1000;
 const MAX_CONVERSATIONS = 300;
-const TOP_K = 4;
-
-const vectorIndexCache = {
-  key: null,
-  vectors: [],
-  docs: [],
-  updatedAt: 0,
-};
 
 const conversations = new Map();
+const auth = new GoogleAuth({
+  scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+});
 
-let chatModel;
-let embeddingModel;
+let authClientPromise;
 
-function getChatModel() {
-  if (!chatModel) {
-    chatModel = new ChatOllama({
-      baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
-      model: process.env.OLLAMA_CHAT_MODEL || 'mistral:latest',
-      temperature: Number(process.env.OLLAMA_TEMPERATURE || 0.15),
-      numCtx: Number(process.env.OLLAMA_NUM_CTX || 2048),
-      numPredict: Number(process.env.OLLAMA_NUM_PREDICT || 110),
-      keepAlive: process.env.OLLAMA_KEEP_ALIVE || '10m',
-    });
-  }
+function getVertexConfig() {
+  const ragRegion = process.env.GCP_REGION || 'europe-west2';
+  const geminiModel = process.env.GEMINI_MODEL || 'gemini-3.1-pro-preview';
 
-  return chatModel;
+  return {
+    projectId: process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT,
+    ragRegion,
+    geminiRegion: process.env.GEMINI_REGION || (geminiModel.startsWith('gemini-3') ? 'global' : ragRegion),
+    ragCorpusId: process.env.VERTEX_RAG_CORPUS_ID,
+    geminiModel,
+    ragTopK: Number(process.env.RAG_TOP_K || 4),
+    temperature: Number(process.env.GEMINI_TEMPERATURE || 0.15),
+    maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 512),
+  };
 }
 
-function getEmbeddingModel() {
-  if (!embeddingModel) {
-    embeddingModel = new OllamaEmbeddings({
-      baseUrl: process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434',
-      model: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text:latest',
-    });
+function validateVertexConfig(config) {
+  const missing = [];
+
+  if (!config.projectId) {
+    missing.push('GCP_PROJECT_ID (or GOOGLE_CLOUD_PROJECT)');
   }
 
-  return embeddingModel;
-}
-
-function safeToLower(value) {
-  return String(value || '').toLowerCase();
-}
-
-function tokenizeForLexical(text) {
-  return String(text || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((token) => token.length >= 3);
-}
-
-function lexicalOverlapScore(question, content) {
-  const questionTokens = tokenizeForLexical(question);
-  if (!questionTokens.length) {
-    return 0;
+  if (!config.ragCorpusId) {
+    missing.push('VERTEX_RAG_CORPUS_ID');
   }
 
-  const contentTokenSet = new Set(tokenizeForLexical(content));
-  if (!contentTokenSet.size) {
-    return 0;
+  if (missing.length > 0) {
+    throw new Error(`Missing required Vertex settings: ${missing.join(', ')}`);
+  }
+}
+
+async function getAuthClient() {
+  if (!authClientPromise) {
+    authClientPromise = auth.getClient();
   }
 
-  let overlap = 0;
-  questionTokens.forEach((token) => {
-    if (contentTokenSet.has(token)) {
-      overlap += 1;
-    }
+  return authClientPromise;
+}
+
+async function vertexRequest({ url, body }) {
+  const client = await getAuthClient();
+  const headers = await client.getRequestHeaders(url);
+  headers['Content-Type'] = 'application/json';
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
   });
 
-  return overlap / questionTokens.length;
-}
+  const responseText = await response.text();
+  let payload = {};
 
-function cosineSimilarity(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length || a.length === 0) {
-    return 0;
+  if (responseText) {
+    try {
+      payload = JSON.parse(responseText);
+    } catch (error) {
+      payload = { raw: responseText };
+    }
   }
 
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-
-  for (let i = 0; i < a.length; i += 1) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+  if (!response.ok) {
+    throw new Error(`Vertex API ${response.status}: ${responseText || response.statusText}`);
   }
 
-  if (normA === 0 || normB === 0) {
-    return 0;
-  }
-
-  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+  return payload;
 }
 
 function cleanupConversations() {
@@ -161,6 +139,10 @@ function appendConversation(conversation, question, answer, recentMessages = [])
   conversation.updatedAt = Date.now();
 }
 
+function safeToLower(value) {
+  return String(value || '').toLowerCase();
+}
+
 function deriveScopeProjectId({ message, context, projects, conversation }) {
   const fromContext = Number(context?.selected_project_id);
   if (Number.isFinite(fromContext) && fromContext > 0) {
@@ -185,122 +167,6 @@ function deriveScopeProjectId({ message, context, projects, conversation }) {
   return null;
 }
 
-function buildDocuments({ tasks, projects, overview, scopedProjectId }) {
-  const scopedTasks = scopedProjectId
-    ? tasks.filter((task) => Number(task.project_id) === Number(scopedProjectId))
-    : tasks;
-
-  const scopedProject = scopedProjectId
-    ? projects.find((project) => Number(project.id) === Number(scopedProjectId))
-    : null;
-
-  const docs = [];
-
-  scopedTasks.forEach((task) => {
-    docs.push({
-      id: `task:${task.id}`,
-      text: [
-        `Task #${task.id}`,
-        `title: ${task.title}`,
-        `description: ${task.description}`,
-        `project: ${task.project_name || 'General'}`,
-        `status: ${task.status}`,
-        `is_completed: ${task.is_completed ? 'yes' : 'no'}`,
-        `progress: ${task.progress}`,
-        `priority: ${task.priority}`,
-        `difficulty: ${task.difficulty_level}`,
-        `assignee: ${task.assignee || 'unassigned'}`,
-        `due_date: ${task.due_date}`,
-        `updated_at: ${task.updated_at || ''}`,
-      ].join(' | '),
-      freshness: task.updated_at || task.due_date || '',
-    });
-  });
-
-  const projectDocs = scopedProject ? [scopedProject] : projects;
-  projectDocs.forEach((project) => {
-    docs.push({
-      id: `project:${project.id}`,
-      text: [
-        `Project #${project.id}`,
-        `name: ${project.name}`,
-        `description: ${project.description || 'n/a'}`,
-        `created_at: ${project.created_at || ''}`,
-      ].join(' | '),
-      freshness: project.created_at || '',
-    });
-  });
-
-  docs.push({
-    id: 'analytics:overview',
-    text: [
-      `status_distribution: ${overview.status.map((row) => `${row.key_name}:${row.value_count}`).join(', ') || 'n/a'}`,
-      `workload: ${overview.workload.map((row) => `${row.assignee}:${row.open_tasks}`).join(', ') || 'n/a'}`,
-      `project_velocity: ${overview.projectVelocity.map((row) => `${row.project_name}:${row.completed}/${row.total}`).join(', ') || 'n/a'}`,
-    ].join(' | '),
-    freshness: new Date().toISOString(),
-  });
-
-  return { docs, scopedTasks, scopedProject };
-}
-
-function buildIndexKey(docs) {
-  return docs
-    .map((doc) => `${doc.id}:${doc.freshness}:${doc.text.length}`)
-    .join('||');
-}
-
-async function ensureVectorIndex(docs) {
-  const indexKey = buildIndexKey(docs);
-  const isFresh = Date.now() - vectorIndexCache.updatedAt <= INDEX_TTL_MS;
-
-  if (vectorIndexCache.key === indexKey && isFresh) {
-    return {
-      docs: vectorIndexCache.docs,
-      vectors: vectorIndexCache.vectors,
-      cached: true,
-    };
-  }
-
-  const embeddings = getEmbeddingModel();
-  const vectors = await embeddings.embedDocuments(docs.map((doc) => doc.text));
-
-  vectorIndexCache.key = indexKey;
-  vectorIndexCache.docs = docs;
-  vectorIndexCache.vectors = vectors;
-  vectorIndexCache.updatedAt = Date.now();
-
-  return {
-    docs,
-    vectors,
-    cached: false,
-  };
-}
-
-async function retrieveRelevantDocs(question, indexedDocs) {
-  const embeddings = getEmbeddingModel();
-  const queryVector = await embeddings.embedQuery(question);
-
-  const ranked = indexedDocs.docs
-    .map((doc, index) => {
-      const vectorScore = cosineSimilarity(queryVector, indexedDocs.vectors[index]);
-      const lexicalScore = lexicalOverlapScore(question, doc.text);
-      const score = vectorScore * 0.75 + lexicalScore * 0.25;
-
-      return {
-        ...doc,
-        score,
-        vectorScore,
-        lexicalScore,
-      };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, TOP_K)
-    .filter((doc) => doc.score > 0.04 || doc.lexicalScore > 0);
-
-  return ranked;
-}
-
 function formatConversationContext(conversation, recentMessages) {
   const conversationHistory = conversation?.history || [];
   const recent = Array.isArray(recentMessages) ? recentMessages : [];
@@ -321,65 +187,198 @@ function formatUiContext(context, scopedProject) {
   ].join('\n');
 }
 
-async function generateAnswer({ question, retrievedDocs, conversationContext, uiContext }) {
-  const prompt = ChatPromptTemplate.fromMessages([
-    [
-      'system',
-      [
-        'You are the Project Management Tool assistant.',
-        'Answer strictly using the retrieved database context.',
-        'If the answer is not present in context, say that clearly and suggest a follow-up query.',
-        'Be concise and practical. Prefer bullet-like short sentences.',
-        'When tasks are mentioned, include task ids where possible.',
-      ].join(' '),
-    ],
-    [
-      'human',
-      [
-        'User question:',
-        '{question}',
-        '',
-        'UI context:',
-        '{uiContext}',
-        '',
-        'Conversation context:',
-        '{conversationContext}',
-        '',
-        'Retrieved database context:',
-        '{retrievedContext}',
-      ].join('\n'),
-    ],
-  ]);
+function buildVertexApiBase(region) {
+  if (region === 'global') {
+    return 'https://aiplatform.googleapis.com';
+  }
 
-  const chain = RunnableSequence.from([
-    prompt,
-    getChatModel(),
-    new StringOutputParser(),
-  ]);
+  return `https://${region}-aiplatform.googleapis.com`;
+}
 
-  const retrievedContext = retrievedDocs
-    .map((doc, index) => `[${index + 1}] ${doc.id} :: ${doc.text}`)
-    .join('\n');
+function buildRagCorpusResourceName({ projectId, ragRegion, ragCorpusId }) {
+  if (String(ragCorpusId).startsWith('projects/')) {
+    return ragCorpusId;
+  }
 
-  const response = await chain.invoke({
-    question,
-    uiContext,
-    conversationContext: conversationContext || 'none',
-    retrievedContext: retrievedContext || 'No context retrieved.',
+  return `projects/${projectId}/locations/${ragRegion}/ragCorpora/${ragCorpusId}`;
+}
+
+function buildRetrievalPrompt(question, scopedProjectId, context) {
+  const lines = [`User question: ${question}`];
+
+  if (Number.isFinite(Number(scopedProjectId)) && Number(scopedProjectId) > 0) {
+    lines.push(`Focus project_id: ${Number(scopedProjectId)}`);
+  }
+
+  if (context?.active_view) {
+    lines.push(`Active view: ${context.active_view}`);
+  }
+
+  return lines.join('\n');
+}
+
+async function retrieveContexts({ question, context, scopedProjectId, vertexConfig }) {
+  const ragCorpusResource = buildRagCorpusResourceName(vertexConfig);
+  const endpoint = `${buildVertexApiBase(vertexConfig.ragRegion)}/v1beta1/projects/${vertexConfig.projectId}/locations/${vertexConfig.ragRegion}:retrieveContexts`;
+
+  const payload = {
+    vertex_rag_store: {
+      rag_resources: [{ rag_corpus: ragCorpusResource }],
+    },
+    query: {
+      text: buildRetrievalPrompt(question, scopedProjectId, context),
+      rag_retrieval_config: {
+        top_k: vertexConfig.ragTopK,
+      },
+    },
+  };
+
+  const response = await vertexRequest({
+    url: endpoint,
+    body: payload,
   });
 
-  return String(response || '').trim();
+  const rawContexts = response?.contexts?.contexts || [];
+
+  return rawContexts
+    .map((item, index) => {
+      const content = String(item.text || item.chunk?.text || '').trim();
+      const source = item.source_uri || item.sourceUri || item.rag_file_uri || item.ragFileUri || null;
+      const distance = item.distance ?? item.score ?? null;
+
+      return {
+        id: source || `context:${index + 1}`,
+        content,
+        source,
+        distance,
+      };
+    })
+    .filter((item) => item.content);
+}
+
+async function buildLiveSqlContext(scopedProjectId) {
+  const [tasks, analytics] = await Promise.all([
+    taskRepository.listTasks({ projectId: scopedProjectId || undefined }),
+    taskRepository.getAnalyticsOverview({ projectId: scopedProjectId || undefined }),
+  ]);
+
+  const sampleTasks = tasks.slice(0, 12).map((task) => {
+    return [
+      `#${task.id}`,
+      `${task.title}`,
+      `(status=${task.status}, progress=${task.progress}%, project=${task.project_name || 'Unassigned'})`,
+    ].join(' ');
+  });
+
+  return [
+    `Live SQL snapshot at ${new Date().toISOString()}`,
+    `Tasks in scope: ${tasks.length}`,
+    `Done: ${analytics?.totals?.done ?? 0}`,
+    `Blocked: ${analytics?.totals?.blocked ?? 0}`,
+    `Overdue: ${analytics?.totals?.overdue ?? 0}`,
+    sampleTasks.length ? `Sample tasks: ${sampleTasks.join(' | ')}` : 'Sample tasks: none',
+  ].join('\n');
+}
+function buildGenerationPrompt({ question, retrievedDocs, conversationContext, uiContext, liveSqlContext }) {
+  const retrievedContext = retrievedDocs
+    .map((doc, index) => {
+      const header = `[${index + 1}] ${doc.source || doc.id}`;
+      return `${header}\n${doc.content}`;
+    })
+    .join('\n\n');
+
+  return [
+    'You are the Project Management Tool assistant.',
+    'Answer using the live SQL context and retrieved RAG context below.',
+    'If information is missing, say so clearly and suggest what to ask next.',
+    'Keep responses concise and actionable.',
+    '',
+    'User question:',
+    question,
+    '',
+    'UI context:',
+    uiContext || 'none',
+    '',
+    'Conversation context:',
+    conversationContext || 'none',
+    '',
+    'Live SQL context:',
+    liveSqlContext || 'none',
+    '',
+    'Retrieved context:',
+    retrievedContext || 'No retrieved context.',
+  ].join('\n');
+}
+
+function extractGeneratedText(payload) {
+  const candidates = Array.isArray(payload?.candidates) ? payload.candidates : [];
+  if (!candidates.length) {
+    return '';
+  }
+
+  const parts = Array.isArray(candidates[0]?.content?.parts) ? candidates[0].content.parts : [];
+  return parts
+    .map((part) => String(part?.text || '').trim())
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+async function generateAnswer({ question, retrievedDocs, conversationContext, uiContext, liveSqlContext, vertexConfig }) {
+  const endpoint = `${buildVertexApiBase(vertexConfig.geminiRegion)}/v1/projects/${vertexConfig.projectId}/locations/${vertexConfig.geminiRegion}/publishers/google/models/${encodeURIComponent(vertexConfig.geminiModel)}:generateContent`;
+
+  const payload = {
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: buildGenerationPrompt({
+              question,
+              retrievedDocs,
+              conversationContext,
+              uiContext,
+              liveSqlContext,
+            }),
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: vertexConfig.temperature,
+      maxOutputTokens: vertexConfig.maxOutputTokens,
+    },
+  };
+
+  const response = await vertexRequest({
+    url: endpoint,
+    body: payload,
+  });
+
+  return extractGeneratedText(response);
 }
 
 function mapError(error) {
   const message = String(error?.message || error || 'Unknown error');
 
-  if (message.includes('ECONNREFUSED') || message.includes('fetch failed')) {
-    return new Error('LangChain RAG requires Ollama running locally at http://127.0.0.1:11434. Start Ollama and retry.');
+  if (message.includes('aiplatform.ragCorpora.create') || message.includes('aiplatform.ragCorpora.get')) {
+    return new Error('Vertex RAG permission missing. Grant roles/aiplatform.user to the runtime identity.');
   }
 
-  if (message.includes('model') && message.includes('not found')) {
-    return new Error('Required Ollama model not found. Run: ollama pull mistral:latest and ollama pull nomic-embed-text:latest');
+  if (message.includes('Missing required Vertex settings')) {
+    return new Error(`${message}. Configure Cloud Run env vars before calling /api/chat.`);
+  }
+
+  if (message.includes('ragCorpora') && message.includes('not found')) {
+    return new Error('Vertex RAG corpus not found. Check VERTEX_RAG_CORPUS_ID and region.');
+  }
+
+  if (message.includes('publishers/google/models') && message.includes('not found')) {
+    return new Error('Gemini model not found for this location. Set GEMINI_MODEL and GEMINI_REGION to a supported combination.');
+  }
+
+  if (message.includes('PERMISSION_DENIED') || message.includes('403')) {
+    return new Error('Vertex access denied. Check Cloud Run service account IAM and project/region settings.');
   }
 
   return error;
@@ -389,7 +388,7 @@ async function answerMessage(message, options = {}) {
   const question = String(message || '').trim();
   if (!question) {
     return {
-      answer: 'Ask about project status, overdue work, completed tasks, blockers, or workload by assignee.',
+      answer: 'Ask about project status, overdue tasks, blockers, completed work, or workload by assignee.',
       sources: [],
       cached: false,
     };
@@ -400,13 +399,12 @@ async function answerMessage(message, options = {}) {
   const recentMessages = Array.isArray(options.recentMessages) ? options.recentMessages : [];
 
   const conversation = getConversation(conversationId);
+  const vertexConfig = getVertexConfig();
 
   try {
-    const [tasks, projects, overview] = await Promise.all([
-      taskRepository.listTasks(),
-      projectRepository.listProjects(),
-      taskRepository.getAnalyticsOverview(),
-    ]);
+    validateVertexConfig(vertexConfig);
+
+    const projects = await projectRepository.listProjects();
 
     const scopedProjectId = deriveScopeProjectId({
       message: question,
@@ -419,42 +417,43 @@ async function answerMessage(message, options = {}) {
       conversation.preferredProjectId = scopedProjectId;
     }
 
-    const { docs, scopedTasks, scopedProject } = buildDocuments({
-      tasks,
-      projects,
-      overview,
-      scopedProjectId,
-    });
+    const scopedProject = Number.isFinite(Number(scopedProjectId))
+      ? projects.find((project) => Number(project.id) === Number(scopedProjectId))
+      : null;
 
-    const index = await ensureVectorIndex(docs);
-    const retrievedDocs = await retrieveRelevantDocs(question, index);
+    const retrievedDocs = await retrieveContexts({
+      question,
+      context,
+      scopedProjectId,
+      vertexConfig,
+    });
 
     const conversationContext = formatConversationContext(conversation, recentMessages);
     const uiContext = formatUiContext(context, scopedProject);
+
+    const liveSqlContext = await buildLiveSqlContext(scopedProjectId);
 
     const answer = await generateAnswer({
       question,
       retrievedDocs,
       conversationContext,
       uiContext,
+      liveSqlContext,
+      vertexConfig,
     });
 
-    appendConversation(conversation, question, answer, recentMessages);
+    const finalAnswer = answer || 'I found related context but could not generate a confident answer. Please try a narrower question.';
+    appendConversation(conversation, question, finalAnswer, recentMessages);
 
-    const sources = retrievedDocs.map((doc) => doc.id);
-
-    if (!answer) {
-      return {
-        answer: `I could not derive a confident answer from current database context (${scopedTasks.length} tasks in scope). Try narrowing your question.`,
-        sources,
-        cached: index.cached,
-      };
+    const sources = [...new Set(retrievedDocs.map((doc) => doc.source || doc.id))];
+    if (!sources.length) {
+      sources.push('live-sql-context');
     }
 
     return {
-      answer,
+      answer: finalAnswer,
       sources,
-      cached: index.cached,
+      cached: false,
     };
   } catch (error) {
     throw mapError(error);
@@ -464,5 +463,6 @@ async function answerMessage(message, options = {}) {
 module.exports = {
   answerMessage,
 };
+
 
 

@@ -18,15 +18,32 @@ function normalizeTaskPayload(payload, { isUpdate = false } = {}) {
   const difficulty = normalizeString(payload.difficulty_level).toLowerCase();
   const progress = Number(payload.progress);
   const statusInput = normalizeString(payload.status).toLowerCase();
+  const rawProjectId = payload.project_id;
+  const projectId = Number(rawProjectId);
+
   const status = VALID_STATUSES.includes(statusInput)
     ? statusInput
     : progress === 100 || payload.is_completed
       ? 'done'
       : 'backlog';
 
-  if (!title || !description || !dueDate || !priority || !difficulty || Number.isNaN(progress)) {
+  if (
+    !title ||
+    !description ||
+    !dueDate ||
+    !priority ||
+    !difficulty ||
+    Number.isNaN(progress) ||
+    rawProjectId === undefined ||
+    rawProjectId === null ||
+    rawProjectId === ''
+  ) {
     const mode = isUpdate ? 'update' : 'create';
-    throw new Error(`Missing required fields for ${mode}: title, description, due_date, priority, difficulty_level, progress`);
+    throw new Error('Missing required fields for ' + mode + ': title, description, due_date, priority, difficulty_level, progress, project_id');
+  }
+
+  if (!Number.isFinite(projectId) || projectId <= 0) {
+    throw new Error('project_id must be a positive integer');
   }
 
   if (!VALID_PRIORITIES.includes(priority)) {
@@ -53,8 +70,6 @@ function normalizeTaskPayload(payload, { isUpdate = false } = {}) {
     throw new Error('A task can be marked completed only when progress is 100');
   }
 
-  const projectId = payload.project_id ? Number(payload.project_id) : null;
-
   return {
     title,
     description,
@@ -64,7 +79,7 @@ function normalizeTaskPayload(payload, { isUpdate = false } = {}) {
     progress,
     category: normalizeString(payload.category) || null,
     is_completed: Boolean(payload.is_completed) || status === 'done' || progress === 100,
-    project_id: Number.isFinite(projectId) ? projectId : null,
+    project_id: projectId,
     status,
     assignee: normalizeString(payload.assignee) || null,
     estimated_hours:
@@ -78,4 +93,3 @@ module.exports = {
   VALID_STATUSES,
   normalizeTaskPayload,
 };
-

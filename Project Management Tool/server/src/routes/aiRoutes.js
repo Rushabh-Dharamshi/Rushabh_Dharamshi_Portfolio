@@ -35,7 +35,7 @@ router.post('/chat', async (req, res, next) => {
     res.json({
       ...result,
       latency_ms: latencyMs,
-      mode: 'langchain-rag-ollama',
+      mode: 'vertex-rag-gemini',
     });
   } catch (error) {
     next(error);
@@ -43,4 +43,3 @@ router.post('/chat', async (req, res, next) => {
 });
 
 module.exports = router;
-

@@ -16,16 +16,33 @@ const baseTaskFields = `
   t.estimated_hours,
   t.created_at,
   t.updated_at,
-  p.name AS project_name
+  CASE
+    WHEN p.name IS NULL OR LOWER(p.name) = 'general' THEN 'Unassigned'
+    ELSE p.name
+  END AS project_name
 `;
+
+function normalizeProjectId(projectId) {
+  if (projectId === undefined || projectId === null || projectId === '') {
+    return undefined;
+  }
+
+  const numeric = Number(projectId);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return undefined;
+  }
+
+  return numeric;
+}
 
 async function listTasks({ projectId } = {}) {
   const where = [];
   const values = [];
+  const scopedProjectId = normalizeProjectId(projectId);
 
-  if (projectId) {
+  if (scopedProjectId) {
     where.push('t.project_id = ?');
-    values.push(projectId);
+    values.push(scopedProjectId);
   }
 
   const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -154,56 +171,79 @@ async function deleteTask(id) {
   await pool.query(`DELETE FROM tasks WHERE id = ?`, [id]);
 }
 
-async function getAnalyticsOverview() {
+async function getAnalyticsOverview({ projectId } = {}) {
+  const scopedProjectId = normalizeProjectId(projectId);
+  const filter = scopedProjectId ? 'WHERE project_id = ?' : '';
+  const joinedFilter = scopedProjectId ? 'WHERE t.project_id = ?' : '';
+  const values = scopedProjectId ? [scopedProjectId] : [];
+
   const queries = [
     pool.query(
       `SELECT COALESCE(category, 'Unspecified') AS key_name, COUNT(*) AS value_count
        FROM tasks
+       ${filter}
        GROUP BY COALESCE(category, 'Unspecified')
-       ORDER BY value_count DESC`
+       ORDER BY value_count DESC`,
+      values
     ),
     pool.query(
       `SELECT priority AS key_name, COUNT(*) AS value_count
        FROM tasks
+       ${filter}
        GROUP BY priority
-       ORDER BY value_count DESC`
+       ORDER BY value_count DESC`,
+      values
     ),
     pool.query(
       `SELECT difficulty_level AS key_name, COUNT(*) AS value_count
        FROM tasks
+       ${filter}
        GROUP BY difficulty_level
-       ORDER BY value_count DESC`
+       ORDER BY value_count DESC`,
+      values
     ),
     pool.query(
       `SELECT status AS key_name, COUNT(*) AS value_count
        FROM tasks
+       ${filter}
        GROUP BY status
-       ORDER BY value_count DESC`
+       ORDER BY value_count DESC`,
+      values
     ),
     pool.query(
       `SELECT DATE_FORMAT(updated_at, '%Y-%m-%d') AS day, COUNT(*) AS completed_count
        FROM tasks
-       WHERE is_completed = 1
+       ${filter} ${filter ? 'AND' : 'WHERE'} is_completed = 1
        GROUP BY DATE_FORMAT(updated_at, '%Y-%m-%d')
        ORDER BY day DESC
-       LIMIT 14`
+       LIMIT 14`,
+      values
     ),
     pool.query(
       `SELECT COALESCE(assignee, 'Unassigned') AS assignee, COUNT(*) AS open_tasks, ROUND(AVG(progress), 2) AS avg_progress
        FROM tasks
-       WHERE is_completed = 0
+       ${filter} ${filter ? 'AND' : 'WHERE'} is_completed = 0
        GROUP BY COALESCE(assignee, 'Unassigned')
        ORDER BY open_tasks DESC
-       LIMIT 10`
+       LIMIT 10`,
+      values
     ),
     pool.query(
-      `SELECT COALESCE(p.name, 'General') AS project_name,
+      `SELECT CASE
+                WHEN p.name IS NULL OR LOWER(p.name) = 'general' THEN 'Unassigned'
+                ELSE p.name
+              END AS project_name,
               SUM(CASE WHEN t.is_completed = 1 THEN 1 ELSE 0 END) AS completed,
               COUNT(*) AS total
        FROM tasks t
        LEFT JOIN projects p ON p.id = t.project_id
-       GROUP BY COALESCE(p.name, 'General')
-       ORDER BY total DESC`
+       ${joinedFilter}
+       GROUP BY CASE
+                  WHEN p.name IS NULL OR LOWER(p.name) = 'general' THEN 'Unassigned'
+                  ELSE p.name
+                END
+       ORDER BY total DESC`,
+      values
     ),
   ];
 
@@ -231,5 +271,3 @@ module.exports = {
   deleteTask,
   getAnalyticsOverview,
 };
-
-

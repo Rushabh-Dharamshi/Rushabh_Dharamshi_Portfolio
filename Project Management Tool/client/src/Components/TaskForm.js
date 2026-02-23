@@ -16,13 +16,16 @@ function TaskForm({ task, setTask, projects, onSubmit, isEditing }) {
     });
   };
 
+  const hasProject = Number.isFinite(Number(task.project_id)) && Number(task.project_id) > 0;
+
   const canSubmit =
     task.title &&
     task.description &&
     task.due_date &&
     task.priority &&
     task.difficulty_level &&
-    task.status;
+    task.status &&
+    hasProject;
 
   return (
     <Form onSubmit={onSubmit} className="panel-card">
@@ -135,14 +138,16 @@ function TaskForm({ task, setTask, projects, onSubmit, isEditing }) {
             className="field-input"
             value={task.project_id || ''}
             onChange={(event) => handleChange('project_id', event.target.value ? Number(event.target.value) : null)}
+            required
           >
-            <option value="">General</option>
+            <option value="">Select project</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
               </option>
             ))}
           </Form.Select>
+          {!projects.length && <small className="text-muted">Create a project before adding tasks.</small>}
         </Col>
 
         <Col md={3}>
