@@ -27,6 +27,11 @@ function normalizeTaskPayload(payload, { isUpdate = false } = {}) {
       ? 'done'
       : 'backlog';
 
+  const normalizedEstimatedHours =
+    payload.estimated_hours === null || payload.estimated_hours === undefined || payload.estimated_hours === ''
+      ? null
+      : Number(payload.estimated_hours);
+
   if (
     !title ||
     !description ||
@@ -70,6 +75,10 @@ function normalizeTaskPayload(payload, { isUpdate = false } = {}) {
     throw new Error('A task can be marked completed only when progress is 100');
   }
 
+  if (normalizedEstimatedHours !== null && (!Number.isFinite(normalizedEstimatedHours) || normalizedEstimatedHours < 0)) {
+    throw new Error('estimated_hours must be a non-negative number');
+  }
+
   return {
     title,
     description,
@@ -82,10 +91,7 @@ function normalizeTaskPayload(payload, { isUpdate = false } = {}) {
     project_id: projectId,
     status,
     assignee: normalizeString(payload.assignee) || null,
-    estimated_hours:
-      payload.estimated_hours === null || payload.estimated_hours === undefined || payload.estimated_hours === ''
-        ? null
-        : Number(payload.estimated_hours),
+    estimated_hours: normalizedEstimatedHours,
   };
 }
 
@@ -93,3 +99,4 @@ module.exports = {
   VALID_STATUSES,
   normalizeTaskPayload,
 };
+

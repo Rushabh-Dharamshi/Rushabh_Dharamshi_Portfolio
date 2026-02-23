@@ -147,7 +147,16 @@ body {
 
 .project-create {
   display: flex;
+  flex-direction: column;
   gap: 0.35rem;
+}
+
+.project-create .primary-btn {
+  align-self: flex-start;
+}
+
+.project-description {
+  min-width: 0;
 }
 
 .list-grid {
@@ -362,6 +371,15 @@ body {
   background: #0f766e;
 }
 
+.popup-alerts {
+  z-index: 1080;
+}
+
+.popup-toast {
+  min-width: 320px;
+  box-shadow: var(--shadow);
+}
+
 .assistant-panel {
   margin-top: 1rem;
 }
@@ -442,3 +460,6 @@ body {
     flex-direction: column;
   }
 }
+
+
+

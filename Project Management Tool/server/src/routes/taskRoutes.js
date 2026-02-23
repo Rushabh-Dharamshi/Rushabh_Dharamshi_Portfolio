@@ -12,6 +12,7 @@ function isValidationError(error) {
     'Status can be set to done',
     'marked completed only',
     'project_id',
+    'estimated_hours',
   ].some((token) => error.message.includes(token));
 }
 
@@ -111,4 +112,5 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 module.exports = router;
+
 

@@ -31,6 +31,19 @@ describe('normalizeTaskPayload', () => {
     expect(payload.project_id).toBe(3);
   });
 
+  test('persists optional user-entered fields', () => {
+    const payload = normalizeTaskPayload({
+      ...basePayload,
+      category: '  Operations  ',
+      assignee: '  Priya  ',
+      estimated_hours: '12.5',
+    });
+
+    expect(payload.category).toBe('Operations');
+    expect(payload.assignee).toBe('Priya');
+    expect(payload.estimated_hours).toBe(12.5);
+  });
+
   test('rejects status done when progress is below 100', () => {
     expect(() =>
       normalizeTaskPayload({
@@ -58,5 +71,14 @@ describe('normalizeTaskPayload', () => {
         priority: 'urgent',
       })
     ).toThrow('Priority must be one of: low, medium, high');
+  });
+
+  test('rejects invalid estimated_hours', () => {
+    expect(() =>
+      normalizeTaskPayload({
+        ...basePayload,
+        estimated_hours: 'abc',
+      })
+    ).toThrow('estimated_hours must be a non-negative number');
   });
 });

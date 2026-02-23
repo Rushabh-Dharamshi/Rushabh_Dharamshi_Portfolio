@@ -79,7 +79,7 @@ module.exports = {
     geminiRegion: process.env.GEMINI_REGION || 'global',
     ragTopK: Number(process.env.RAG_TOP_K || 4),
     temperature: Number(process.env.GEMINI_TEMPERATURE || 0.15),
-    maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 512),
+    maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 2048),
   },
 };
 

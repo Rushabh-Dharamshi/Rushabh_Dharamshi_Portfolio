@@ -29,7 +29,7 @@ function getVertexConfig() {
     ragChunkOverlap: Number(process.env.RAG_CHUNK_OVERLAP || 100),
     ragRefreshTimeoutMs: Number(process.env.RAG_REFRESH_TIMEOUT_MS || 180000),
     temperature: Number(process.env.GEMINI_TEMPERATURE || 0.15),
-    maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 512),
+    maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS || 2048),
   };
 }
 
@@ -303,7 +303,7 @@ function buildRagCorpusResourceName(config) {
   return 'projects/' + config.projectId + '/locations/' + config.ragRegion + '/ragCorpora/' + config.ragCorpusId;
 }
 
-function buildRetrievalPrompt(question, scopedProjectId, context) {
+function buildRetrievalPrompt(question, scopedProjectId, context, conversationContext) {
   const lines = ['User question: ' + question];
 
   if (Number.isFinite(Number(scopedProjectId)) && Number(scopedProjectId) > 0) {
@@ -632,7 +632,7 @@ async function retrieveContexts(args) {
       rag_resources: [{ rag_corpus: ragCorpusResource }],
     },
     query: {
-      text: buildRetrievalPrompt(args.question, args.scopedProjectId, args.context),
+      text: buildRetrievalPrompt(args.question, args.scopedProjectId, args.context, args.conversationContext),
       rag_retrieval_config: {
         top_k: args.vertexConfig.ragTopK,
       },
@@ -693,6 +693,7 @@ function buildGenerationPrompt(args) {
     'Answer using only the live SQL context and retrieved RAG context below.',
     'If information is missing, say so clearly and suggest what to ask next.',
     'Keep responses concise and actionable.',
+    'Do not end mid-sentence. Ensure your final sentence is complete.',
     'Do not include source URIs, latency, mode labels, or internal metadata unless explicitly asked.',
     '',
     'User question:',
@@ -726,33 +727,48 @@ function extractGeneratedText(payload) {
     .trim();
 }
 
-async function generateAnswer(args) {
-  const endpoint = buildVertexApiBase(args.vertexConfig.geminiRegion)
-    + '/v1/projects/' + args.vertexConfig.projectId
-    + '/locations/' + args.vertexConfig.geminiRegion
-    + '/publishers/google/models/' + encodeURIComponent(args.vertexConfig.geminiModel)
-    + ':generateContent';
+function extractFinishReason(payload) {
+  const candidates = Array.isArray(payload && payload.candidates) ? payload.candidates : [];
+  if (!candidates.length) {
+    return '';
+  }
 
+  return String(candidates[0].finishReason || '').toUpperCase();
+}
+
+function hasCompleteSentenceEnding(text) {
+  return /[.!?]["')\]]?\s*$/.test(String(text || '').trim());
+}
+
+function buildContinuationPrompt(question, partialAnswer) {
+  return [
+    'Continue the assistant response below.',
+    'Finish the current sentence and end with a complete sentence.',
+    'Do not repeat earlier text.',
+    '',
+    'Original question:',
+    question,
+    '',
+    'Current partial response:',
+    partialAnswer,
+  ].join('\n');
+}
+
+async function generateModelResponse(endpoint, promptText, vertexConfig, maxOutputTokensOverride) {
   const payload = {
     contents: [
       {
         role: 'user',
         parts: [
           {
-            text: buildGenerationPrompt({
-              question: args.question,
-              retrievedDocs: args.retrievedDocs,
-              conversationContext: args.conversationContext,
-              uiContext: args.uiContext,
-              liveSqlContext: args.liveSqlContext,
-            }),
+            text: promptText,
           },
         ],
       },
     ],
     generationConfig: {
-      temperature: args.vertexConfig.temperature,
-      maxOutputTokens: args.vertexConfig.maxOutputTokens,
+      temperature: vertexConfig.temperature,
+      maxOutputTokens: maxOutputTokensOverride || vertexConfig.maxOutputTokens,
     },
   };
 
@@ -761,7 +777,49 @@ async function generateAnswer(args) {
     body: payload,
   });
 
-  return extractGeneratedText(response);
+  return {
+    text: extractGeneratedText(response),
+    finishReason: extractFinishReason(response),
+  };
+}
+
+async function generateAnswer(args) {
+  const endpoint = buildVertexApiBase(args.vertexConfig.geminiRegion)
+    + '/v1/projects/' + args.vertexConfig.projectId
+    + '/locations/' + args.vertexConfig.geminiRegion
+    + '/publishers/google/models/' + encodeURIComponent(args.vertexConfig.geminiModel)
+    + ':generateContent';
+
+  const primary = await generateModelResponse(
+    endpoint,
+    buildGenerationPrompt({
+      question: args.question,
+      retrievedDocs: args.retrievedDocs,
+      conversationContext: args.conversationContext,
+      uiContext: args.uiContext,
+      liveSqlContext: args.liveSqlContext,
+    }),
+    args.vertexConfig
+  );
+
+  let answer = String(primary.text || '').trim();
+  const endedByTokenLimit = primary.finishReason.indexOf('MAX') >= 0;
+
+  if (answer && (endedByTokenLimit || !hasCompleteSentenceEnding(answer))) {
+    const continuation = await generateModelResponse(
+      endpoint,
+      buildContinuationPrompt(args.question, answer),
+      args.vertexConfig,
+      256
+    );
+
+    const continuationText = String(continuation.text || '').trim();
+    if (continuationText) {
+      answer = (answer + ' ' + continuationText).trim();
+    }
+  }
+
+  return answer;
 }
 
 function mapError(error) {
@@ -830,24 +888,17 @@ async function answerMessage(message, options) {
 
     await refreshRagCorpusFromSql(vertexConfig);
 
-    const exactStatusAnswer = await buildExactStatusAnswer(question, scopedProjectId);
-    if (exactStatusAnswer) {
-      appendConversation(conversation, question, exactStatusAnswer, recentMessages);
-      return {
-        answer: exactStatusAnswer,
-        sources: [],
-        cached: false,
-      };
-    }
+
+    const conversationContext = formatConversationContext(conversation, recentMessages);
 
     const retrievedDocs = await retrieveContexts({
       question: question,
       context: context,
       scopedProjectId: scopedProjectId,
+      conversationContext: conversationContext,
       vertexConfig: vertexConfig,
     });
 
-    const conversationContext = formatConversationContext(conversation, recentMessages);
     const uiContext = formatUiContext(context, scopedProject);
     const liveSqlContext = await buildLiveSqlContext(scopedProjectId);
 
@@ -876,3 +927,4 @@ async function answerMessage(message, options) {
 module.exports = {
   answerMessage,
 };
+

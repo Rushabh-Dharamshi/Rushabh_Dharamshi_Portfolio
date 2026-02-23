@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Badge, Button, Col, Container, Form, Row, Spinner } from 'react-bootstrap';
+import { Badge, Button, Col, Container, Form, Row, Spinner, Toast, ToastContainer } from 'react-bootstrap';
 import TaskForm from './Components/TaskForm';
 import TaskList from './Components/TaskList';
 import TaskStats from './Components/TaskStats';
@@ -49,6 +49,7 @@ function App() {
   const [search, setSearch] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
+  const [newProjectDescription, setNewProjectDescription] = useState('');
 
   const [loading, setLoading] = useState(true);
   const [riskLoading, setRiskLoading] = useState(false);
@@ -242,7 +243,10 @@ function App() {
       const response = await fetch(apiUrl('/projects'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newProjectName.trim() }),
+        body: JSON.stringify({
+          name: newProjectName.trim(),
+          description: newProjectDescription.trim(),
+        }),
       });
 
       const data = await response.json();
@@ -251,6 +255,7 @@ function App() {
       }
 
       setNewProjectName('');
+      setNewProjectDescription('');
       setProjects((prev) => [...prev, data]);
       setMessage('Project created.');
       setTimeout(() => setMessage(''), 2500);
@@ -368,8 +373,20 @@ function App() {
           </div>
         </header>
 
-        {message && <Alert variant="success">{message}</Alert>}
-        {error && <Alert variant="danger">{error}</Alert>}
+        <ToastContainer position="top-end" className="p-3 popup-alerts">
+          <Toast show={Boolean(message)} onClose={() => setMessage('')} autohide delay={2800} bg="success" className="popup-toast">
+            <Toast.Header closeButton>
+              <strong className="me-auto">Success</strong>
+            </Toast.Header>
+            <Toast.Body className="text-white">{message}</Toast.Body>
+          </Toast>
+          <Toast show={Boolean(error)} onClose={() => setError('')} autohide delay={4200} bg="danger" className="popup-toast">
+            <Toast.Header closeButton>
+              <strong className="me-auto">Error</strong>
+            </Toast.Header>
+            <Toast.Body className="text-white">{error}</Toast.Body>
+          </Toast>
+        </ToastContainer>
 
         {loading ? (
           <div className="loading-wrap">
@@ -448,6 +465,12 @@ function App() {
                       onChange={(event) => setNewProjectName(event.target.value)}
                       placeholder="Project name"
                     />
+                    <Form.Control
+                      className="field-input project-description"
+                      value={newProjectDescription}
+                      onChange={(event) => setNewProjectDescription(event.target.value)}
+                      placeholder="Description (optional)"
+                    />
                     <Button className="primary-btn" onClick={handleCreateProject}>Add</Button>
                   </div>
                 </Col>
@@ -495,6 +518,7 @@ function App() {
 }
 
 export default App;
+
 
 
 
