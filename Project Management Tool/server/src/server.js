@@ -57,6 +57,7 @@ function createApp() {
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
   }));
+  
   app.use(compression());
   app.use(cors(createCorsOptions()));
   app.use(express.json({ limit: '1mb' }));
