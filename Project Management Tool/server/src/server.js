@@ -103,6 +103,7 @@ function createApp() {
   app.use('/api/analytics', analyticsRouter);
   app.use('/api', analyticsRouter);
   app.use('/api', aiRouter);
+  
 
   app.use((error, req, res, next) => {
     console.error('Unhandled server error:', error);
