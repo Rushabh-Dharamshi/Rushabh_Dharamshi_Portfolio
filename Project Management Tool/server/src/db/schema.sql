@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   status ENUM('backlog', 'in_progress', 'blocked', 'done') NOT NULL DEFAULT 'backlog',
   assignee VARCHAR(255) NULL,
   estimated_hours DECIMAL(6,2) NULL,
+  risk_score DECIMAL(4,2) NULL,
+  risk_level ENUM('low', 'medium', 'high') NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -72,6 +74,34 @@ SET @estimated_hours_exists = (
     AND COLUMN_NAME = 'estimated_hours'
 );
 SET @sql = IF(@estimated_hours_exists = 0, 'ALTER TABLE tasks ADD COLUMN estimated_hours DECIMAL(6,2) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @risk_score_exists = (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'tasks'
+    AND COLUMN_NAME = 'risk_score'
+);
+SET @sql = IF(@risk_score_exists = 0, 'ALTER TABLE tasks ADD COLUMN risk_score DECIMAL(4,2) NULL', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @risk_level_exists = (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'tasks'
+    AND COLUMN_NAME = 'risk_level'
+);
+SET @sql = IF(
+  @risk_level_exists = 0,
+  'ALTER TABLE tasks ADD COLUMN risk_level ENUM(''low'', ''medium'', ''high'') NULL',
+  'SELECT 1'
+);
 PREPARE stmt FROM @sql;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;

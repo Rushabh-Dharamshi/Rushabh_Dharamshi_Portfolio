@@ -11,7 +11,12 @@ jest.mock('../../src/repositories/taskRepository', () => ({
   deleteTask: jest.fn(),
 }));
 
+jest.mock('../../src/services/riskScoringService', () => ({
+  refreshTaskRisk: jest.fn(),
+}));
+
 const taskRepository = require('../../src/repositories/taskRepository');
+const { refreshTaskRisk } = require('../../src/services/riskScoringService');
 const taskRoutes = require('../../src/routes/taskRoutes');
 
 function createTestApp() {
@@ -29,6 +34,7 @@ describe('taskRoutes', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    refreshTaskRisk.mockResolvedValue(null);
     app = createTestApp();
   });
 
@@ -40,6 +46,47 @@ describe('taskRoutes', () => {
     expect(response.status).toBe(400);
     expect(response.body.error).toContain('Missing required fields');
     expect(taskRepository.createTask).not.toHaveBeenCalled();
+    expect(refreshTaskRisk).not.toHaveBeenCalled();
+  });
+
+  test('POST /tasks refreshes risk for created task', async () => {
+    taskRepository.createTask.mockResolvedValue({ id: 3, title: 'New Task' });
+    refreshTaskRisk.mockResolvedValue({ id: 3, title: 'New Task', risk_level: 'medium', risk_score: 0.52 });
+
+    const response = await request(app).post('/tasks').send({
+      title: 'New Task',
+      description: 'Task description',
+      due_date: '2026-12-15',
+      priority: 'medium',
+      difficulty_level: 'easy',
+      progress: 10,
+      project_id: 1,
+    });
+
+    expect(response.status).toBe(201);
+    expect(refreshTaskRisk).toHaveBeenCalledWith(3);
+    expect(response.body.task.risk_level).toBe('medium');
+  });
+
+  test('PUT /tasks/:id refreshes risk after update', async () => {
+    taskRepository.updateTask.mockResolvedValue({ id: 5, title: 'Updated Task' });
+    refreshTaskRisk.mockResolvedValue({ id: 5, title: 'Updated Task', risk_level: 'low', risk_score: 0.31 });
+
+    const response = await request(app).put('/tasks/5').send({
+      title: 'Updated Task',
+      description: 'Task description',
+      due_date: '2026-12-15',
+      priority: 'low',
+      difficulty_level: 'easy',
+      progress: 80,
+      project_id: 1,
+      status: 'in_progress',
+      is_completed: false,
+    });
+
+    expect(response.status).toBe(200);
+    expect(refreshTaskRisk).toHaveBeenCalledWith(5);
+    expect(response.body.task.risk_level).toBe('low');
   });
 
   test('PATCH /tasks/:id/completed returns 400 when progress is below 100', async () => {
@@ -56,6 +103,18 @@ describe('taskRoutes', () => {
     expect(response.status).toBe(400);
     expect(response.body.error).toBe('A task can be marked completed only when progress is 100');
     expect(taskRepository.updateTaskCompletion).not.toHaveBeenCalled();
+    expect(refreshTaskRisk).not.toHaveBeenCalled();
+  });
+
+  test('PATCH /tasks/:id/completed refreshes risk when update succeeds', async () => {
+    taskRepository.getTaskById.mockResolvedValue({ id: 7, progress: 100, is_completed: 0 });
+    taskRepository.updateTaskCompletion.mockResolvedValue();
+
+    const response = await request(app).patch('/tasks/7/completed').send({ is_completed: true });
+
+    expect(response.status).toBe(200);
+    expect(taskRepository.updateTaskCompletion).toHaveBeenCalledWith(7, true);
+    expect(refreshTaskRisk).toHaveBeenCalledWith(7);
   });
 
   test('PATCH /tasks/:id/status returns 400 when done is requested below 100', async () => {
@@ -72,9 +131,10 @@ describe('taskRoutes', () => {
     expect(response.status).toBe(400);
     expect(response.body.error).toBe('Status can be set to done only when progress is 100');
     expect(taskRepository.updateTaskStatus).not.toHaveBeenCalled();
+    expect(refreshTaskRisk).not.toHaveBeenCalled();
   });
 
-  test('PATCH /tasks/:id/status updates status when progress is 100', async () => {
+  test('PATCH /tasks/:id/status updates status and refreshes risk when progress is 100', async () => {
     taskRepository.getTaskById.mockResolvedValue({
       id: 12,
       progress: 100,
@@ -89,5 +149,6 @@ describe('taskRoutes', () => {
     expect(response.status).toBe(200);
     expect(response.body.message).toBe('Task status updated');
     expect(taskRepository.updateTaskStatus).toHaveBeenCalledWith(12, 'done');
+    expect(refreshTaskRisk).toHaveBeenCalledWith(12);
   });
 });

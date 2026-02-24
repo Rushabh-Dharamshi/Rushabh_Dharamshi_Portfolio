@@ -1,6 +1,7 @@
 const express = require('express');
 const taskRepository = require('../repositories/taskRepository');
 const { normalizeTaskPayload, VALID_STATUSES } = require('../services/taskService');
+const { refreshTaskRisk } = require('../services/riskScoringService');
 
 const router = express.Router();
 
@@ -14,6 +15,16 @@ function isValidationError(error) {
     'project_id',
     'estimated_hours',
   ].some((token) => error.message.includes(token));
+}
+
+async function refreshTaskRiskSafely(taskId, fallbackTask = null) {
+  try {
+    const refreshedTask = await refreshTaskRisk(taskId);
+    return refreshedTask || fallbackTask;
+  } catch (error) {
+    console.warn(`Risk refresh failed for task ${taskId}: ${error.message}`);
+    return fallbackTask;
+  }
 }
 
 router.get('/', async (req, res, next) => {
@@ -30,7 +41,8 @@ router.post('/', async (req, res, next) => {
   try {
     const payload = normalizeTaskPayload(req.body);
     const createdTask = await taskRepository.createTask(payload);
-    res.status(201).json({ message: 'Task added', taskId: createdTask.id, task: createdTask });
+    const taskWithRisk = await refreshTaskRiskSafely(createdTask.id, createdTask);
+    res.status(201).json({ message: 'Task added', taskId: createdTask.id, task: taskWithRisk });
   } catch (error) {
     if (isValidationError(error)) {
       return res.status(400).json({ error: error.message });
@@ -41,9 +53,11 @@ router.post('/', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
+    const taskId = Number(req.params.id);
     const payload = normalizeTaskPayload(req.body, { isUpdate: true });
-    const task = await taskRepository.updateTask(Number(req.params.id), payload);
-    res.json({ message: 'Task updated successfully', task });
+    const task = await taskRepository.updateTask(taskId, payload);
+    const taskWithRisk = await refreshTaskRiskSafely(taskId, task);
+    res.json({ message: 'Task updated successfully', task: taskWithRisk });
   } catch (error) {
     if (isValidationError(error)) {
       return res.status(400).json({ error: error.message });
@@ -71,6 +85,7 @@ router.patch('/:id/completed', async (req, res, next) => {
     }
 
     await taskRepository.updateTaskCompletion(taskId, isCompleted);
+    await refreshTaskRiskSafely(taskId);
     res.json({ message: 'Task completion status updated' });
   } catch (error) {
     next(error);
@@ -96,6 +111,7 @@ router.patch('/:id/status', async (req, res, next) => {
     }
 
     await taskRepository.updateTaskStatus(taskId, status);
+    await refreshTaskRiskSafely(taskId);
     res.json({ message: 'Task status updated' });
   } catch (error) {
     next(error);
@@ -112,5 +128,3 @@ router.delete('/:id', async (req, res, next) => {
 });
 
 module.exports = router;
-
-

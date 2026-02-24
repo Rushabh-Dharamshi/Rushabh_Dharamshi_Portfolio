@@ -14,6 +14,8 @@ const baseTaskFields = `
   t.status,
   t.assignee,
   t.estimated_hours,
+  t.risk_score,
+  t.risk_level,
   t.created_at,
   t.updated_at,
   CASE
@@ -164,7 +166,34 @@ async function updateTaskCompletion(id, isCompleted) {
 }
 
 async function updateTaskStatus(id, status) {
-  await pool.query(`UPDATE tasks SET status = ? WHERE id = ?`, [status, id]);
+  await pool.query('UPDATE tasks SET status = ? WHERE id = ?', [status, id]);
+}
+
+async function updateTaskRisks(entries) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return;
+  }
+
+  const updates = entries
+    .map((entry) => ({
+      id: Number(entry.id),
+      score: Number(entry.score),
+      label: String(entry.label || '').toLowerCase(),
+    }))
+    .filter((entry) => Number.isFinite(entry.id) && entry.id > 0 && Number.isFinite(entry.score) && ['low', 'medium', 'high'].includes(entry.label));
+
+  if (updates.length === 0) {
+    return;
+  }
+
+  await Promise.all(
+    updates.map((entry) =>
+      pool.query(
+        'UPDATE tasks SET risk_score = ?, risk_level = ? WHERE id = ?',
+        [Number(entry.score.toFixed(2)), entry.label, entry.id]
+      )
+    )
+  );
 }
 
 async function deleteTask(id) {
@@ -268,6 +297,7 @@ module.exports = {
   updateTask,
   updateTaskCompletion,
   updateTaskStatus,
+  updateTaskRisks,
   deleteTask,
   getAnalyticsOverview,
 };
