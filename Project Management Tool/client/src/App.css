@@ -463,3 +463,21 @@ body {
 
 
 
+
+.velocity-card {
+  min-height: 220px;
+}
+
+.velocity-header {
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.velocity-select {
+  max-width: 220px;
+  min-width: 180px;
+}
+
+.velocity-chart-wrap {
+  height: 165px;
+}

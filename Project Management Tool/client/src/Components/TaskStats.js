@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Bar, Doughnut, Line } from 'react-chartjs-2';
 import {
   ArcElement,
@@ -50,8 +50,7 @@ function toDataset(rows, fallbackLabel) {
   };
 }
 
-function buildVelocityDatasets(velocity, trend) {
-  const categories = velocity?.categories || [];
+function buildVelocityDatasets(categories, trend) {
   if (categories.length > 0) {
     return categories.map((series, index) => {
       const color = LINE_COLORS[index % LINE_COLORS.length];
@@ -63,7 +62,7 @@ function buildVelocityDatasets(velocity, trend) {
         tension: 0.25,
         fill: false,
         borderWidth: 2,
-        pointRadius: 3,
+        pointRadius: 2,
       };
     });
   }
@@ -77,7 +76,7 @@ function buildVelocityDatasets(velocity, trend) {
       tension: 0.25,
       fill: false,
       borderWidth: 2,
-      pointRadius: 3,
+      pointRadius: 2,
     },
   ];
 }
@@ -89,11 +88,30 @@ function TaskStats({ analytics, scopeLabel }) {
   const velocity = analytics?.completionVelocityByCategory || { days: [], categories: [] };
   const workload = analytics?.workload || [];
 
+  const [selectedVelocityCategory, setSelectedVelocityCategory] = useState('all');
+
+  const velocityCategoryOptions = useMemo(
+    () => (velocity.categories || []).map((item) => item.category),
+    [velocity.categories]
+  );
+
+  useEffect(() => {
+    if (selectedVelocityCategory !== 'all' && !velocityCategoryOptions.includes(selectedVelocityCategory)) {
+      setSelectedVelocityCategory('all');
+    }
+  }, [selectedVelocityCategory, velocityCategoryOptions]);
+
   const velocityLabels = velocity.days?.length > 0
     ? velocity.days
     : trend.map((row) => row.day);
 
-  const velocityDatasets = buildVelocityDatasets(velocity, trend);
+  const filteredVelocityCategories = selectedVelocityCategory === 'all'
+    ? (velocity.categories || [])
+    : (velocity.categories || []).filter((item) => item.category === selectedVelocityCategory);
+
+  const velocityDatasets = buildVelocityDatasets(filteredVelocityCategories, trend);
+
+  const workloadRows = Array.isArray(workload) ? workload : [];
 
   return (
     <section className="dashboard-grid" aria-label="Analytics dashboard">
@@ -136,50 +154,79 @@ function TaskStats({ analytics, scopeLabel }) {
         />
       </article>
 
-      <article className="panel-card chart-card wide">
-        <h3>Completion Velocity (Past 14 Days, Ending Today)</h3>
-        <Line
-          data={{
-            labels: velocityLabels,
-            datasets: velocityDatasets,
-          }}
-          options={{
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { position: 'bottom' },
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  precision: 0,
+      <article className="panel-card chart-card wide velocity-card">
+        <div className="row-inline velocity-header">
+          <h3>Completion Velocity (Past 14 Days, Ending Today)</h3>
+          <select
+            className="field-input velocity-select"
+            value={selectedVelocityCategory}
+            onChange={(event) => setSelectedVelocityCategory(event.target.value)}
+          >
+            <option value="all">All Categories</option>
+            {velocityCategoryOptions.map((item) => (
+              <option key={item} value={item}>{item}</option>
+            ))}
+          </select>
+        </div>
+        <div className="velocity-chart-wrap">
+          <Line
+            data={{
+              labels: velocityLabels,
+              datasets: velocityDatasets,
+            }}
+            options={{
+              responsive: true,
+              maintainAspectRatio: false,
+              plugins: {
+                legend: { position: 'bottom' },
+              },
+              scales: {
+                y: {
+                  beginAtZero: true,
+                  ticks: {
+                    precision: 0,
+                  },
                 },
               },
-            },
-          }}
-        />
+            }}
+          />
+        </div>
       </article>
 
       <article className="panel-card chart-card wide">
         <h3>Workload By Assignee</h3>
-        <Bar
-          data={{
-            labels: workload.map((row) => row.assignee),
-            datasets: [
-              {
-                label: 'Open Tasks',
-                data: workload.map((row) => row.open_tasks),
-                backgroundColor: '#1d4ed8',
+        {workloadRows.length ? (
+          <Bar
+            data={{
+              labels: workloadRows.map((row) => row.assignee),
+              datasets: [
+                {
+                  label: 'Open Tasks',
+                  data: workloadRows.map((row) => Number(row.open_tasks) || 0),
+                  backgroundColor: '#1d4ed8',
+                },
+                {
+                  label: 'Avg Progress',
+                  data: workloadRows.map((row) => Number(row.avg_progress) || 0),
+                  backgroundColor: '#f59e0b',
+                },
+              ],
+            }}
+            options={{
+              responsive: true,
+              plugins: {
+                legend: { position: 'bottom' },
               },
-              {
-                label: 'Avg Progress',
-                data: workload.map((row) => row.avg_progress),
-                backgroundColor: '#f59e0b',
+              scales: {
+                y: {
+                  beginAtZero: true,
+                },
               },
-            ],
-          }}
-        />
+            }}
+          />
+        ) : (
+          <p className="empty-state">No workload data available.</p>
+        )}
       </article>
     </section>
   );
