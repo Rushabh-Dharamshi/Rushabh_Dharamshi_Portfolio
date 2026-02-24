@@ -23,6 +23,19 @@ ChartJS.register(
   Legend
 );
 
+const LINE_COLORS = [
+  '#0f766e',
+  '#2563eb',
+  '#f59e0b',
+  '#ef4444',
+  '#7c3aed',
+  '#06b6d4',
+  '#84cc16',
+  '#ec4899',
+  '#334155',
+  '#dc2626',
+];
+
 function toDataset(rows, fallbackLabel) {
   if (!rows || rows.length === 0) {
     return {
@@ -37,11 +50,50 @@ function toDataset(rows, fallbackLabel) {
   };
 }
 
+function buildVelocityDatasets(velocity, trend) {
+  const categories = velocity?.categories || [];
+  if (categories.length > 0) {
+    return categories.map((series, index) => {
+      const color = LINE_COLORS[index % LINE_COLORS.length];
+      return {
+        label: series.category,
+        data: series.completed_count || [],
+        borderColor: color,
+        backgroundColor: `${color}33`,
+        tension: 0.25,
+        fill: false,
+        borderWidth: 2,
+        pointRadius: 3,
+      };
+    });
+  }
+
+  return [
+    {
+      label: 'Completed',
+      data: trend.map((row) => row.completed_count),
+      borderColor: '#0f766e',
+      backgroundColor: 'rgba(15, 118, 110, 0.22)',
+      tension: 0.25,
+      fill: false,
+      borderWidth: 2,
+      pointRadius: 3,
+    },
+  ];
+}
+
 function TaskStats({ analytics, scopeLabel }) {
   const category = toDataset(analytics?.category, 'No Data');
   const status = toDataset(analytics?.status, 'No Data');
   const trend = analytics?.completedTrend || [];
+  const velocity = analytics?.completionVelocityByCategory || { days: [], categories: [] };
   const workload = analytics?.workload || [];
+
+  const velocityLabels = velocity.days?.length > 0
+    ? velocity.days
+    : trend.map((row) => row.day);
+
+  const velocityDatasets = buildVelocityDatasets(velocity, trend);
 
   return (
     <section className="dashboard-grid" aria-label="Analytics dashboard">
@@ -85,20 +137,26 @@ function TaskStats({ analytics, scopeLabel }) {
       </article>
 
       <article className="panel-card chart-card wide">
-        <h3>Completion Velocity (Last 14 Updates)</h3>
+        <h3>Completion Velocity (Past 14 Days, Ending Today)</h3>
         <Line
           data={{
-            labels: trend.map((row) => row.day),
-            datasets: [
-              {
-                label: 'Completed',
-                data: trend.map((row) => row.completed_count),
-                borderColor: '#0f766e',
-                backgroundColor: 'rgba(15, 118, 110, 0.22)',
-                tension: 0.25,
-                fill: true,
+            labels: velocityLabels,
+            datasets: velocityDatasets,
+          }}
+          options={{
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { position: 'bottom' },
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  precision: 0,
+                },
               },
-            ],
+            },
           }}
         />
       </article>

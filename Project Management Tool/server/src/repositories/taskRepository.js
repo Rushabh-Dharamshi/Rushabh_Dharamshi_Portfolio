@@ -200,6 +200,55 @@ async function deleteTask(id) {
   await pool.query(`DELETE FROM tasks WHERE id = ?`, [id]);
 }
 
+function getLastNDaysIso(days) {
+  const totalDays = Math.max(1, Number(days) || 1);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const axis = [];
+  for (let offset = totalDays - 1; offset >= 0; offset -= 1) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - offset);
+    axis.push(day.toISOString().slice(0, 10));
+  }
+
+  return axis;
+}
+
+function buildCompletionVelocityByCategory(rows, dayAxis) {
+  const dayToIndex = new Map(dayAxis.map((day, index) => [day, index]));
+  const categorySeries = new Map();
+
+  rows.forEach((row) => {
+    const rawDay = row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day || '').slice(0, 10);
+    const dayIndex = dayToIndex.get(rawDay);
+    if (dayIndex === undefined) {
+      return;
+    }
+
+    const category = String(row.category || 'Unspecified');
+    if (!categorySeries.has(category)) {
+      categorySeries.set(category, new Array(dayAxis.length).fill(0));
+    }
+
+    const series = categorySeries.get(category);
+    series[dayIndex] = Number(row.completed_count || 0);
+  });
+
+  const categories = Array.from(categorySeries.entries())
+    .map(([category, completed_count]) => ({
+      category,
+      completed_count,
+      total_completed: completed_count.reduce((sum, value) => sum + Number(value || 0), 0),
+    }))
+    .sort((left, right) => right.total_completed - left.total_completed);
+
+  return {
+    days: dayAxis,
+    categories,
+  };
+}
+
 async function getAnalyticsOverview({ projectId } = {}) {
   const scopedProjectId = normalizeProjectId(projectId);
   const filter = scopedProjectId ? 'WHERE project_id = ?' : '';
@@ -240,12 +289,14 @@ async function getAnalyticsOverview({ projectId } = {}) {
       values
     ),
     pool.query(
-      `SELECT DATE_FORMAT(updated_at, '%Y-%m-%d') AS day, COUNT(*) AS completed_count
+      `SELECT DATE(updated_at) AS day,
+              COALESCE(category, 'Unspecified') AS category,
+              COUNT(*) AS completed_count
        FROM tasks
        ${filter} ${filter ? 'AND' : 'WHERE'} is_completed = 1
-       GROUP BY DATE_FORMAT(updated_at, '%Y-%m-%d')
-       ORDER BY day DESC
-       LIMIT 14`,
+         AND DATE(updated_at) BETWEEN DATE_SUB(CURDATE(), INTERVAL 13 DAY) AND CURDATE()
+       GROUP BY DATE(updated_at), COALESCE(category, 'Unspecified')
+       ORDER BY day ASC`,
       values
     ),
     pool.query(
@@ -276,20 +327,28 @@ async function getAnalyticsOverview({ projectId } = {}) {
     ),
   ];
 
-  const [category, priority, difficulty, status, completedTrend, workload, projectVelocity] =
-    await Promise.all(queries);
+  const [category, priority, difficulty, status, completionByCategoryByDay, workload, projectVelocity] = await Promise.all(queries);
+
+  const dayAxis = getLastNDaysIso(14);
+  const completionVelocityByCategory = buildCompletionVelocityByCategory(completionByCategoryByDay[0], dayAxis);
+
+  const completedTrend = dayAxis.map((day, index) => ({
+    day,
+    completed_count: completionVelocityByCategory.categories
+      .reduce((sum, item) => sum + Number(item.completed_count[index] || 0), 0),
+  }));
 
   return {
     category: category[0],
     priority: priority[0],
     difficulty: difficulty[0],
     status: status[0],
-    completedTrend: completedTrend[0].reverse(),
+    completedTrend,
+    completionVelocityByCategory,
     workload: workload[0],
     projectVelocity: projectVelocity[0],
   };
 }
-
 module.exports = {
   listTasks,
   getTaskById,

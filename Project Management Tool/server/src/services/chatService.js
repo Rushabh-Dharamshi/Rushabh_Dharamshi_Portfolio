@@ -1,6 +1,7 @@
 const { GoogleAuth } = require('google-auth-library');
 const projectRepository = require('../repositories/projectRepository');
 const taskRepository = require('../repositories/taskRepository');
+const { scoreTasks } = require('./riskScoringService');
 
 const CONVERSATION_TTL_MS = 45 * 60 * 1000;
 const MAX_CONVERSATIONS = 300;
@@ -345,6 +346,34 @@ function toIsoSafe(value) {
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
 }
 
+function resolveRiskScore(task) {
+  const direct = Number(task && task.risk_score);
+  if (Number.isFinite(direct)) {
+    return direct.toFixed(2);
+  }
+
+  const fromMl = Number(task && task.ml_risk && task.ml_risk.score);
+  if (Number.isFinite(fromMl)) {
+    return fromMl.toFixed(2);
+  }
+
+  return 'n/a';
+}
+
+function resolveRiskLevel(task) {
+  const direct = String((task && task.risk_level) || '').toLowerCase();
+  if (direct) {
+    return direct;
+  }
+
+  const fromMl = String((task && task.ml_risk && task.ml_risk.label) || '').toLowerCase();
+  if (fromMl) {
+    return fromMl;
+  }
+
+  return 'n/a';
+}
+
 function buildTaskRagDocs(tasks) {
   return tasks.map(function mapTask(task) {
     return {
@@ -361,6 +390,8 @@ function buildTaskRagDocs(tasks) {
         'Assignee: ' + (task.assignee || 'Unassigned'),
         'Category: ' + (task.category || 'Unspecified'),
         'Estimated Hours: ' + (task.estimated_hours ?? 'n/a'),
+        'Risk Score: ' + resolveRiskScore(task),
+        'Risk Level: ' + resolveRiskLevel(task),
         'Due Date: ' + task.due_date,
         'Completed: ' + (task.is_completed ? 'yes' : 'no'),
         'Created At: ' + (toIsoSafe(task.created_at) || task.created_at),
@@ -465,10 +496,11 @@ async function buildRagDocsFromSql() {
 
   const tasks = rows[0];
   const projects = rows[1];
+  const scoredTasks = tasks.length ? await scoreTasks(tasks, { persist: true }) : tasks;
 
-  return buildTaskRagDocs(tasks)
-    .concat(buildProjectRagDocs(projects, tasks))
-    .concat([buildSummaryRagDoc(tasks)]);
+  return buildTaskRagDocs(scoredTasks)
+    .concat(buildProjectRagDocs(projects, scoredTasks))
+    .concat([buildSummaryRagDoc(scoredTasks)]);
 }
 
 async function listGcsObjects(bucket, prefix) {
