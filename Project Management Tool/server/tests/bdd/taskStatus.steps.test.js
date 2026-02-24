@@ -13,6 +13,11 @@ jest.mock('../../src/repositories/taskRepository', () => ({
   deleteTask: jest.fn(),
 }));
 
+
+jest.mock('../../src/services/riskScoringService', () => ({
+  refreshTaskRisk: jest.fn().mockResolvedValue(null),
+}));
+
 const taskRepository = require('../../src/repositories/taskRepository');
 const taskRoutes = require('../../src/routes/taskRoutes');
 
