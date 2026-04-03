@@ -59,7 +59,13 @@ def test_wordcloud_data_without_categories():
 
     service = AnalyticsService(EmptyRepository(), lambda: 1050.0, lambda _month=None: 1500.0)
 
-    assert service.wordcloud_data() == {"top_category": None, "frequencies": []}
+    assert service.wordcloud_data() == {
+        "top_category": None,
+        "top_category_total": 0.0,
+        "dominant_label": None,
+        "dominant_value": 0.0,
+        "frequencies": [],
+    }
 
 
 def test_financial_pulse_balanced_month():

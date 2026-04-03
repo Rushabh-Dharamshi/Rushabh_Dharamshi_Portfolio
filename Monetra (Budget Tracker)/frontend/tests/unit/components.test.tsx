@@ -62,9 +62,9 @@ describe("presentational components", () => {
     );
 
     fireEvent.change(screen.getByDisplayValue("Food"), { target: { value: "Travel" } });
-    fireEvent.click(screen.getByText("Add transaction"));
-    fireEvent.click(screen.getByText("Update transaction"));
-    fireEvent.click(screen.getByText("Delete transaction"));
+    fireEvent.click(screen.getByText("Add expense"));
+    fireEvent.click(screen.getByText("Update expense"));
+    fireEvent.click(screen.getByText("Delete expense"));
     fireEvent.click(screen.getByText("Clear inputs"));
 
     expect(onChange).toHaveBeenCalled();

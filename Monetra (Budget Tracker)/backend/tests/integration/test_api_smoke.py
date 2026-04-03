@@ -109,43 +109,70 @@ def test_smoke_agent_workflows_and_run_history(client, app):
         def list_workflows(self):
             return [{"id": "month_end_close", "label": "Month-end close"}]
 
-        def run_workflow(self, workflow_name, payload):
-            assert workflow_name == "month_end_close"
-            assert payload == {}
-            return {
-                "id": 1,
-                "workflow_name": "month_end_close",
-                "workflow_label": "Month-end close",
-                "status": "completed",
-                "headline": "Month-end pack ready",
-                "summary": "Report and KPI pack completed.",
-                "risk_level": "low",
-                "recommended_actions": ["Review the summary."],
-                "automated_actions": ["Generated a fresh monthly PDF report for distribution."],
-                "email_subject": "Month-end pack ready",
-                "email_draft": "The close pack is ready.",
-                "task": "Run the workflow",
-                "model": "mistral:latest",
-                "tools_used": ["generate_monthly_report"],
-                "report_download_url": "/api/reports/monthly",
-                "generated_at": "2026-03-21T10:00:00Z",
-            }
-
         def list_runs(self, limit):
             assert limit == 8
             return [{"id": 1, "workflow_name": "month_end_close"}]
+
+        def start_workflow_run(self, workflow_name, payload, flask_app):
+            assert workflow_name == "month_end_close"
+            assert payload == {}
+            assert flask_app is not None
+            return {
+                "id": "workflow-job-1",
+                "status": "queued",
+                "workflow_name": workflow_name,
+                "task": "Run the workflow",
+                "created_at": "2026-03-21T10:00:00Z",
+                "started_at": None,
+                "completed_at": None,
+                "error": None,
+                "result": None,
+            }
+
+        def get_workflow_job(self, job_id):
+            assert job_id == "workflow-job-1"
+            return {
+                "id": "workflow-job-1",
+                "status": "completed",
+                "workflow_name": "month_end_close",
+                "task": "Run the workflow",
+                "created_at": "2026-03-21T10:00:00Z",
+                "started_at": "2026-03-21T10:00:01Z",
+                "completed_at": "2026-03-21T10:00:05Z",
+                "error": None,
+                "result": {
+                    "id": 1,
+                    "workflow_name": "month_end_close",
+                    "workflow_label": "Month-end close",
+                    "status": "completed",
+                    "headline": "Month-end pack ready",
+                    "summary": "Report and KPI pack completed.",
+                    "risk_level": "low",
+                    "recommended_actions": ["Review the summary."],
+                    "automated_actions": ["Generated a fresh monthly PDF report for distribution."],
+                    "email_subject": "Month-end pack ready",
+                    "email_draft": "The close pack is ready.",
+                    "task": "Run the workflow",
+                    "model": "mistral:latest",
+                    "tools_used": ["generate_monthly_report"],
+                    "report_download_url": "/api/reports/monthly",
+                    "generated_at": "2026-03-21T10:00:00Z",
+                },
+            }
 
     app.extensions["services"]["agent_service"] = FakeAgentService()
 
     workflows = client.get("/api/agents/workflows")
     run = client.post("/api/agents/workflows/month_end_close/run", json={})
+    workflow_status = client.get("/api/agents/workflow-jobs/workflow-job-1")
     runs = client.get("/api/agents/runs")
 
     assert workflows.status_code == 200
-    assert run.status_code == 200
+    assert run.status_code == 202
+    assert workflow_status.status_code == 200
     assert runs.status_code == 200
     assert any(item["id"] == "month_end_close" for item in workflows.get_json()["data"])
     assert run.get_json()["data"]["workflow_name"] == "month_end_close"
-    assert run.get_json()["data"]["automated_actions"]
+    assert workflow_status.get_json()["data"]["result"]["automated_actions"]
     assert runs.get_json()["data"][0]["workflow_name"] == "month_end_close"
 

@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 from io import BytesIO
 
 
@@ -254,10 +255,13 @@ def test_agent_bootstrap_endpoint(client, app):
 
 
 def test_recurring_occurrence_paid_and_restored(client):
+    today = date.today()
+    occurrence_date = (today.replace(day=28) + timedelta(days=4)).replace(day=1).isoformat()
+
     matching_transaction = client.post(
         "/api/expenses",
         json={
-            "date": "2026-04-01",
+            "date": occurrence_date,
             "category": "Housing",
             "description": "Rent payment",
             "amount": "700.00",
@@ -267,12 +271,12 @@ def test_recurring_occurrence_paid_and_restored(client):
 
     paid = client.post(
         "/api/recurring-items/1/occurrences/pay",
-        json={"occurrence_date": "2026-04-01", "transaction_id": transaction_id},
+        json={"occurrence_date": occurrence_date, "transaction_id": transaction_id},
     )
     calendar_after_paid = client.get("/api/recurring-items/calendar?days=45")
     restored = client.post(
         "/api/recurring-items/1/occurrences/unpay",
-        json={"occurrence_date": "2026-04-01"},
+        json={"occurrence_date": occurrence_date},
     )
     calendar_after_restore = client.get("/api/recurring-items/calendar?days=45")
 
@@ -282,14 +286,14 @@ def test_recurring_occurrence_paid_and_restored(client):
     assert all(
         not (
             item["recurring_item_id"] == 1
-            and item["date"] == "2026-04-01"
+            and item["date"] == occurrence_date
         )
         for item in calendar_after_paid.get_json()["data"]["occurrences"]
     )
     assert restored.status_code == 200
     assert restored.get_json()["data"]["message"] == "Reminder restored for this date."
     assert any(
-        item["recurring_item_id"] == 1 and item["date"] == "2026-04-01"
+        item["recurring_item_id"] == 1 and item["date"] == occurrence_date
         for item in calendar_after_restore.get_json()["data"]["occurrences"]
     )
 
