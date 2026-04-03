@@ -38,7 +38,8 @@ jobs:
           name: Run frontend tests
           command: |
             cd "Monetra (Budget Tracker)/frontend"
-            npm test
+            npx jest --runInBand --coverage=false tests/unit
+            npx jest --runInBand --coverage=false tests/integration
       - run:
           name: Run TypeScript check
           command: |
