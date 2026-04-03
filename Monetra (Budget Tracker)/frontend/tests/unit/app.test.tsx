@@ -1,17 +1,30 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 
 import RootLayout from "@/app/layout";
 import HomePage from "@/app/page";
+import { apiClient } from "@/lib/api-client";
 
 jest.mock("@/components/budget-tracker-shell", () => ({
   BudgetTrackerShell: () => <div>Mock Budget Tracker Shell</div>,
 }));
 
 describe("app entrypoints", () => {
-  it("renders the home page", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it("renders the home page", async () => {
+    jest.spyOn(apiClient, "getAuthSession").mockResolvedValue({
+      authenticated: true,
+      username: "Rushabh",
+    });
+
     render(<HomePage />);
-    expect(screen.getByText("Mock Budget Tracker Shell")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText("Mock Budget Tracker Shell")).toBeInTheDocument();
+    });
   });
 
   it("renders the root layout", () => {
