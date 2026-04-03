@@ -1,60 +1,74 @@
-# This config was automatically generated from your source code
-# Stacks detected: cicd:github-actions:.github/workflows,deps:node:Project Management Tool/server,deps:python:Monetra (Budget Tracker)/backend,test:jest:
 version: 2.1
-orbs:
-  node: circleci/node@5
-  python: circleci/python@2
+
 jobs:
-  test-node:
-    # Install node dependencies and run tests
-    executor: node/default
-    working_directory: ~/project/Project Management Tool/server
-    environment:
-      JEST_JUNIT_OUTPUT_DIR: ./test-results/
+  backend-tests:
+    docker:
+      - image: cimg/python:3.11
+    working_directory: ~/project
     steps:
       - checkout:
           path: ~/project
-      - node/install-packages:
-          pkg-manager: npm
       - run:
-          command: npm install jest-junit
+          name: Install backend dependencies
+          command: |
+            cd "Monetra (Budget Tracker)/backend"
+            python -m venv .venv
+            . .venv/bin/activate
+            pip install -r requirements-dev.txt
       - run:
-          name: Run tests
-          command: npm run test --ci --runInBand --reporters=default --reporters=jest-junit
-      - store_test_results:
-          path: ./test-results/
-  test-python:
-    # Install dependencies and run tests
+          name: Run backend tests
+          command: |
+            cd "Monetra (Budget Tracker)/backend"
+            . .venv/bin/activate
+            pytest -q --no-cov
+
+  frontend-tests:
     docker:
-      - image: cimg/python:3.8-node
-    working_directory: ~/project/Monetra (Budget Tracker)/backend
+      - image: cimg/node:22.9
+    working_directory: ~/project
     steps:
       - checkout:
           path: ~/project
-      - python/install-packages
       - run:
-          name: Run tests
-          command: pytest --junitxml=junit.xml || ((($? == 5)) && echo 'Did not find any tests to run.')
-      - store_test_results:
-          path: junit.xml
-  deploy:
-    # This is an example deploy job, not actually used by the workflow
-    docker:
-      - image: cimg/base:stable
+          name: Install frontend dependencies
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npm ci
+      - run:
+          name: Run frontend tests
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npm test
+      - run:
+          name: Run TypeScript check
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npx tsc --noEmit
+
+  docker-build:
+    machine:
+      image: ubuntu-2204:current
+    working_directory: ~/project
     steps:
-      # Replace this with steps to deploy to users
+      - checkout:
+          path: ~/project
       - run:
-          name: deploy
-          command: '#e.g. ./deploy.sh'
+          name: Build backend image
+          command: |
+            cd "Monetra (Budget Tracker)"
+            docker build -t monetra-backend ./backend
       - run:
-          name: found github actions config
-          command: ':'
+          name: Build frontend image
+          command: |
+            cd "Monetra (Budget Tracker)"
+            docker build -t monetra-frontend ./frontend
+
 workflows:
-  build-and-test:
+  ci:
     jobs:
-      - test-node
-      - test-python
-    # - deploy:
-    #     requires:
-    #       - test-node
-    #       - test-python
+      - backend-tests
+      - frontend-tests
+      - docker-build:
+          requires:
+            - backend-tests
+            - frontend-tests
