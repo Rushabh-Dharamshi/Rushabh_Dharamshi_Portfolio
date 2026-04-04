@@ -1,229 +1,303 @@
-# 💸 Monetra (Budget Tracker)
+﻿# 💸 Monetra
 
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white">
-  <img alt="Flask" src="https://img.shields.io/badge/Flask-Backend-000000?logo=flask&logoColor=white">
-  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-Database-4169E1?logo=postgresql&logoColor=white">
-  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-Frontend-000000?logo=nextdotjs&logoColor=white">
-  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-Typed_UI-3178C6?logo=typescript&logoColor=white">
+  <img alt="Flask" src="https://img.shields.io/badge/Flask-API-000000?logo=flask&logoColor=white">
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-Relational_DB-4169E1?logo=postgresql&logoColor=white">
+  <img alt="Next.js" src="https://img.shields.io/badge/Next.js-App-000000?logo=nextdotjs&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-Frontend-3178C6?logo=typescript&logoColor=white">
 </p>
 
 <p align="center">
   <img alt="Ollama" src="https://img.shields.io/badge/Ollama-Local_AI-111111">
-  <img alt="LangChain" src="https://img.shields.io/badge/LangChain-LLM_Orchestration-0B6BCB">
-  <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-Agent_Flows-1C3C3C">
+  <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-Agent_Workflows-1C3C3C">
+  <img alt="LangChain" src="https://img.shields.io/badge/LangChain-Orchestration-0B6BCB">
   <img alt="scikit-learn" src="https://img.shields.io/badge/scikit--learn-ML-F7931E?logo=scikitlearn&logoColor=white">
-  <img alt="Docker" src="https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker&logoColor=white">
-  <img alt="AWS Ready" src="https://img.shields.io/badge/AWS-Deployment_Ready-FF9900?logo=amazonaws&logoColor=white">
+  <img alt="Docker" src="https://img.shields.io/badge/Docker-Containers-2496ED?logo=docker&logoColor=white">
+  <img alt="Testing" src="https://img.shields.io/badge/Test_Coverage-100%25-16A34A">
 </p>
 
-Monetra is a full-stack personal finance platform for recording expenses, monitoring budget performance, generating reports, surfacing predictive insights, and orchestrating local agentic AI workflows. The system combines a Flask backend for business logic and APIs, PostgreSQL for persistence, and a Next.js frontend for a dashboard-driven user experience.
+Monetra is a full-stack personal finance platform for expense tracking, recurring payment management, KPI analytics, PDF reporting, predictive forecasting, and local agentic AI workflows. It combines a `Next.js + React + TypeScript` frontend with a `Flask + PostgreSQL` backend and a local `Ollama` runtime for AI-assisted finance operations.
 
-## ✨ App Overview
+## 🌈 Highlights
 
-Monetra helps a user track day-to-day spending, understand where money is going, and act on trends before a monthly budget is exceeded. It combines operational features such as expense management and CSV import/export with analytical features such as category trends, prediction, KPI dashboards, visual reporting, and financial health indicators.
-
-## 🚀 Features
-
-- 💳 Expense create, read, update, and delete flows with server-side validation
-- 🔎 Search by transaction ID for direct record lookup
-- 📥 CSV import with row cleaning, whitespace normalization, and automatic skipping of rows with missing values
-- 📤 CSV export for offline analysis and backups
-- 📊 Monthly dashboard with budget progress, total spend, and weekly totals
-- 📈 KPI visualizations including category mix, monthly trend, and weekly cadence charts
-- 🧠 Category analytics showing strongest and weakest spend areas
-- ☁️ Word-cloud data for the most prominent expense descriptions
-- ❤️ Financial pulse analytics with health score, spend velocity, runway, and recent activity
-- 🤖 Next-month spend prediction using machine learning
-- 🧾 Detailed multi-section PDF financial reports with charts, category variance analysis, transaction highlights, insights, and recommendations
-- 🔁 Recurring reminder planning, due-date tracking, and paid-occurrence verification against transaction IDs
+- 💳 End-to-end expense CRUD with validation, search, import, and export
+- 📅 Recurring reminder scheduling with paid-occurrence verification against transaction IDs
+- 📊 KPI dashboards, trends, category concentration, runway, and financial pulse analytics
+- 🧠 Local agentic AI workflows using tool-backed execution rather than free-form chat only
+- 🔮 Next-month spending prediction using `scikit-learn`
+- 📄 Multi-section PDF reporting with generated insights and summaries
 - ✉️ Automated month-end and upcoming-bills email workflows
-- 🛡️ Optional demo-access protection and read-only deployment mode for private live showcases
+- 🧪 Strict testing with `100%` frontend and backend coverage
+
+## ✨ Core Features
+
+- 💸 Expense management: create, read, update, delete, and directly search transaction records
+- 📥 CSV import pipeline: row cleaning, normalization, and invalid-row skipping
+- 📤 CSV export: downloadable records for offline analysis and backup
+- 📈 Analytics dashboard: monthly totals, weekly cadence, category mix, and trend visualizations
+- ❤️ Financial health insights: spend velocity, runway, recent activity, and pulse metrics
+- ☁️ Word cloud generation: prominent spend descriptions and top-category emphasis
+- 🔁 Recurring payments: schedule planning, due-date tracking, pay/unpay flows, and calendar views
+- 🤖 AI finance assistant: workflow planning, execution, verification, memory, and retries
+- 🧾 Reporting engine: PDF financial reports with charts, commentary, and highlights
+- 📬 Email automation: month-end close and upcoming-bills notifications
+- 🔐 Demo-safe controls: optional read-only and gated-access modes for portfolio use
 
 ## 🧰 Tech Stack
 
-### ⚙️ Backend
-
-- 🐍 Python 3
-- 🌶️ Flask
-- 🔌 Flask-Cors
-- 🐘 PostgreSQL
-- 🧱 SQLAlchemy
-- ⚡ psycopg
-- 🔢 NumPy
-- 🤖 scikit-learn
-- 📉 matplotlib
-- 🧾 ReportLab
-- 🧪 pytest
-
 ### 🎨 Frontend
 
-- ▲ Next.js
-- ⚛️ React
-- 🟦 TypeScript
-- 🎨 CSS
-- 🧪 Jest
-- 🎭 Playwright
-- 🥒 Cucumber
+- 🔷 `Next.js 14`
+- ⚛️ `React 18`
+- 🟦 `TypeScript 5`
+- 🧪 `Jest`
+- 🧼 `React Testing Library`
+- 🎭 `Playwright`
+- 🥒 `Cucumber`
 
-## 📚 Libraries Used
+### ⚙️ Backend
 
-- 🧩 `Flask` provides the HTTP API and application bootstrap
-- 🧩 `Flask-Cors` enables browser access from the frontend
-- 🧩 `SQLAlchemy` provides database connectivity and schema management
-- 🧩 `psycopg` connects the backend to PostgreSQL
-- 🧩 `numpy` supports numerical calculations
-- 🧩 `scikit-learn` powers the spend prediction workflow
-- 🧩 `matplotlib` generates chart output for reporting
-- 🧩 `reportlab` builds PDF reports
-- 🧩 `Next.js` handles the frontend application shell and routing
-- 🧩 `React` renders the UI and manages interactive views
-- 🧩 `TypeScript` adds type safety to frontend logic
-- 🧩 `Jest` runs frontend unit and integration tests
-- 🧩 `Playwright` runs browser end-to-end tests
-- 🧩 `Cucumber` supports behavior-driven testing scenarios
-- 🧩 `pytest` runs backend unit and integration tests
+- 🐍 `Python 3.13`
+- 🌶️ `Flask`
+- 🌐 `Flask-Cors`
+- 🧱 `SQLAlchemy`
+- 🐘 `PostgreSQL`
+- 🔌 `psycopg`
+- 📄 `ReportLab`
+- 📉 `matplotlib`
+- 🔢 `NumPy`
+- 🔮 `scikit-learn`
+- 🧪 `pytest`
+- 📦 `gunicorn`
 
-## 🏗️ System Design And Architecture
+### 🤖 AI / ML Layer
 
-The application uses a three-part architecture:
+- 🧠 `Ollama`
+- 🔗 `LangChain-Ollama`
+- 🕸️ `LangGraph`
+- 🛠️ `FastMCP`
 
-- 🖥️ Presentation layer: a Next.js frontend responsible for the visual interface, user interactions, state orchestration, and API consumption
-- ⚙️ Application layer: a Flask backend responsible for request handling, validation, business workflows, analytics, prediction, reporting, AI orchestration, and automation
-- 🗄️ Data layer: PostgreSQL, accessed only through repository classes
+### 🐳 Tooling
+
+- 🐳 `Docker`
+- 🧪 `CircleCI`
+- 🌿 `GitHub`
+
+## 📚 Notable Libraries And Their Roles
+
+- 🧩 `Flask` powers the HTTP API surface and app bootstrap
+- 🧩 `SQLAlchemy` isolates persistence and schema interactions
+- 🧩 `psycopg` connects the Flask service to PostgreSQL
+- 🧩 `LangGraph` coordinates planner, executor, verifier, and retry flows
+- 🧩 `FastMCP` exposes finance operations as structured tools to the agent layer
+- 🧩 `LangChain-Ollama` connects local LLM inference to the workflow engine
+- 🧩 `scikit-learn` drives next-month spending prediction from historical monthly totals
+- 🧩 `ReportLab` generates multi-section PDF financial reports
+- 🧩 `matplotlib` renders chart assets for reports and analytics
+- 🧩 `Jest` and `React Testing Library` validate frontend logic and interaction flows
+- 🧩 `Playwright` covers browser-level journeys
+- 🧩 `Cucumber` supports behavior-driven scenario validation
+- 🧩 `pytest` covers backend unit and integration behavior
+
+## 🏛️ System Design
+
+Monetra follows a `three-tier architecture` with a `modular monolith` backend.
+
+- 🖥️ Presentation layer: `Next.js` dashboard and interactive finance surfaces
+- ⚙️ Application layer: `Flask` API, service orchestration, reporting, automation, and AI workflows
+- 🗃️ Data layer: `PostgreSQL` accessed through repository abstractions
 
 ### 🧭 Architecture Classification
 
-The system is a small distributed three-tier application. It is not a microservice architecture because there is only one backend service owning all business capabilities. It is also not a traditional single-process monolith because the frontend and backend run as separate deployable applications.
+- 🧱 `Three-tier application`
+- 🧠 `Modular monolith backend`
+- 🔌 `API-driven frontend/backend separation`
+- 🛠️ `Tool-oriented AI workflow system`
 
-Best description:
+### 🎯 Architectural Patterns
 
-- 🧭 Separate frontend and backend services
-- 🧠 One backend API service
-- 🗃️ One shared relational database
-- 🧱 Modular backend design inside a single service boundary
+- 🏭 Application Factory Pattern
+- 🧩 Blueprint Pattern
+- 🧠 Service Layer Pattern
+- 🗂️ Repository Pattern
+- 🔌 API Client Adapter Pattern
+- 🪝 Hook-based frontend orchestration
+- 🧬 Composition over inheritance
+- ⏳ Lazy initialization where appropriate
 
-In practice, that makes the backend a modular monolith exposed through a clean API layer, with the overall system following a three-tier architecture.
+## 🗺️ Architecture Diagram
 
-### 🤖 AI And ML Layer
-
-- 🧠 Local agentic AI powered by `Ollama`, `LangChain`, `LangGraph`, and `MCP-style` tool interfaces
-- 🛠️ Tool-backed execution for transactions, recurring reminders, budget updates, income updates, reporting, and automation actions
-- 🔁 Planner / executor / verifier flow with retry behavior and lightweight memory
-- 📉 Machine learning spend prediction using `scikit-learn` over historical transaction patterns
-- 🏠 Local-first AI design with no paid inference API dependency
-
-### 🔐 Data Isolation Note
-
-The current application is intentionally designed as a single-user personal finance system. It does not yet implement:
-
-- 👤 user accounts
-- 🧾 per-user row ownership
-- 🧱 tenant isolation
-- 📄 user-scoped report access
-
-That means a public deployment should be treated as a private or demo deployment unless a full authentication and per-user authorization model is added.
-
-### 🧩 Architectural Patterns
-
-- 🏭 Application factory pattern in Flask for clean startup configuration and environment-specific setup
-- 🧩 Blueprint pattern for grouping API routes by capability
-- 🧠 Service layer pattern for business logic and orchestration
-- 🗃️ Repository pattern for isolating data access from the rest of the codebase
-- 🔌 Client adapter pattern in the frontend for centralized API communication
-- 🪝 Hook-based state orchestration in the frontend to separate data workflows from presentational components
-- 🧱 Component-based UI composition so each dashboard section remains focused and reusable
-
-### 🛠️ Design Patterns In Use
-
-- 🏭 Factory / Application Factory: the Flask app is created and wired in `create_app`
-- 🗃️ Repository Pattern: data access is isolated in the repository layer
-- 🧠 Service Layer Pattern: business logic lives in service classes rather than routes
-- 🔌 Adapter / Facade Pattern: the frontend API client presents one clean interface over HTTP calls
-- 🔁 Dependency Injection: repositories and configuration are passed into services instead of being created internally
-- ⏳ Lazy Initialization: the database engine is created only when first needed
-- 🧬 Composition Over Inheritance: behavior is assembled from focused classes and modules rather than deep inheritance trees
-- 🧭 MVC-inspired separation: routes/controllers, service logic, persistence, and presentation are kept separate
-
-### 🚫 Patterns Intentionally Not Used
-
-Some common patterns are not implemented because they would add complexity without adding value to the current scope:
-
-- 🚫 Microservices
-- 🚫 CQRS
-- 🚫 Event sourcing
-- 🚫 Event-driven architecture
-- 🚫 Singleton
-- 🚫 Abstract Factory
-- 🚫 Prototype
-- 🚫 Object Pool
-- 🚫 Formal Command objects
-- 🚫 Formal Strategy objects
-- 🚫 Chain of Responsibility
-- 🚫 Mediator
-- 🚫 Visitor
-
-That is a deliberate `YAGNI` decision: the current application is clearer and easier to maintain without those abstractions.
-
-### 🧠 Backend Design
-
-The Flask backend is organized into clear layers:
-
-- 🌐 Blueprints expose HTTP endpoints and keep controller logic thin
-- 🧠 Services implement application rules such as expense validation, CSV cleaning, analytics, prediction, reporting, agent execution, and automation scheduling
-- 🗄️ Repositories execute database reads and writes against PostgreSQL through SQLAlchemy connections
-- ⚙️ Configuration centralizes database URL, CORS origins, report output directory, mail settings, and AI runtime behavior
-- 🔁 Migration tooling supports one-time import from the legacy SQLite database into PostgreSQL
-
-This structure keeps HTTP concerns, business logic, and persistence concerns separate. It also makes unit and integration testing more direct because each layer has a narrow responsibility.
-
-### 🖥️ Frontend Design
-
-The Next.js frontend is organized around a small set of focused responsibilities:
-
-- 🧭 `app/` contains the application entry points and global layout
-- 🧩 `components/` contains reusable UI sections such as dashboard panels, forms, tables, KPI charts, analytics cards, and AI surfaces
-- 🪝 `hooks/` contains the main orchestration hook for loading data and handling mutations
-- 🔌 `lib/` contains the API client and request utilities
-
-The frontend uses a dashboard-oriented design so the most important information is visible immediately: budget usage, current totals, KPI charts, trends, recent activity, automation workflows, and AI output.
-
-## 🔄 High-Level Flow
-
-1. The user interacts with the Next.js interface.
-2. The frontend calls the Flask API through centralized client helpers.
-3. Flask routes delegate work to service classes.
-4. Services use repository classes to access PostgreSQL.
-5. Responses return structured data to the frontend for rendering.
-6. Analytical and AI services generate derived insights such as category trends, prediction, financial pulse metrics, KPI data, PDF reports, and agent workflow output.
-
-## 📁 Project Structure
-
-```text
-backend/
-  budget_tracker_api/
-    blueprints/
-    repositories/
-    services/
-    config.py
-  scripts/
-  tests/
-  run.py
-  wsgi.py
-
-frontend/
-  app/
-  components/
-  hooks/
-  lib/
-  tests/
-  package.json
-
-docker-compose.yml
-README.md
+```mermaid
+flowchart LR
+    U[👤 User] --> F[🎨 Next.js Frontend]
+    F --> A[⚙️ Flask API Layer]
+    A --> S[🧠 Service Layer]
+    S --> R[🗃️ Repository Layer]
+    R --> D[(🐘 PostgreSQL)]
+    S --> REP[📄 Reporting Engine]
+    S --> ML[🔮 Prediction Service]
+    S --> AUTO[⏰ Automation Scheduler]
+    S --> AGENT[🤖 Agent Workflow Engine]
+    AGENT --> O[🧠 Ollama]
+    AGENT --> MCP[🛠️ FastMCP Finance Tools]
+    REP --> PDF[🧾 PDF Reports]
+    AUTO --> EMAIL[✉️ Email Workflows]
 ```
 
-## ▶️ Running The System Locally
+## 🧠 AI And ML Architecture
+
+- 🤖 The AI layer is local-first and built around `Ollama`
+- 🛠️ Finance operations are exposed as structured tools through `FastMCP`
+- 🕸️ `LangGraph` orchestrates planning, execution, verification, and repair attempts
+- 🧠 Agent traces include memory, execution results, verification output, and retry metadata
+- 🔮 `scikit-learn` predicts next-month spending from historical monthly totals
+- 📌 The AI layer is workflow-driven, not just prompt-driven, so mutations stay deterministic and auditable
+
+## 🧱 Backend Architecture
+
+### 📂 Backend Layers
+
+- 🌐 `blueprints/` for HTTP endpoints and thin controller logic
+- 🧠 `services/` for business rules, analytics, reporting, AI workflows, and automation
+- 🗃️ `repositories/` for database reads and writes
+- ⚙️ `config.py` for environment-driven application configuration
+- 🛠️ `mcp/` for finance-tool exposure to the agent system
+
+### 🪄 Backend Responsibilities
+
+- 💸 expense validation and mutation flows
+- 📊 analytics aggregation and KPI generation
+- 🔮 prediction modeling and feature preparation
+- 📄 PDF report generation
+- 🔁 recurring-item state transitions and paid/unpaid occurrence logic
+- 🤖 agent workflow execution and run history tracking
+- ✉️ email drafting and automation scheduling
+
+## 🖼️ Frontend Architecture
+
+### 📂 Frontend Layers
+
+- 🧭 `app/` for entrypoints and routing
+- 🧩 `components/` for dashboard panels, forms, charts, tables, and AI surfaces
+- 🪝 `hooks/` for orchestration and stateful finance workflows
+- 🔌 `lib/` for centralized API access and utilities
+- 🧪 `tests/` for unit, integration, E2E, and BDD validation
+
+### 🎛️ Frontend Capabilities
+
+- 📋 dashboard composition across KPI, analytics, records, automation, and AI panels
+- 🔄 centralized data orchestration through hooks
+- 🧠 agent workflow visibility with traces and run history
+- 📆 recurring payment calendars and reminder state controls
+- 📊 financial insights rendering and chart-driven summaries
+
+## 🔄 Request / Data Flow
+
+1. 👤 The user interacts with the dashboard in the browser.
+2. 🎨 The frontend issues requests through the centralized API client.
+3. 🌐 Flask blueprints receive and validate the request shape.
+4. 🧠 Service-layer classes execute business logic.
+5. 🗃️ Repository classes read from or write to PostgreSQL.
+6. 🤖 AI and ML services derive predictions, summaries, plans, or reports when needed.
+7. 📤 Structured responses return to the frontend for rendering.
+
+## 🧪 Testing And Quality Assurance
+
+### ✅ Testing Frameworks
+
+- 🧪 Backend unit and integration tests with `pytest`
+- 🧪 Frontend unit tests with `Jest`
+- 🧪 Component and interaction tests with `React Testing Library`
+- 🎭 Browser E2E tests with `Playwright`
+- 🥒 BDD scenarios with `Cucumber`
+- 🟦 Type-safety validation with `TypeScript` (`tsc --noEmit`)
+
+### 🛡️ Quality Signals
+
+- 💯 `100%` frontend coverage
+- 💯 `100%` backend coverage
+- 🔍 Separate unit and integration suites
+- 🧭 Coverage around API, services, repositories, UI branches, hooks, and workflow traces
+- 🔁 CI pipeline validation through `CircleCI`
+
+## 🌐 API Surface
+
+### ❤️ Health
+
+- 🔹 `GET /api/health`
+
+### 💸 Expenses
+
+- 🔹 `GET /api/expenses`
+- 🔹 `GET /api/expenses/<id>`
+- 🔹 `POST /api/expenses`
+- 🔹 `PUT /api/expenses/<id>`
+- 🔹 `DELETE /api/expenses/<id>`
+- 🔹 `POST /api/expenses/import`
+- 🔹 `GET /api/expenses/export`
+
+### 📊 Dashboard / Analytics
+
+- 🔹 `GET /api/dashboard`
+- 🔹 `GET /api/analytics/categories`
+- 🔹 `GET /api/analytics/wordcloud`
+- 🔹 `GET /api/analytics/financial-pulse`
+
+### 🔮 Prediction / Reporting
+
+- 🔹 `GET /api/predictions/next-month`
+- 🔹 `GET /api/reports/monthly`
+
+### 🔁 Recurring Items
+
+- 🔹 `GET /api/recurring-items`
+- 🔹 `POST /api/recurring-items`
+- 🔹 `PUT /api/recurring-items/<id>`
+- 🔹 `DELETE /api/recurring-items/<id>`
+- 🔹 `GET /api/recurring-items/calendar`
+- 🔹 `POST /api/recurring-items/<id>/occurrences/pay`
+- 🔹 `POST /api/recurring-items/<id>/occurrences/unpay`
+
+### 🤖 Agents / Automation
+
+- 🔹 `GET /api/agents/workflows`
+- 🔹 `POST /api/agents/workflows/<workflow_name>/run`
+- 🔹 `GET /api/agents/runs`
+- 🔹 `GET /api/agents/runs/<id>`
+
+### ⚙️ Settings / Auth
+
+- 🔹 `GET /api/settings`
+- 🔹 `PUT /api/settings`
+- 🔹 `GET /api/auth/session`
+
+## 🗂️ Project Structure
+
+```text
+Monetra (Budget Tracker)/
+├── backend/
+│   ├── budget_tracker_api/
+│   │   ├── blueprints/
+│   │   ├── repositories/
+│   │   ├── services/
+│   │   ├── mcp/
+│   │   └── config.py
+│   ├── scripts/
+│   ├── tests/
+│   ├── run.py
+│   └── wsgi.py
+├── frontend/
+│   ├── app/
+│   ├── components/
+│   ├── hooks/
+│   ├── lib/
+│   └── tests/
+├── docker-compose.yml
+└── README.md
+```
+
+## 🧪 Test Commands
 
 ### ⚙️ Backend
 
@@ -232,120 +306,23 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements-dev.txt
-set DATABASE_URL=postgresql+psycopg://budget_user:budget_password@localhost:5432/budget_tracker
-python run.py
+pytest
 ```
-
-The backend runs on `http://127.0.0.1:5000`.
 
 ### 🎨 Frontend
 
 ```bash
 cd frontend
-copy .env.example .env.local
-npm.cmd install
-npm.cmd run dev
+npm install
+npm run test
+npm run test:e2e
+npm run test:bdd
+npx tsc --noEmit
 ```
-
-The frontend runs on `http://127.0.0.1:3000`.
-
-### 🐳 Docker Compose
-
-```bash
-docker compose up --build
-```
-
-This starts PostgreSQL, the Flask backend, and the Next.js frontend together.
-
-## 🌐 Safe Demo Production Deployment
-
-If you want to deploy this live for learning or portfolio review without exposing personal finance data, use it as a private demo deployment rather than a public multi-user app.
-
-Recommended production shape:
-
-- 🌍 public `Next.js` frontend URL
-- 🔀 same-origin `/api/*` proxy from Next.js to Flask using `API_PROXY_TARGET`
-- 🔒 private Flask API behind the frontend
-- 🐘 PostgreSQL for persistence
-- 🤖 optional `Ollama` host for local-model workflows
-
-Recommended production environment variables:
-
-Backend:
-
-```env
-DEMO_ACCESS_ENABLED=true
-DEMO_ACCESS_USERNAME=your_demo_username
-DEMO_ACCESS_PASSWORD=your_strong_demo_password
-READ_ONLY_MODE=true
-PUBLIC_HEALTHCHECK_ENABLED=true
-EXPOSE_ERROR_DETAILS=false
-REPORT_EMAIL_TO=your_email@example.com
-```
-
-Frontend:
-
-```env
-API_PROXY_TARGET=https://your-backend.internal
-DEMO_ACCESS_ENABLED=true
-DEMO_ACCESS_USERNAME=your_demo_username
-DEMO_ACCESS_PASSWORD=your_strong_demo_password
-NEXT_PUBLIC_API_BASE_URL=
-```
-
-What this does:
-
-- 🔐 protects both the web UI and API with a shared Basic Auth gate
-- 🌐 keeps the app reachable at one public URL while proxying `/api` through Next.js
-- 🛡️ prevents dashboard viewers from mutating your personal data when `READ_ONLY_MODE=true`
-- 🙈 avoids leaking internal exception details in production
-
-For a portfolio deployment with your own finance data, this is the safest current mode. For a real multi-user product, the next step would be proper user authentication plus per-user data ownership in every table.
-
-## 🔁 Migration From The Legacy SQLite Database
-
-To move historical data from the previous SQLite database into PostgreSQL:
-
-```bash
-cd backend
-.venv\Scripts\activate
-python scripts/migrate_sqlite_to_postgres.py --database-url postgresql+psycopg://budget_user:budget_password@localhost:5432/budget_tracker --truncate
-```
-
-## 🛰️ API Capabilities
-
-- 🔹 `GET /api/health`
-- 🔹 `GET /api/expenses`
-- 🔹 `GET /api/expenses/<id>`
-- 🔹 `POST /api/expenses`
-- 🔹 `PUT /api/expenses/<id>`
-- 🔹 `DELETE /api/expenses/<id>`
-- 🔹 `POST /api/expenses/import`
-- 🔹 `GET /api/expenses/export`
-- 🔹 `GET /api/dashboard`
-- 🔹 `GET /api/analytics/categories`
-- 🔹 `GET /api/analytics/wordcloud`
-- 🔹 `GET /api/analytics/financial-pulse`
-- 🔹 `GET /api/predictions/next-month`
-- 🔹 `GET /api/reports/monthly`
-
-## 🧪 Testing
-
-The repository includes multiple testing styles:
-
-- 🧪 Unit tests for isolated logic
-- 🔗 Integration tests for API and persistence behavior
-- 🌍 End-to-end tests for browser workflows
-- 🥒 Cucumber BDD scenarios for user-facing behavior definitions
-- 🟦 TypeScript validation for frontend type-safety checks
-
-## ☁️ Deployment
-
-For production, deploy the Flask backend as a persistent service with PostgreSQL as the database, deploy the Next.js frontend as the web application, and place both behind one domain or reverse proxy so the frontend can use same-origin `/api` requests. Docker support is included through the backend and frontend Dockerfiles plus `docker-compose.yml`.
 
 ## 📝 Notes
 
-- 📁 Generated reports are written to `backend/generated_reports/`
-- ⚙️ The monthly budget value remains configurable through backend settings
-- ✅ The backend test suite passes locally with strong service and API coverage
-- ✅ The frontend unit and integration suites pass locally with component, hook, and interaction coverage
+- 📁 Generated PDF reports are written to `backend/generated_reports/`
+- 🧠 The AI layer is local-model based rather than dependent on paid hosted inference APIs
+- 🔐 The current system is designed as a single-user finance platform rather than a multi-tenant product
+- 📌 The backend owns the core business logic; the frontend is intentionally API-driven and thin in business rules
