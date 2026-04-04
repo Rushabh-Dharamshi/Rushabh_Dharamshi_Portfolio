@@ -6,10 +6,10 @@ describe("frontend strict isolate branches", () => {
   });
 
   it("covers spending-comparison empty-summary and category-select branches", () => {
-    let renderLocal: typeof import("@testing-library/react").render;
-    let fireEventLocal: typeof import("@testing-library/react").fireEvent;
-    let screenLocal: typeof import("@testing-library/react").screen;
-    let ReactLocal: typeof import("react");
+    let renderLocal!: typeof import("@testing-library/react").render;
+    let fireEventLocal!: typeof import("@testing-library/react").fireEvent;
+    let screenLocal!: typeof import("@testing-library/react").screen;
+    let ReactLocal!: typeof import("react");
     let SpendingComparisonPanel: any;
 
     jest.isolateModules(() => {
@@ -73,9 +73,9 @@ describe("frontend strict isolate branches", () => {
   });
 
   it("covers the recurring nullish end-date branch via a state override", () => {
-    let renderLocal: typeof import("@testing-library/react").render;
-    let screenLocal: typeof import("@testing-library/react").screen;
-    let ReactLocal: typeof import("react");
+    let renderLocal!: typeof import("@testing-library/react").render;
+    let screenLocal!: typeof import("@testing-library/react").screen;
+    let ReactLocal!: typeof import("react");
     let RecurringCalendarPanel: any;
 
     jest.isolateModules(() => {

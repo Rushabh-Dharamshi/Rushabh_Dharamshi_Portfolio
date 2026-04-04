@@ -1,4 +1,5 @@
 import importlib
+from types import SimpleNamespace
 
 import pytest
 
@@ -100,6 +101,29 @@ class StubAutomationService:
         return {"headline": "Month end"}
 
 
+def test_finance_server_get_app_initializes_lazily(monkeypatch):
+    module = importlib.import_module("budget_tracker_api.mcp.finance_server")
+    created = []
+
+    class StubContext:
+        def __enter__(self):
+            return None
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    stub_app = SimpleNamespace(
+        extensions={"services": {}},
+        app_context=lambda: StubContext(),
+    )
+
+    monkeypatch.setattr(module, "_app", None)
+    monkeypatch.setattr(module, "create_app", lambda config: created.append(config) or stub_app)
+
+    assert module._get_app() is stub_app
+    assert created == [{"AUTOMATION_SCHEDULER_ENABLED": False}]
+
+
 @pytest.fixture()
 def finance_server(monkeypatch):
     module = importlib.import_module("budget_tracker_api.mcp.finance_server")
@@ -112,7 +136,7 @@ def finance_server(monkeypatch):
         "report_service": StubReportService(),
         "automation_service": StubAutomationService(),
     }
-    monkeypatch.setitem(module.app.extensions, "services", services)
+    monkeypatch.setattr(module, "_app", SimpleNamespace(extensions={"services": services}, app_context=lambda: type("C", (), {"__enter__": lambda s: None, "__exit__": lambda s, *args: False})()))
     return module, services
 
 

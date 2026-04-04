@@ -56,7 +56,7 @@ describe("final component coverage branches", () => {
           headline: "summary",
           summary: "   ",
           risk_level: "low",
-          recommended_actions: "call landlord",
+          recommended_actions: ["call landlord"],
           email_subject: "subject",
           email_draft: "\n\n",
           task: "review",
@@ -70,6 +70,30 @@ describe("final component coverage branches", () => {
 
     expect(screen.getByText("Call landlord.")).toBeInTheDocument();
     expect(screen.getByText(/low risk/i)).toHaveClass("status-pill", "status-within");
+
+    rerender(
+      <AiAgentPanel
+        taskDraft="review"
+        isRunning={false}
+        onTaskDraftChange={jest.fn()}
+        onRun={jest.fn()}
+        result={{
+          headline: "summary",
+          summary: "done",
+          risk_level: "low",
+          recommended_actions: "   " as unknown as string[],
+          email_subject: "subject",
+          email_draft: "done",
+          task: "review",
+          model: "qwen",
+          tools_used: [],
+          report_download_url: null,
+          generated_at: "2026-04-03T20:00:00Z",
+        }}
+      />,
+    );
+
+    expect(screen.getByText("The agent did not propose any actions.")).toBeInTheDocument();
 
     rerender(
       <AiAgentPanel

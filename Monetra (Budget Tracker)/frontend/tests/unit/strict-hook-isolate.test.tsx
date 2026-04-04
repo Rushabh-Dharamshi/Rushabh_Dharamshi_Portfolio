@@ -63,10 +63,10 @@ describe("frontend strict hook isolate coverage", () => {
       getAgentWorkflowJob: jest.fn().mockResolvedValue({ id: "wf-1", status: "failed", error: null, result: null }),
     };
 
-    let renderHookLocal: typeof import("@testing-library/react").renderHook;
-    let waitForLocal: typeof import("@testing-library/react").waitFor;
-    let actLocal: typeof import("@testing-library/react").act;
-    let useBudgetTracker: typeof import("@/hooks/use-budget-tracker").useBudgetTracker;
+    let renderHookLocal!: typeof import("@testing-library/react").renderHook;
+    let waitForLocal!: typeof import("@testing-library/react").waitFor;
+    let actLocal!: typeof import("@testing-library/react").act;
+    let useBudgetTracker!: typeof import("@/hooks/use-budget-tracker").useBudgetTracker;
 
     jest.isolateModules(() => {
       jest.doMock("@/lib/api-client", () => ({ apiClient: mockApiClient }));

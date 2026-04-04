@@ -58,6 +58,7 @@ describe("component branch coverage", () => {
           report_download_url: null,
           generated_at: "invalid time",
           trace: {
+            memory: [],
             plan: { intent: "plan intent", success_criteria: [], steps: [] },
             execution_results: [],
             verification: { headline: "done", summary: "verified", risk_level: "low" },

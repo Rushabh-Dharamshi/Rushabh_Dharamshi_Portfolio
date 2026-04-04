@@ -225,7 +225,7 @@ def test_finance_server_remaining_paths(monkeypatch):
         "report_service": FinanceReportService(),
         "automation_service": StubAutomationService(),
     }
-    monkeypatch.setitem(module.app.extensions, "services", services)
+    monkeypatch.setattr(module, "_app", SimpleNamespace(extensions={"services": services}, app_context=lambda: type("C", (), {"__enter__": lambda s: None, "__exit__": lambda s, *args: False})()))
 
     assert module._match_expenses(services, {"date": "2099-01-01"}) == []
     assert module._match_recurring(services, {"frequency": "weekly"}) == []

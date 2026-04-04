@@ -30,6 +30,7 @@ describe("frontend coverage gaps", () => {
           report_download_url: "/api/reports/monthly",
           generated_at: "2026-04-03T12:30:00Z",
           trace: {
+            memory: [],
             plan: {
               intent: "review finance health",
               success_criteria: "identify the main risk" as unknown as string[],

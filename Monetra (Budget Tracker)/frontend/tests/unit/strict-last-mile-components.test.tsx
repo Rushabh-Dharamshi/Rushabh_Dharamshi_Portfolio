@@ -72,7 +72,7 @@ describe("frontend strict last-mile component coverage", () => {
             headline: "month end",
             summary: "Fallback summary",
             risk_level: "low",
-            recommended_actions: "   ",
+            recommended_actions: ["   "],
             email_subject: "month end close",
             email_draft: "",
             task: "close the month",
@@ -81,9 +81,10 @@ describe("frontend strict last-mile component coverage", () => {
             report_download_url: null,
             generated_at: "2026-04-03T22:00:00Z",
             trace: {
+              memory: [],
               plan: {
                 intent: "",
-                success_criteria: "  keep runway healthy  ",
+                success_criteria: ["  keep runway healthy  "],
                 steps: [],
               },
               execution_results: [],
