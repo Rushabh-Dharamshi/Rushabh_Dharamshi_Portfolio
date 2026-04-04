@@ -1,74 +1,16 @@
 version: 2.1
+setup: true
 
-jobs:
-  backend-tests:
-    docker:
-      - image: cimg/python:3.11
-    working_directory: ~/project
-    steps:
-      - checkout:
-          path: ~/project
-      - run:
-          name: Install backend dependencies
-          command: |
-            cd "Monetra (Budget Tracker)/backend"
-            python -m venv .venv
-            . .venv/bin/activate
-            pip install -r requirements-dev.txt
-      - run:
-          name: Run backend tests
-          command: |
-            cd "Monetra (Budget Tracker)/backend"
-            . .venv/bin/activate
-            pytest
-
-  frontend-tests:
-    docker:
-      - image: cimg/node:22.9
-    working_directory: ~/project
-    steps:
-      - checkout:
-          path: ~/project
-      - run:
-          name: Install frontend dependencies
-          command: |
-            cd "Monetra (Budget Tracker)/frontend"
-            npm ci
-      - run:
-          name: Run frontend tests
-          command: |
-            cd "Monetra (Budget Tracker)/frontend"
-            npm test
-      - run:
-          name: Run TypeScript check
-          command: |
-            cd "Monetra (Budget Tracker)/frontend"
-            npx tsc --noEmit
-
-  monetra-system-build:
-    machine:
-      image: ubuntu-2204:current
-    working_directory: ~/project
-    steps:
-      - checkout:
-          path: ~/project
-      - run:
-          name: Build backend image
-          command: |
-            cd "Monetra (Budget Tracker)"
-            docker build -t monetra-backend ./backend
-      - run:
-          name: Build frontend image
-          command: |
-            cd "Monetra (Budget Tracker)"
-            docker build -t monetra-frontend ./frontend
+orbs:
+  path-filtering: circleci/path-filtering@1.1.0
 
 workflows:
-  ci:
+  monetra-path-filter:
     jobs:
-      - backend-tests
-      - frontend-tests
-      - monetra-system-build:
-          requires:
-            - backend-tests
-            - frontend-tests
+      - path-filtering/filter:
+          name: monetra-path-filter
+          base-revision: main
+          config-path: .circleci/continue-config.yml
+          mapping: |
+            Monetra \(Budget Tracker\)/.* run-monetra true
+            \.circleci/.* run-monetra true
