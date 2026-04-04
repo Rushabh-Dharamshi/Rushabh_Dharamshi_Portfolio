@@ -20,7 +20,7 @@ jobs:
           command: |
             cd "Monetra (Budget Tracker)/backend"
             . .venv/bin/activate
-            pytest -q --no-cov
+            pytest
 
   frontend-tests:
     docker:
@@ -38,15 +38,14 @@ jobs:
           name: Run frontend tests
           command: |
             cd "Monetra (Budget Tracker)/frontend"
-            npx jest --runInBand --coverage=false tests/unit
-            npx jest --runInBand --coverage=false tests/integration
+            npm test
       - run:
           name: Run TypeScript check
           command: |
             cd "Monetra (Budget Tracker)/frontend"
             npx tsc --noEmit
 
-  docker-build:
+  monetra-system-build:
     machine:
       image: ubuntu-2204:current
     working_directory: ~/project
@@ -69,7 +68,7 @@ workflows:
     jobs:
       - backend-tests
       - frontend-tests
-      - docker-build:
+      - monetra-system-build:
           requires:
             - backend-tests
             - frontend-tests

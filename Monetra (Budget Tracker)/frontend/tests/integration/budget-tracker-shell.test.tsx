@@ -137,6 +137,7 @@ describe("BudgetTrackerShell", () => {
     expect(screen.getByText("Overlay spending comparison")).toBeInTheDocument();
     expect(screen.getByText("Agent workflows for repetitive finance tasks")).toBeInTheDocument();
     expect(screen.getByText("Local Ollama analysis agent")).toBeInTheDocument();
-    expect(screen.getByText("Transaction records")).toBeInTheDocument();
+    expect(screen.getByText("Expense records")).toBeInTheDocument();
+    expect(screen.getByText("Showing all records.")).toBeInTheDocument();
   });
 });

@@ -413,9 +413,13 @@ export function useBudgetTracker() {
       const job = await apiClient.startFinanceBriefingAgent(agentTaskDraft);
       const result = await waitForFinanceBriefing(job.id);
       setAgentBriefing(result);
-      if (result.action_result?.type) {
+      const actionType =
+        result.action_result && typeof result.action_result.type === "string"
+          ? result.action_result.type
+          : null;
+      if (actionType) {
         await loadAllData();
-        void refreshAutomationCenter(result.action_result.type);
+        void refreshAutomationCenter(actionType);
       }
       setStatusMessage(`AI briefing generated with ${result.tools_used.length} tool calls.`);
     } catch (error) {
@@ -473,7 +477,11 @@ export function useBudgetTracker() {
         return job.result;
       }
       if (job.status === "failed") {
-        throw new Error(job.error ?? `The ${workflowName} workflow failed.`);
+        const workflowError =
+          job.error === null || job.error === undefined
+            ? `The ${workflowName} workflow failed.`
+            : job.error;
+        throw new Error(workflowError);
       }
 
       if (!options?.quiet) {
