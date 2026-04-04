@@ -8,7 +8,7 @@
     "lint": "next lint",
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "cross-env NODE_ENV=test jest --coverage --runInBand tests/unit",
-    "test:integration": "cross-env NODE_ENV=test jest --coverage --runInBand tests/integration",
+    "test:integration": "cross-env NODE_ENV=test jest --runInBand --coverage=false tests/integration",
     "test:e2e": "playwright test",
     "test:bdd": "cucumber-js tests/bdd/features/**/*.feature --require tests/bdd/steps/**/*.js",
     "test:all": "npm run test && npm run test:e2e && npm run test:bdd"

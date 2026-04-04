@@ -47,6 +47,8 @@ function CategoryBars({
 
 export function InsightsPanel({ categories, wordCloud }: InsightsPanelProps) {
   const cloudItems = wordCloud?.frequencies ?? [];
+  const cloudCategory = wordCloud?.top_category ?? "top category";
+  const cloudCategoryTotal = wordCloud?.top_category_total ?? 0;
   const maxValue = Math.max(...cloudItems.map((item) => item.value), 1);
 
   return (
@@ -77,7 +79,7 @@ export function InsightsPanel({ categories, wordCloud }: InsightsPanelProps) {
       <div className="insight-card wordcloud-card">
         <div className="card-header wordcloud-header">
           <div>
-            <h3>Word cloud for {wordCloud?.top_category ?? "top category"}</h3>
+            <h3>Word cloud for {cloudCategory}</h3>
             <span className="muted">Highest-spend descriptions inside the leading spend category</span>
           </div>
           {wordCloud?.dominant_label ? (
@@ -94,7 +96,7 @@ export function InsightsPanel({ categories, wordCloud }: InsightsPanelProps) {
             <div className="wordcloud-stats">
               <div className="wordcloud-stat-card">
                 <span>Category total</span>
-                <strong>{formatCurrency(wordCloud?.top_category_total ?? 0)}</strong>
+                <strong>{formatCurrency(cloudCategoryTotal)}</strong>
               </div>
               <div className="wordcloud-stat-card">
                 <span>Descriptions surfaced</span>
@@ -102,7 +104,7 @@ export function InsightsPanel({ categories, wordCloud }: InsightsPanelProps) {
               </div>
             </div>
 
-            <div className="wordcloud-stage" aria-label={`Description word cloud for ${wordCloud?.top_category ?? "top category"}`}>
+            <div className="wordcloud-stage" aria-label={`Description word cloud for ${cloudCategory}`}>
               {cloudItems.map((item, index) => {
                 const ratio = item.value / maxValue;
                 const share = item.share ?? 0;
@@ -120,7 +122,7 @@ export function InsightsPanel({ categories, wordCloud }: InsightsPanelProps) {
                   >
                     <strong>{item.label}</strong>
                     <span>{formatCurrency(item.value)}</span>
-                    <small>{share.toFixed(1)}% of {wordCloud?.top_category}</small>
+                    <small>{share.toFixed(1)}% of {cloudCategory}</small>
                   </div>
                 );
               })}

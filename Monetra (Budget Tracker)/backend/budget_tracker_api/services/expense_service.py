@@ -138,7 +138,7 @@ class ExpenseService:
             "entry_type": "expense",
         }
 
-        if not any(cleaned.values()):
+        if not any(cleaned[field] for field in ("date", "category", "description", "amount")):
             return None
         if any(value == "" for value in cleaned.values()):
             return None

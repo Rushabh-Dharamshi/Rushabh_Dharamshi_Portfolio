@@ -5,9 +5,15 @@ on:
   push:
     branches:
       - main
+    paths:
+      - 'Project Management Tool/**'
+      - '.github/workflows/project-management-tool-ci.yml'
   pull_request:
     branches:
       - main
+    paths:
+      - 'Project Management Tool/**'
+      - '.github/workflows/project-management-tool-ci.yml'
 
 concurrency:
   group: ci-cd-${{ github.workflow }}-${{ github.ref }}

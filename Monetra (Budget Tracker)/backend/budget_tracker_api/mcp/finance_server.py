@@ -6,7 +6,7 @@ from budget_tracker_api import create_app
 from budget_tracker_api.errors import ValidationError
 
 
-app = create_app({"AUTOMATION_SCHEDULER_ENABLED": False})
+_app = None
 mcp = FastMCP(
     "Monetra Finance MCP Server",
     instructions=(
@@ -16,12 +16,19 @@ mcp = FastMCP(
 )
 
 
+def _get_app():
+    global _app
+    if _app is None:
+        _app = create_app({"AUTOMATION_SCHEDULER_ENABLED": False})
+    return _app
+
+
 def _services() -> dict:
-    return app.extensions["services"]
+    return _get_app().extensions["services"]
 
 
 def _with_app_context(handler):
-    with app.app_context():
+    with _get_app().app_context():
         return handler(_services())
 
 

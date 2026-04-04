@@ -1,0 +1,37 @@
+version: 2.1
+setup: true
+
+orbs:
+  continuation: circleci/continuation@1.0.0
+
+jobs:
+  monetra-path-filter:
+    docker:
+      - image: cimg/base:stable
+    working_directory: ~/project
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Detect Monetra changes
+          command: |
+            if [ "${CIRCLE_BRANCH:-}" = "main" ] && git rev-parse HEAD~1 >/dev/null 2>&1; then
+              BASE_REVISION="HEAD~1"
+            else
+              git fetch origin main --depth=50
+              BASE_REVISION="origin/main"
+            fi
+
+            if git diff --name-only "$BASE_REVISION"...HEAD | grep -E '^(Monetra \(Budget Tracker\)/|\.circleci/)'; then
+              printf '{"run-monetra": true}' > /tmp/monetra-continuation.json
+            else
+              printf '{"run-monetra": false}' > /tmp/monetra-continuation.json
+            fi
+      - continuation/continue:
+          configuration_path: .circleci/continue-config.yml
+          parameters: /tmp/monetra-continuation.json
+
+workflows:
+  monetra-path-filter:
+    jobs:
+      - monetra-path-filter

@@ -1,0 +1,80 @@
+version: 2.1
+
+parameters:
+  run-monetra:
+    type: boolean
+    default: false
+
+jobs:
+  monetra-backend-tests:
+    docker:
+      - image: cimg/python:3.11
+    working_directory: ~/project
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Install backend dependencies
+          command: |
+            cd "Monetra (Budget Tracker)/backend"
+            python -m venv .venv
+            . .venv/bin/activate
+            pip install -r requirements-dev.txt
+      - run:
+          name: Run backend tests
+          command: |
+            cd "Monetra (Budget Tracker)/backend"
+            . .venv/bin/activate
+            pytest
+
+  monetra-frontend-tests:
+    docker:
+      - image: cimg/node:22.9
+    working_directory: ~/project
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Install frontend dependencies
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npm ci
+      - run:
+          name: Run frontend tests
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npm test
+      - run:
+          name: Run TypeScript check
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npx tsc --noEmit
+
+  monetra-system-build:
+    machine:
+      image: ubuntu-2204:current
+    working_directory: ~/project
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Build backend image
+          command: |
+            cd "Monetra (Budget Tracker)"
+            docker build -t monetra-backend ./backend
+      - run:
+          name: Build frontend image
+          command: |
+            cd "Monetra (Budget Tracker)"
+            docker build -t monetra-frontend ./frontend
+
+workflows:
+  monetra-ci:
+    when: << pipeline.parameters.run-monetra >>
+    jobs:
+      - monetra-backend-tests
+      - monetra-frontend-tests
+      - monetra-system-build:
+          requires:
+            - monetra-backend-tests
+            - monetra-frontend-tests
