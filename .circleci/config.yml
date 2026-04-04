@@ -23,13 +23,13 @@ jobs:
             fi
 
             if git diff --name-only "$BASE_REVISION"...HEAD | grep -E '^(Monetra \(Budget Tracker\)/|\.circleci/)'; then
-              echo 'export CONTINUATION_PARAMETERS={"run-monetra":true}' >> "$BASH_ENV"
+              printf '{"run-monetra": true}' > /tmp/monetra-continuation.json
             else
-              echo 'export CONTINUATION_PARAMETERS={"run-monetra":false}' >> "$BASH_ENV"
+              printf '{"run-monetra": false}' > /tmp/monetra-continuation.json
             fi
       - continuation/continue:
           configuration_path: .circleci/continue-config.yml
-          parameters: $CONTINUATION_PARAMETERS
+          parameters: /tmp/monetra-continuation.json
 
 workflows:
   monetra-path-filter:
