@@ -121,6 +121,7 @@ describe("frontend strict branch fill", () => {
             generated_at: "2026-04-03T12:00:00Z",
           }]}
           activeWorkflowName={null}
+          liveStatusMessage={null}
           onRunWorkflow={jest.fn()}
         />
         <FinancialPulse
@@ -153,7 +154,7 @@ describe("frontend strict branch fill", () => {
       </>,
     );
 
-    expect(screen.getByText("high risk")).toBeInTheDocument();
+    expect(screen.queryByText("high risk")).not.toBeInTheDocument();
     expect(screen.getByText((value) => value.includes("1,200.00"))).toBeInTheDocument();
     expect(screen.getByText("9 days")).toBeInTheDocument();
     expect(screen.getAllByText((value) => value.includes("0.00")).length).toBeGreaterThan(0);

@@ -1,6 +1,7 @@
 "use client";
 
 import { AgentWorkflowRun } from "@/lib/types";
+import { formatBackendTimestamp } from "@/lib/date-time";
 
 interface EmailAutomationPanelProps {
   runs: AgentWorkflowRun[];
@@ -85,7 +86,7 @@ export function EmailAutomationPanel({
               <div className="card-header">
                 <div>
                   <h3>{run.workflow_label}</h3>
-                  <p className="muted">{formatTimestamp(run.generated_at)}</p>
+                  <p className="muted">{formatBackendTimestamp(run.generated_at)}</p>
                 </div>
                 <span className={`status-pill status-${mapRiskStatus(run.risk_level)}`}>{run.risk_level} risk</span>
               </div>
@@ -119,7 +120,3 @@ function mapRiskStatus(riskLevel: string) {
   return "within";
 }
 
-function formatTimestamp(value: string) {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("en-GB");
-}

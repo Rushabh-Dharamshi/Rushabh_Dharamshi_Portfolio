@@ -17,6 +17,9 @@ const mockApiClient = {
   getWordCloud: jest.fn(),
   getFinancialPulse: jest.fn(),
   getPrediction: jest.fn(),
+  getRagStatus: jest.fn(),
+  reindexRag: jest.fn(),
+  queryRag: jest.fn(),
   startFinanceBriefingAgent: jest.fn(),
   getFinanceBriefingJob: jest.fn(),
   listAgentWorkflows: jest.fn(),
@@ -74,6 +77,7 @@ function seedHappyPath() {
   mockApiClient.getWordCloud.mockResolvedValue({ top_category: "Food", frequencies: [] });
   mockApiClient.getFinancialPulse.mockResolvedValue({ health_score: 80, average_transaction: 20, transaction_count: 1, spend_velocity: 10, top_category_share: 50, runway_days: 12, narrative: "Stable", cash_in: 1500, cash_out: 420, net_cash_flow: 1080, income_coverage: 300, recent_transactions: [], recent_expenses: [] });
   mockApiClient.getPrediction.mockResolvedValue({ next_month: "April 2026", predicted_spending: 900, is_budget_exceeded: false, monthly_budget: 1050 });
+  mockApiClient.getRagStatus.mockResolvedValue({ available: true, collection_name: "monetra-finance-knowledge", indexed_at: null, document_count: 0, chunk_count: 0, signature: null });
   mockApiClient.startFinanceBriefingAgent.mockResolvedValue({ id: "brief-1", status: "queued", task: "brief", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: null });
   mockApiClient.getFinanceBriefingJob.mockResolvedValue({ id: "brief-1", status: "completed", task: "brief", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: { headline: "Done", summary: "Summary", risk_level: "low", recommended_actions: [], email_subject: "Done", email_draft: "Done", task: "brief", model: "qwen", tools_used: [], report_download_url: null } });
   mockApiClient.listAgentWorkflows.mockResolvedValue([{ id: "month_end_close", label: "Month-end close", description: "desc", automation_focus: "focus", default_task: "run" }]);
@@ -250,4 +254,5 @@ describe("final hook, api client, and comparison coverage", () => {
     expect(result.current.errorMessage).toBe("The month_end_close workflow failed.");
   });
 });
+
 

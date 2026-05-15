@@ -80,6 +80,32 @@ jest.mock("@/lib/api-client", () => ({
       is_budget_exceeded: false,
       monthly_budget: 1050,
     }),
+    getRagStatus: jest.fn().mockResolvedValue({
+      collection_name: "monetra-finance-knowledge",
+      embedding_model: "nomic-embed-text",
+      is_indexed: true,
+      document_count: 4,
+      chunk_count: 8,
+      last_indexed_at: "2026-03-21T09:00:00Z",
+      manifest_version: "2026-03-21T09:00:00Z",
+      reindexed: false,
+    }),
+    queryRag: jest.fn().mockResolvedValue({
+      answer: "Spending is concentrated in groceries and recurring housing costs.",
+      confidence: "high",
+      sources: [],
+      follow_up_questions: [],
+    }),
+    reindexRag: jest.fn().mockResolvedValue({
+      collection_name: "monetra-finance-knowledge",
+      embedding_model: "nomic-embed-text",
+      is_indexed: true,
+      document_count: 4,
+      chunk_count: 8,
+      last_indexed_at: "2026-03-21T09:05:00Z",
+      manifest_version: "2026-03-21T09:05:00Z",
+      reindexed: true,
+    }),
     startFinanceBriefingAgent: jest.fn().mockResolvedValue({
       id: "job-1",
       status: "queued",
@@ -230,6 +256,7 @@ describe("useBudgetTracker", () => {
     expect(result.current.agentRuns[0]?.workflow_name).toBe("month_end_close");
   });
 });
+
 
 
 

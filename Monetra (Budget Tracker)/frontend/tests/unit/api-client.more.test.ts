@@ -6,7 +6,7 @@ describe("apiClient additional coverage", () => {
     global.fetch = jest.fn();
   });
 
-  it("covers auth, settings, recurring, agent, and email endpoints", async () => {
+  it("covers auth, settings, recurring, agent, email, and rag endpoints", async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: true,
       headers: { get: () => "application/json" },
@@ -36,10 +36,14 @@ describe("apiClient additional coverage", () => {
     await apiClient.runAutomationRefresh("expense_created");
     await apiClient.sendUpcomingBillsEmailNow();
     await apiClient.sendMonthEndEmailNow();
+    await apiClient.getRagStatus();
+    await apiClient.reindexRag();
+    await apiClient.queryRag("What changed?");
 
     expect((global.fetch as jest.Mock).mock.calls.some((call) => String(call[0]).includes("/api/auth/login"))).toBe(true);
     expect((global.fetch as jest.Mock).mock.calls.some((call) => String(call[0]).includes("/api/recurring-items/calendar?days=45"))).toBe(true);
     expect((global.fetch as jest.Mock).mock.calls.some((call) => String(call[0]).includes("/api/agents/automation/month-end-email"))).toBe(true);
+    expect((global.fetch as jest.Mock).mock.calls.some((call) => String(call[0]).includes("/api/rag/query"))).toBe(true);
   });
 
   it("returns raw response objects for non-json endpoints", async () => {

@@ -7,7 +7,7 @@ import { KpiVisuals } from "@/components/kpi-visuals";
 import { RecurringCalendarPanel } from "@/components/recurring-calendar-panel";
 
 describe("frontend coverage gaps", () => {
-  it("covers rich AI trace rendering, high risk status, and string normalization branches", () => {
+  it("hides AI trace details while preserving high risk status and string normalization branches", () => {
     const cyclic: { self?: unknown } = {};
     cyclic.self = cyclic;
 
@@ -55,19 +55,16 @@ describe("frontend coverage gaps", () => {
     );
 
     expect(screen.getByText("High risk")).toBeInTheDocument();
-    expect(screen.getByText("Identify the main risk.")).toBeInTheDocument();
-    expect(screen.getByText("1. get_dashboard_summary")).toBeInTheDocument();
-    expect(screen.getByText("2. Unknown tool")).toBeInTheDocument();
-    expect(screen.getByText("No reasoning provided.")).toBeInTheDocument();
-    expect(screen.getByText("broken_tool")).toBeInTheDocument();
+    expect(screen.queryByText("Agent trace")).not.toBeInTheDocument();
+    expect(screen.queryByText("Identify the main risk.")).not.toBeInTheDocument();
+    expect(screen.queryByText("1. get_dashboard_summary")).not.toBeInTheDocument();
+    expect(screen.queryByText("broken_tool")).not.toBeInTheDocument();
     expect(screen.getByText("[object Object].")).toBeInTheDocument();
     expect(screen.getByText("Review the deficit immediately.")).toBeInTheDocument();
-    expect(screen.getByText("Verification complete.")).toBeInTheDocument();
-    expect(screen.getByText("Repair attempts: 2")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Download agent report" })).toHaveAttribute("href", "/api/reports/monthly");
   });
 
-  it("covers automation history fallback branches and timestamp rendering", () => {
+  it("covers automation workflow buttons without rendering run history", () => {
     render(
       <AutomationCenter
         workflows={[
@@ -100,14 +97,14 @@ describe("frontend coverage gaps", () => {
           },
         ]}
         activeWorkflowName={null}
+        liveStatusMessage={null}
         onRunWorkflow={jest.fn()}
       />,
     );
 
-    expect(screen.getByText("invalid timestamp | mistral")).toBeInTheDocument();
-    expect(screen.getByText("medium risk")).toBeInTheDocument();
-    expect(screen.getByText("No extra follow-up actions were suggested.")).toBeInTheDocument();
-    expect(screen.getByText("0 tools used")).toBeInTheDocument();
+    expect(screen.getByText("Cash-flow recovery")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run workflow" })).toBeInTheDocument();
+    expect(screen.queryByText("medium risk")).not.toBeInTheDocument();
   });
 
   it("covers expense form input branches and recurring planner form interactions", () => {

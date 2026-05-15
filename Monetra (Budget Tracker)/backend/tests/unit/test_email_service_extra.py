@@ -34,6 +34,7 @@ class FakeSMTP:
 def test_email_service_configuration_and_default_recipient():
     service = EmailService("smtp.example.com", 587, "user@example.com", "secret", True, "to@example.com")
     assert service.default_recipient == "to@example.com"
+    assert service.recipient_name == "Rushabh Dharamshi"
     assert service.is_configured() is True
 
 
@@ -80,3 +81,23 @@ def test_send_email_without_tls(monkeypatch):
     service = EmailService("smtp.example.com", 25, "user@example.com", "secret", False, "to@example.com")
     service.send_email("Subject", "Body")
     assert smtp.started_tls is False
+
+
+def test_send_email_replaces_recipient_name_placeholder(monkeypatch):
+    smtp = FakeSMTP("smtp.example.com", 587, 30)
+    monkeypatch.setattr("budget_tracker_api.services.email_service.smtplib.SMTP", lambda *args, **kwargs: smtp)
+    service = EmailService(
+        "smtp.example.com",
+        587,
+        "user@example.com",
+        "secret",
+        True,
+        "to@example.com",
+        recipient_name="Rushabh Dharamshi",
+    )
+
+    service.send_email("Subject", "Dear [Recipient's Name],\n\nYour report is ready.")
+
+    content = smtp.sent_messages[0].get_content()
+    assert "Dear Rushabh Dharamshi," in content
+    assert "[Recipient's Name]" not in content

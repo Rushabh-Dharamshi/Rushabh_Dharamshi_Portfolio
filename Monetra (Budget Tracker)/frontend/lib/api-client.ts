@@ -12,6 +12,8 @@ import {
   FinancialPulseResponse,
   ImportResponse,
   PredictionResponse,
+  RagAnswerResponse,
+  RagStatusResponse,
   RecurringCalendarResponse,
   RecurringItem,
   RecurringItemPayload,
@@ -141,6 +143,17 @@ export const apiClient = {
   getWordCloud: () => request<WordCloudResponse>("/api/analytics/wordcloud"),
   getFinancialPulse: () => request<FinancialPulseResponse>("/api/analytics/financial-pulse"),
   getPrediction: () => request<PredictionResponse>("/api/predictions/next-month"),
+  getRagStatus: () => request<RagStatusResponse>("/api/rag/status"),
+  reindexRag: (force = true) =>
+    request<RagStatusResponse>("/api/rag/reindex", {
+      method: "POST",
+      body: JSON.stringify({ force }),
+    }),
+  queryRag: (question: string) =>
+    request<RagAnswerResponse>("/api/rag/query", {
+      method: "POST",
+      body: JSON.stringify({ question }),
+    }),
   getSettings: (month?: string) => request<SettingsResponse>(month ? `/api/settings?month=${encodeURIComponent(month)}` : "/api/settings"),
   updateMonthlyBudget: (monthlyBudget: number) =>
     request<SettingsResponse>("/api/settings/budget", {
@@ -210,6 +223,8 @@ export const apiClient = {
       method: "POST",
     }),
 };
+
+
 
 
 

@@ -93,6 +93,25 @@ class StubReportService:
         return "report.pdf"
 
 
+
+class StubRagService:
+    def retrieve_context(self, question, top_k=None):
+        return {
+            "question": question,
+            "sources": [
+                {
+                    "source_label": "Dashboard March 2026",
+                    "doc_type": "dashboard",
+                    "document_id": "dashboard::2026-03",
+                    "excerpt": "Monthly budget is GBP 1050.",
+                    "score": 0.95,
+                    "metadata": {},
+                }
+            ],
+            "retrieved_count": 1,
+            "indexed_at": "2026-04-15T09:00:00Z",
+        }
+
 class StubAutomationService:
     def run_upcoming_bills_email_now(self):
         return {"headline": "Upcoming"}
@@ -134,6 +153,7 @@ def finance_server(monkeypatch):
         "expense_service": StubExpenseService(),
         "recurring_service": StubRecurringService(),
         "report_service": StubReportService(),
+        "rag_service": StubRagService(),
         "automation_service": StubAutomationService(),
     }
     monkeypatch.setattr(module, "_app", SimpleNamespace(extensions={"services": services}, app_context=lambda: type("C", (), {"__enter__": lambda s: None, "__exit__": lambda s, *args: False})()))
@@ -148,6 +168,7 @@ def test_finance_server_tools_cover_success_paths(finance_server, monkeypatch):
     assert module.get_category_insights() == {"top_categories": []}
     assert module.get_spending_prediction() == {"predicted_spending": 900.0}
     assert module.get_recent_transactions(99)["transactions"] == services["expense_service"].list_expenses()[:15]
+    assert module.retrieve_finance_context("What changed?", 4)["retrieved_count"] == 1
     assert module.list_recurring_reminders()["items"][0]["description"] == "Rent"
     assert module.get_upcoming_recurring_items(90)["days"] == 60
     assert module.set_monthly_budget(1200.25)["action_result"]["payload"]["monthly_income"] == 1500.0
@@ -172,6 +193,7 @@ def test_finance_server_tools_cover_success_paths(finance_server, monkeypatch):
         "Housing", "Rent", 700.0, "expense", "monthly", "2026-04-01", "2026-06-01", True
     )
     assert created_reminder["action_result"]["recurring_item"]["description"] == "Rent"
+    services["recurring_service"].deleted.clear()
 
     updated_reminder = module.update_recurring_reminder_by_match(
         {"description": "Rent", "category": "Housing", "amount": 700.0, "entry_type": "expense", "frequency": "monthly", "start_date": "2026-04-01", "end_date": "2026-06-01"},
@@ -210,5 +232,48 @@ def test_finance_server_match_failures_raise_validation(finance_server):
     with pytest.raises(ValidationError, match="No matching recurring reminder was found to replace."):
         module.replace_recurring_reminder({"description": "missing"}, {"description": "new"})
 
+
+def test_finance_server_recurring_match_handles_chatgpt_variants_without_matching_pro(monkeypatch):
+    module = importlib.import_module("budget_tracker_api.mcp.finance_server")
+    services = {
+        "recurring_service": SimpleNamespace(
+            list_items=lambda: [
+                {
+                    "id": 1,
+                    "category": "Subscription",
+                    "description": "Chat GPT Plus",
+                    "amount": 20.0,
+                    "entry_type": "expense",
+                    "frequency": "monthly",
+                    "start_date": "2026-05-07",
+                    "end_date": "2026-12-07",
+                    "active": True,
+                },
+                {
+                    "id": 2,
+                    "category": "Subscription",
+                    "description": "ChatGPT Pro",
+                    "amount": 200.0,
+                    "entry_type": "expense",
+                    "frequency": "monthly",
+                    "start_date": "2026-05-07",
+                    "end_date": "2026-12-07",
+                    "active": True,
+                },
+            ]
+        )
+    }
+
+    matches = module._match_recurring(
+        services,
+        {
+            "category": "ChatGPT Plus",
+            "description": "ChatGPT Plus Subscription",
+            "entry_type": "expense",
+            "frequency": "monthly",
+        },
+    )
+
+    assert [item["id"] for item in matches] == [1]
 
 

@@ -25,20 +25,20 @@ describe("component branch coverage", () => {
   it("covers automation, AI, and finance fallback branches", () => {
     render(
       <>
-        <AutomationCenter workflows={[{ id: "upcoming_bills_check", label: "Upcoming bills", description: "Review bills", automation_focus: "Focus", default_task: "Run" }]} runs={[]} activeWorkflowName="upcoming_bills_check" onRunWorkflow={jest.fn()} />
+        <AutomationCenter workflows={[{ id: "upcoming_bills_check", label: "Upcoming bills", description: "Review bills", automation_focus: "Focus", default_task: "Run" }]} runs={[]} activeWorkflowName="upcoming_bills_check" liveStatusMessage="upcoming bills check is running. Elapsed: 2s." onRunWorkflow={jest.fn()} />
         <AiAgentPanel taskDraft="test" result={null} isRunning={true} onTaskDraftChange={jest.fn()} onRun={jest.fn()} />
         <FinancialPulse pulse={{ health_score: 36, average_transaction: 10, transaction_count: 0, spend_velocity: 1.5, top_category_share: 40, runway_days: null, narrative: "Cash outflow ahead of income.", cash_in: 100, cash_out: 120, net_cash_flow: -20, income_coverage: 83.3, recent_transactions: [], recent_expenses: [] }} />
       </>,
     );
 
     expect(screen.getByText("Upcoming bills is running.")).toBeInTheDocument();
-    expect(screen.getByText("Run a workflow to build an automation history.")).toBeInTheDocument();
+    expect(screen.getByText("upcoming bills check is running. Elapsed: 2s.")).toBeInTheDocument();
     expect(screen.getByText("Processing your request.")).toBeInTheDocument();
     expect(screen.getByText("No recent transactions recorded.")).toBeInTheDocument();
     expect(screen.getByText("Stable")).toBeInTheDocument();
   });
 
-  it("normalizes fragmented AI actions and trace fallbacks", () => {
+  it("normalizes fragmented AI actions and hides trace fallbacks", () => {
     render(
       <AiAgentPanel
         taskDraft="test"
@@ -69,8 +69,9 @@ describe("component branch coverage", () => {
     );
 
     expect(screen.getByText("N. review.")).toBeInTheDocument();
-    expect(screen.getByText("No plan trace was returned.")).toBeInTheDocument();
-    expect(screen.getByText("No tool execution trace was returned.")).toBeInTheDocument();
+    expect(screen.queryByText("Agent trace")).not.toBeInTheDocument();
+    expect(screen.queryByText("No plan trace was returned.")).not.toBeInTheDocument();
+    expect(screen.queryByText("No tool execution trace was returned.")).not.toBeInTheDocument();
     expect(screen.getByText((value) => value.includes("invalid time"))).toBeInTheDocument();
     expect(screen.getByText((value) => value.includes("Medium risk"))).toBeInTheDocument();
     expect(screen.queryByText("Download agent report")).not.toBeInTheDocument();

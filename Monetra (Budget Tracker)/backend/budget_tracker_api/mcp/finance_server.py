@@ -1,6 +1,7 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from fastmcp import FastMCP
+import re
 
 from budget_tracker_api import create_app
 from budget_tracker_api.errors import ValidationError
@@ -63,6 +64,11 @@ def get_recent_transactions(limit: int = 8) -> dict:
     return _with_app_context(
         lambda services: {"transactions": services["expense_service"].list_expenses()[: max(1, min(limit, 15))]}
     )
+
+
+@mcp.tool
+def retrieve_finance_context(question: str, top_k: int = 6) -> dict:
+    return _with_app_context(lambda services: services["rag_service"].retrieve_context(question, top_k=top_k))
 
 
 @mcp.tool
@@ -166,6 +172,35 @@ def _match_expenses(services, criteria: dict) -> list[dict]:
     return matches
 
 
+def _normalize_text_match(value: object) -> str:
+    normalized = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower())
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _text_matches(needle: object, haystack: object) -> bool:
+    normalized_needle = _normalize_text_match(needle)
+    if not normalized_needle:
+        return True
+    normalized_haystack = _normalize_text_match(haystack)
+    needle_tokens = set(normalized_needle.split())
+    haystack_tokens = set(normalized_haystack.split())
+    plan_tokens = {"plus", "pro", "free"}
+    required_plan_tokens = needle_tokens & plan_tokens
+    if required_plan_tokens and not required_plan_tokens.issubset(haystack_tokens):
+        return False
+    compact_needle = normalized_needle.replace(" ", "")
+    compact_haystack = normalized_haystack.replace(" ", "")
+    return (
+        needle_tokens.issubset(haystack_tokens)
+        or haystack_tokens.issubset(needle_tokens)
+        or
+        normalized_needle in normalized_haystack
+        or normalized_haystack in normalized_needle
+        or compact_needle in compact_haystack
+        or compact_haystack in compact_needle
+    )
+
+
 @mcp.tool
 def update_transaction_by_match(target: dict, entity: dict) -> dict:
     def _handler(services):
@@ -212,19 +247,22 @@ def delete_transaction_by_match(target: dict) -> dict:
 
 def _match_recurring(services, criteria: dict) -> list[dict]:
     items = services["recurring_service"].list_items()
-    normalized_description = str(criteria.get("description") or "").strip().lower()
-    normalized_category = str(criteria.get("category") or "").strip().lower()
+    description = criteria.get("description")
+    category = criteria.get("category")
+    identity_text = " ".join(
+        part for part in (str(description or "").strip(), str(category or "").strip()) if part
+    )
     normalized_entry_type = str(criteria.get("entry_type") or "").strip().lower()
     normalized_frequency = str(criteria.get("frequency") or "").strip().lower()
     normalized_start_date = str(criteria.get("start_date") or "").strip()
     normalized_end_date = str(criteria.get("end_date") or "").strip()
     normalized_amount = criteria.get("amount")
+    has_text_identity = bool(_normalize_text_match(description) or _normalize_text_match(category))
 
     matches = []
     for item in items:
-        if normalized_description and normalized_description not in item["description"].strip().lower():
-            continue
-        if normalized_category and normalized_category not in item["category"].strip().lower():
+        item_identity_text = f"{item['description']} {item['category']}"
+        if identity_text and not _text_matches(identity_text, item_identity_text):
             continue
         if normalized_entry_type and normalized_entry_type != item["entry_type"]:
             continue
@@ -234,7 +272,11 @@ def _match_recurring(services, criteria: dict) -> list[dict]:
             continue
         if normalized_end_date and normalized_end_date != str(item.get("end_date") or ""):
             continue
-        if normalized_amount not in (None, "") and abs(float(item["amount"]) - float(normalized_amount)) >= 0.01:
+        if (
+            not has_text_identity
+            and normalized_amount not in (None, "")
+            and abs(float(item["amount"]) - float(normalized_amount)) >= 0.01
+        ):
             continue
         matches.append(item)
     return matches
@@ -252,18 +294,41 @@ def create_recurring_reminder(
     active: bool = True,
 ) -> dict:
     def _handler(services):
-        created = services["recurring_service"].create_item(
+        payload = {
+            "category": category,
+            "description": description,
+            "amount": amount,
+            "entry_type": entry_type,
+            "frequency": frequency,
+            "start_date": start_date,
+            "end_date": end_date,
+            "active": active,
+        }
+        matches = _match_recurring(
+            services,
             {
                 "category": category,
                 "description": description,
-                "amount": amount,
                 "entry_type": entry_type,
                 "frequency": frequency,
-                "start_date": start_date,
-                "end_date": end_date,
-                "active": active,
-            }
+            },
         )
+        if matches:
+            primary = sorted(matches, key=lambda item: item["id"])[0]
+            updated = services["recurring_service"].update_item(primary["id"], payload)
+            for duplicate in matches[1:]:
+                services["recurring_service"].delete_item(duplicate["id"])
+            return {
+                "headline": "Recurring reminder updated",
+                "summary": f"{updated['description']} is now scheduled as a {updated['frequency']} {updated['entry_type']} reminder starting {updated['start_date']}.",
+                "action_result": {
+                    "type": "recurring_item_updated",
+                    "message": "An existing similar reminder was updated instead of creating a duplicate.",
+                    "recurring_item": updated,
+                },
+            }
+
+        created = services["recurring_service"].create_item(payload)
         return {
             "headline": "Recurring reminder created",
             "summary": f"{created['description']} is now scheduled as a {created['frequency']} {created['entry_type']} reminder starting {created['start_date']}.",
@@ -364,4 +429,6 @@ def send_month_end_email_now() -> dict:
 
 if __name__ == "__main__":
     mcp.run(transport="stdio")
+
+
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import logging
 import os
 from pathlib import Path
 
@@ -9,6 +10,9 @@ from fastmcp import Client
 from fastmcp.client.transports import StdioTransport
 
 from budget_tracker_api.errors import ServiceUnavailableError
+
+
+logger = logging.getLogger(__name__)
 
 
 class FastMcpClientService:
@@ -24,6 +28,8 @@ class FastMcpClientService:
         self._log_file_path = Path(log_file_path)
 
     def list_tools(self) -> list[dict]:
+        logger.info("******************* USING MCP: list_tools *******************")
+
         async def _runner():
             async with Client(self._build_transport(), timeout=dt.timedelta(seconds=30)) as client:
                 tools = await client.list_tools()
@@ -32,6 +38,8 @@ class FastMcpClientService:
         return self._run_async(_runner())
 
     def call_tool(self, tool_name: str, arguments: dict | None = None):
+        logger.info("******************* USING MCP: call_tool=%s *******************", tool_name)
+
         async def _runner():
             async with Client(self._build_transport(), timeout=dt.timedelta(seconds=60)) as client:
                 result = await client.call_tool(tool_name, arguments or {})

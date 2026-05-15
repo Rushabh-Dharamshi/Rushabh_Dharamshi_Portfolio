@@ -1,7 +1,7 @@
 ﻿import json
 import logging
 from calendar import monthrange
-from datetime import datetime
+from datetime import UTC, datetime, datetime as _real_datetime
 from pathlib import Path
 from threading import Lock, Thread
 
@@ -13,6 +13,10 @@ from budget_tracker_api.services.recurring_service import RecurringService
 from budget_tracker_api.services.report_service import ReportService
 
 logger = logging.getLogger(__name__)
+
+
+def _utc_timestamp() -> str:
+    return _real_datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 class AutomationService:
@@ -89,6 +93,12 @@ class AutomationService:
 
     @classmethod
     def _realtime_workflow_names(cls, event_type: str) -> tuple[str, ...]:
+        if event_type in {
+            "month_end_email_sent",
+            "upcoming_bills_email_sent",
+            "upcoming_bills_email_skipped",
+        }:
+            return ()
         if event_type in {
             "expense_created",
             "expense_updated",
@@ -201,6 +211,8 @@ class AutomationService:
 
     def run_upcoming_bills_email_if_due(self) -> dict | None:
         due_expenses = self._get_due_expenses_within_days(7)
+        if not due_expenses:
+            return None
         signature = self._upcoming_bills_signature(due_expenses)
         latest_run = self._run_repository.latest_run("upcoming_bills_email_dispatch")
         if latest_run and latest_run.get("task") == signature:
@@ -216,6 +228,29 @@ class AutomationService:
     def run_upcoming_bills_email_now(self) -> dict:
         due_expenses = self._get_due_expenses_within_days(7)
         signature = self._upcoming_bills_signature(due_expenses)
+        if not due_expenses:
+            return self._run_repository.create_run(
+                {
+                    "workflow_name": "upcoming_bills_email_manual_dispatch",
+                    "workflow_label": "Upcoming bills email manual dispatch",
+                    "status": "completed",
+                    "headline": "No upcoming bills email sent",
+                    "summary": "No email was sent because there are no expense reminders due within the next 7 days.",
+                    "risk_level": "low",
+                    "recommended_actions": ["No bill reminder email is needed right now."],
+                    "automated_actions": [
+                        "Checked the latest recurring expense reminders due within 7 days.",
+                        "Skipped email delivery because no bills are due in that window.",
+                    ],
+                    "email_subject": "No upcoming bills due",
+                    "email_draft": "No email was sent because there are no upcoming bills due within the next 7 days.",
+                    "task": signature,
+                    "model": "system",
+                    "tools_used": ["upcoming_bills_change_detection"],
+                    "report_download_url": None,
+                    "generated_at": _utc_timestamp(),
+                }
+            )
         return self._dispatch_upcoming_bills_email(
             due_expenses=due_expenses,
             signature=signature,
@@ -224,7 +259,7 @@ class AutomationService:
         )
 
     def _get_due_expenses_within_days(self, days: int) -> list[dict]:
-        upcoming = self._recurring_service.upcoming_calendar(days)
+        upcoming = self._recurring_service.upcoming_calendar(days + 1)
         return [
             {
                 "recurring_item_id": occurrence.get("recurring_item_id"),
@@ -236,6 +271,7 @@ class AutomationService:
             }
             for occurrence in upcoming.get("occurrences", [])
             if occurrence.get("entry_type") == "expense"
+            and int(occurrence.get("days_until_due") or 0) <= days
         ]
 
     def _dispatch_month_end_email(
@@ -275,7 +311,7 @@ class AutomationService:
                 "model": workflow_result["model"],
                 "tools_used": workflow_result["tools_used"],
                 "report_download_url": workflow_result["report_download_url"],
-                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "generated_at": _utc_timestamp(),
             }
         )
 
@@ -287,37 +323,23 @@ class AutomationService:
         workflow_name: str,
         workflow_label: str,
     ) -> dict:
-        if due_expenses:
-            workflow_result = self._agent_service.run_workflow("upcoming_bills_check", {})
-            email_subject = workflow_result["email_subject"]
-            email_body = workflow_result["email_draft"]
-            headline = "Upcoming bills alert emailed"
-            summary = "Upcoming bills alert emailed to {recipient} for items due within 7 days."
-            risk_level = workflow_result["risk_level"]
-            recommended_actions = workflow_result["recommended_actions"]
-            automated_actions = [
-                "Reviewed recurring bill pressure for the next 7 days.",
-                "Prepared an updated upcoming-bills summary.",
-            ]
-            model = workflow_result["model"]
-            tools_used = workflow_result["tools_used"]
-            report_download_url = workflow_result["report_download_url"]
-        else:
-            email_subject = "Upcoming bills update: no bills due in the next 7 days"
-            email_body = (
-                "Your upcoming bills list has been refreshed. There are currently no expense reminders due within the next 7 days."
-            )
-            headline = "Upcoming bills cleared email sent"
-            summary = "Upcoming bills update emailed to {recipient}; there are no expense reminders due within 7 days."
-            risk_level = "low"
-            recommended_actions = ["No immediate bill payments are due in the next 7 days."]
-            automated_actions = [
-                "Detected that the upcoming expense reminders list changed.",
-                "Prepared the latest all-clear upcoming-bills update.",
-            ]
-            model = "system"
-            tools_used = ["upcoming_bills_change_detection"]
-            report_download_url = None
+        if not due_expenses:
+            raise ValidationError("No expense reminders are due within the next 7 days, so no upcoming-bills email was sent.")
+
+        workflow_result = self._agent_service.run_workflow("upcoming_bills_check", {})
+        email_subject = workflow_result["email_subject"]
+        email_body = workflow_result["email_draft"]
+        headline = "Upcoming bills alert emailed"
+        summary = "Upcoming bills alert emailed to {recipient} for items due within 7 days."
+        risk_level = workflow_result["risk_level"]
+        recommended_actions = workflow_result["recommended_actions"]
+        automated_actions = [
+            "Reviewed recurring bill pressure for the next 7 days.",
+            "Prepared an updated upcoming-bills summary.",
+        ]
+        model = workflow_result["model"]
+        tools_used = workflow_result["tools_used"]
+        report_download_url = workflow_result["report_download_url"]
 
         email_result = self._email_service.send_email(
             subject=email_subject,
@@ -342,7 +364,7 @@ class AutomationService:
                 "model": model,
                 "tools_used": tools_used,
                 "report_download_url": report_download_url,
-                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "generated_at": _utc_timestamp(),
             }
         )
 

@@ -107,7 +107,8 @@ describe("frontend strict last-mile component coverage", () => {
     expect(screen.getByText("No expense records found.")).toBeInTheDocument();
     expect(onImport).not.toHaveBeenCalled();
     expect(screen.getByText("Fallback summary.")).toBeInTheDocument();
-    expect(screen.getByText("Keep runway healthy.")).toBeInTheDocument();
+    expect(screen.queryByText("Keep runway healthy.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Agent trace")).not.toBeInTheDocument();
 
     filterSpy.mockRestore();
   });

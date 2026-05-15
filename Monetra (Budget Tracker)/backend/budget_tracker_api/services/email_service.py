@@ -1,11 +1,20 @@
 import smtplib
 from email.message import EmailMessage
 from pathlib import Path
+import re
 
 from budget_tracker_api.errors import ServiceUnavailableError
 
 
 class EmailService:
+    _RECIPIENT_PLACEHOLDERS = (
+        "[Recipient's Name]",
+        "[Recipient’s Name]",
+        "[Recipient Name]",
+        "[Recipient]",
+        "[Name]",
+    )
+
     def __init__(
         self,
         smtp_host: str,
@@ -14,6 +23,7 @@ class EmailService:
         smtp_password: str,
         smtp_use_tls: bool,
         default_recipient: str,
+        recipient_name: str = "Rushabh Dharamshi",
     ):
         self._smtp_host = smtp_host
         self._smtp_port = smtp_port
@@ -21,10 +31,26 @@ class EmailService:
         self._smtp_password = smtp_password
         self._smtp_use_tls = smtp_use_tls
         self._default_recipient = default_recipient
+        self._recipient_name = recipient_name.strip() or "Rushabh Dharamshi"
 
     @property
     def default_recipient(self) -> str:
         return self._default_recipient
+
+    @property
+    def recipient_name(self) -> str:
+        return self._recipient_name
+
+    def _personalize_body(self, body: str) -> str:
+        personalized = body or ""
+        for placeholder in self._RECIPIENT_PLACEHOLDERS:
+            personalized = personalized.replace(placeholder, self._recipient_name)
+
+        return re.sub(
+            r"(?im)^Dear\s*,\s*$",
+            f"Dear {self._recipient_name},",
+            personalized,
+        )
 
     def is_configured(self) -> bool:
         return bool(
@@ -50,7 +76,7 @@ class EmailService:
         message["Subject"] = subject
         message["From"] = self._smtp_username
         message["To"] = recipient or self._default_recipient
-        message.set_content(body)
+        message.set_content(self._personalize_body(body))
 
         with smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=30) as smtp:
             if self._smtp_use_tls:
@@ -79,7 +105,7 @@ class EmailService:
         message["Subject"] = subject
         message["From"] = self._smtp_username
         message["To"] = recipient or self._default_recipient
-        message.set_content(body)
+        message.set_content(self._personalize_body(body))
 
         attachment_bytes = attachment_path.read_bytes()
         message.add_attachment(

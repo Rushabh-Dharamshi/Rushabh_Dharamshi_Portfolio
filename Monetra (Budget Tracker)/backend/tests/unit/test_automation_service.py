@@ -200,7 +200,7 @@ def test_upcoming_bills_email_runs_when_signature_changes():
     assert repository.runs[0]["headline"] == "Upcoming bills alert emailed"
 
 
-def test_upcoming_bills_email_sends_all_clear_after_bills_disappear():
+def test_upcoming_bills_email_does_not_send_all_clear_after_bills_disappear():
     repository = FakeRunRepository()
     email_service = FakeEmailService()
     service = AutomationService(
@@ -225,9 +225,8 @@ def test_upcoming_bills_email_sends_all_clear_after_bills_disappear():
     service._recurring_service = FakeRecurringService([])
     cleared = service.run_upcoming_bills_email_if_due()
 
-    assert cleared is not None
-    assert cleared["headline"] == "Upcoming bills cleared email sent"
-    assert email_service.sent_messages[-1]["subject"] == "Upcoming bills update: no bills due in the next 7 days"
+    assert cleared is None
+    assert len(email_service.sent_messages) == 1
 
 
 

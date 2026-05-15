@@ -146,6 +146,33 @@ export interface RecurringItemPayload {
   active: boolean;
 }
 
+export interface RagSource {
+  source_label: string;
+  doc_type: string;
+  document_id: string;
+  excerpt: string;
+  score: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface RagAnswerResponse {
+  question: string;
+  answer: string;
+  confidence: "low" | "medium" | "high" | string;
+  follow_up_questions: string[];
+  sources: RagSource[];
+  generated_at: string;
+}
+
+export interface RagStatusResponse {
+  available: boolean;
+  collection_name: string;
+  indexed_at: string | null;
+  document_count: number;
+  chunk_count: number;
+  signature: string | null;
+  reindexed?: boolean;
+}
 export interface AgentBriefingJob {
   id: string;
   status: "queued" | "running" | "completed" | "failed" | string;
@@ -244,6 +271,7 @@ export interface AgentWorkflowRun {
   report_download_url: string | null;
   generated_at: string;
 }
+
 
 
 

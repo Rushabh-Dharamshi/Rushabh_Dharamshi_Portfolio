@@ -29,6 +29,12 @@ describe("frontend strict hook isolate coverage", () => {
       runAutomationBootstrap: jest.fn().mockResolvedValue([]),
       runAutomationRefresh: jest.fn().mockResolvedValue([]),
       getPrediction: jest.fn(),
+      getRagStatus: jest.fn().mockResolvedValue({ available: true, collection_name: "monetra-finance-knowledge", indexed_at: null, document_count: 0, chunk_count: 0, signature: null }),
+      reindexRag: jest.fn(),
+      queryRag: jest.fn(),
+  getRagStatus: jest.fn(),
+  reindexRag: jest.fn(),
+  queryRag: jest.fn(),
       updateMonthlyBudget: jest.fn(),
       updateMonthlyIncome: jest.fn(),
       createRecurringItem: jest.fn(),
@@ -75,7 +81,7 @@ describe("frontend strict hook isolate coverage", () => {
       let callCount = 0;
       jest.spyOn(reactModule, "useState").mockImplementation((initial: unknown) => {
         callCount += 1;
-        if (callCount === 23) {
+        if (callCount === 28) {
           return realUseState(null);
         }
         return realUseState(initial);
@@ -101,4 +107,6 @@ describe("frontend strict hook isolate coverage", () => {
     expect(result.current.errorMessage).toBe("The month_end_close workflow failed.");
   });
 });
+
+
 

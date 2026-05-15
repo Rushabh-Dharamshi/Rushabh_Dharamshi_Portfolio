@@ -1,0 +1,12 @@
+node_modules
+.next
+.npm-cache
+coverage
+out
+tsconfig.tsbuildinfo
+
+tests
+*.log
+
+.env
+.env.*

@@ -8,6 +8,7 @@ import { ExpenseTable } from "@/components/expense-table";
 import { FinancialPulse } from "@/components/financial-pulse";
 import { InsightsPanel } from "@/components/insights-panel";
 import { KpiVisuals } from "@/components/kpi-visuals";
+import { RagQaPanel } from "@/components/rag-qa-panel";
 import { OperationsPanel } from "@/components/operations-panel";
 import { RecurringCalendarPanel } from "@/components/recurring-calendar-panel";
 import { SpendingComparisonPanel } from "@/components/spending-comparison-panel";
@@ -93,9 +94,41 @@ export function BudgetTrackerShell({ username = "Rushabh", onLogout }: BudgetTra
             workflows={tracker.agentWorkflows}
             runs={tracker.agentRuns}
             activeWorkflowName={tracker.activeWorkflowName}
+            liveStatusMessage={tracker.activeWorkflowName ? tracker.statusMessage : null}
             onRunWorkflow={tracker.runAutomationWorkflow}
           />
           <DashboardSummaryCards summary={tracker.dashboard} />
+          <FinancialPulse pulse={tracker.financialPulse} />
+          <RecurringCalendarPanel
+            items={tracker.recurringItems}
+            calendar={tracker.recurringCalendar}
+            onCreate={tracker.createRecurringItem}
+            onUpdate={tracker.updateRecurringItem}
+            onDelete={tracker.deleteRecurringItem}
+            onMarkPaid={tracker.markRecurringOccurrencePaid}
+            onMarkUnpaid={tracker.markRecurringOccurrenceUnpaid}
+          />
+          <KpiVisuals expenses={tracker.allExpenses} summary={tracker.dashboard} />
+        </div>
+
+        <div className="right-rail">
+          <RagQaPanel
+            questionDraft={tracker.ragQuestionDraft}
+            answer={tracker.ragAnswer}
+            status={tracker.ragStatus}
+            isQuerying={tracker.isRagQueryRunning}
+            isReindexing={tracker.isRagReindexing}
+            onQuestionDraftChange={tracker.setRagQuestionDraft}
+            onAsk={tracker.runRagQuery}
+            onReindex={tracker.reindexRagKnowledge}
+          />
+          <AiAgentPanel
+            taskDraft={tracker.agentTaskDraft}
+            result={tracker.agentBriefing}
+            isRunning={tracker.isAgentRunning}
+            onTaskDraftChange={tracker.setAgentTaskDraft}
+            onRun={tracker.runFinanceBriefingAgent}
+          />
           <ExpenseForm
             form={tracker.form}
             selectedExpenseId={tracker.selectedExpense?.id ?? null}
@@ -122,27 +155,6 @@ export function BudgetTrackerShell({ username = "Rushabh", onLogout }: BudgetTra
             onSaveBudget={tracker.saveMonthlyBudget}
             onSaveIncome={tracker.saveMonthlyIncome}
           />
-          <RecurringCalendarPanel
-            items={tracker.recurringItems}
-            calendar={tracker.recurringCalendar}
-            onCreate={tracker.createRecurringItem}
-            onUpdate={tracker.updateRecurringItem}
-            onDelete={tracker.deleteRecurringItem}
-            onMarkPaid={tracker.markRecurringOccurrencePaid}
-            onMarkUnpaid={tracker.markRecurringOccurrenceUnpaid}
-          />
-        </div>
-
-        <div className="right-rail">
-          <AiAgentPanel
-            taskDraft={tracker.agentTaskDraft}
-            result={tracker.agentBriefing}
-            isRunning={tracker.isAgentRunning}
-            onTaskDraftChange={tracker.setAgentTaskDraft}
-            onRun={tracker.runFinanceBriefingAgent}
-          />
-          <KpiVisuals expenses={tracker.allExpenses} summary={tracker.dashboard} />
-          <FinancialPulse pulse={tracker.financialPulse} />
           <ExpenseTable
             expenses={tracker.expenses}
             selectedExpenseId={tracker.selectedExpense?.id ?? null}

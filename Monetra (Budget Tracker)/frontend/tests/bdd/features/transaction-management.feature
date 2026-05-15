@@ -1,29 +1,22 @@
 Feature: Transaction management
-  A user should be able to review and work with transaction records quickly.
+  A finance user should be able to review, create, and search expense records.
 
-  Scenario: View transaction records from sample expense rows
+  Scenario: View expense records from sample rows
     Given the budget tracker API is mocked with sample expense rows
       | id | date       | category | description | amount | entry_type |
       | 1  | 2026-03-01 | Food     | Groceries   | 20.50  | expense    |
       | 2  | 2026-03-02 | Salary   | Payroll     | 920.00 | income     |
-    When I open the budget tracker homepage
-    Then I should see the text "Transaction records"
-    And I should see the text "Payroll"
+    When I request all expenses
+    Then the latest collection should contain the text "Payroll"
 
-  Scenario: Add a new transaction
+  Scenario: Add a new expense and find it later
     Given the budget tracker API is mocked
-    When I open the budget tracker homepage
-    And I fill the field "Date" with "2026-03-02"
-    And I fill the placeholder "Housing, Travel, Food" with "Travel"
-    And I fill the placeholder "Weekly groceries" with "Bus"
-    And I fill the field "Amount (GBP)" with "4.20"
-    And I click the button "Add transaction"
-    Then I should see the text "Expense #3 added successfully."
-    And I should see the text "Bus"
+    When I create an expense dated "2026-03-02" in category "Travel" with description "Bus" and amount "4.20"
+    Then the latest result should contain the text "Bus"
+    When I request all expenses
+    Then the latest collection should contain the text "Bus"
 
   Scenario: Search for a transaction by id
     Given the budget tracker API is mocked
-    When I open the budget tracker homepage
-    And I fill the placeholder "Search by ID" with "1"
-    And I click the button "Search"
-    Then I should see the text "Showing search result for expense #1."
+    When I search for expense id "1"
+    Then the latest result should contain the text "Groceries"

@@ -40,6 +40,7 @@ class AgentService:
         agent_run_repository: AgentRunRepository,
         agent_memory_service: AgentMemoryService | None = None,
         mcp_tool_adapter: object | None = None,
+        rag_service = None,
     ):
         self._ollama_client = ollama_client
         self._analytics_service = analytics_service
@@ -50,6 +51,7 @@ class AgentService:
         self._settings_service = settings_service
         self._agent_run_repository = agent_run_repository
         self._agent_memory_service = agent_memory_service or AgentMemoryService(None)
+        self._rag_service = rag_service
         self._automation_service = None
         self._mcp_server = FinanceMcpServer(self._build_mcp_handlers())
         self._mcp_tool_adapter = mcp_tool_adapter or self._mcp_server
@@ -563,6 +565,10 @@ class AgentService:
         return workflow_context, automated_actions, tools_used, report_download_url
 
     def _run_manual_action_command(self, task: str) -> dict:
+        direct_email_result = self._run_direct_email_dispatch_if_requested(task)
+        if direct_email_result is not None:
+            return direct_email_result
+
         if self._agentic_command_runtime.is_available():
             try:
                 return self._agentic_command_runtime.run(task)
@@ -574,6 +580,19 @@ class AgentService:
                     logger.warning("Fallback agent runtime failed; falling back to legacy parser | task=%s error=%s", task[:120], fallback_exc)
 
         return self._run_manual_action_command_legacy(task)
+
+    def _run_direct_email_dispatch_if_requested(self, task: str) -> dict | None:
+        normalized = str(task or "").lower()
+        if not self._looks_like_email_dispatch_command(normalized):
+            return None
+
+        if self._looks_like_upcoming_bills_email_command(normalized):
+            return self._mcp_send_upcoming_bills_email_now({})
+
+        if self._looks_like_financial_report_email_command(normalized):
+            return self._mcp_send_month_end_email_now({})
+
+        return None
 
     def _run_manual_action_command_legacy(self, task: str) -> dict:
         parsed = self._parse_manual_action_command(task)
@@ -595,6 +614,7 @@ class AgentService:
             "get_category_insights": lambda arguments: self._execute_tool("get_category_insights", arguments),
             "get_spending_prediction": lambda arguments: self._execute_tool("get_spending_prediction", arguments),
             "get_recent_transactions": lambda arguments: self._execute_tool("get_recent_transactions", arguments),
+            "retrieve_finance_context": self._mcp_retrieve_finance_context,
             "list_recurring_reminders": self._mcp_list_recurring_reminders,
             "get_upcoming_recurring_items": lambda arguments: self._execute_tool("get_upcoming_recurring_items", arguments),
             "set_monthly_budget": self._mcp_set_monthly_budget,
@@ -610,6 +630,13 @@ class AgentService:
             "send_upcoming_bills_email_now": self._mcp_send_upcoming_bills_email_now,
             "send_month_end_email_now": self._mcp_send_month_end_email_now,
         }
+
+    def _mcp_retrieve_finance_context(self, arguments: dict) -> dict:
+        if self._rag_service is None:
+            raise ValidationError("RAG service is not attached to the agent runtime.")
+        question = str(arguments.get("question") or "").strip()
+        top_k = arguments.get("top_k")
+        return self._rag_service.retrieve_context(question, top_k=top_k)
 
     def _mcp_list_recurring_reminders(self, arguments: dict) -> dict:
         list_items = getattr(self._recurring_service, "list_items", None)
@@ -683,10 +710,12 @@ class AgentService:
             raise ValidationError("Automation service is not attached to the agent runtime.")
         result = self._automation_service.run_upcoming_bills_email_now()
         result["report_download_url"] = result.get("report_download_url")
+        action_type = "upcoming_bills_email_skipped" if "no upcoming bills email sent" in str(result.get("headline") or "").lower() else "upcoming_bills_email_sent"
+        action_payload = dict(result)
         result["action_result"] = {
-            "type": "upcoming_bills_email_sent",
+            "type": action_type,
             "message": result["summary"],
-            "payload": result,
+            "payload": action_payload,
         }
         return result
 
@@ -695,10 +724,11 @@ class AgentService:
             raise ValidationError("Automation service is not attached to the agent runtime.")
         result = self._automation_service.run_month_end_email_now()
         result["report_download_url"] = result.get("report_download_url")
+        action_payload = dict(result)
         result["action_result"] = {
             "type": "month_end_email_sent",
             "message": result["summary"],
-            "payload": result,
+            "payload": action_payload,
         }
         return result
 
@@ -1099,18 +1129,28 @@ class AgentService:
         existing_items = list_items() if callable(list_items) else []
         normalized_description = self._normalize_text_match(criteria.get("description", ""))
         normalized_category = self._normalize_text_match(criteria.get("category", ""))
+        normalized_identity = self._normalize_text_match(
+            " ".join(
+                part
+                for part in (
+                    str(criteria.get("description") or "").strip(),
+                    str(criteria.get("category") or "").strip(),
+                )
+                if part
+            )
+        )
         normalized_entry_type = criteria.get("entry_type", "").strip().lower()
         normalized_frequency = criteria.get("frequency", "").strip().lower()
         normalized_start_date = criteria.get("start_date", "").strip()
         normalized_amount = criteria.get("amount")
+        has_text_identity = bool(normalized_description or normalized_category)
 
         matches = []
         for item in existing_items:
             item_description = self._normalize_text_match(item["description"])
             item_category = self._normalize_text_match(item["category"])
-            if normalized_description and normalized_description not in item_description and item_description not in normalized_description:
-                continue
-            if normalized_category and normalized_category not in item_category and item_category not in normalized_category:
+            item_identity = self._normalize_text_match(f"{item['description']} {item['category']}")
+            if normalized_identity and not self._normalized_text_matches(normalized_identity, item_identity):
                 continue
             if normalized_entry_type and normalized_entry_type != item["entry_type"]:
                 continue
@@ -1118,7 +1158,11 @@ class AgentService:
                 continue
             if normalized_start_date and normalized_start_date != item["start_date"]:
                 continue
-            if normalized_amount not in (None, "") and abs(float(item["amount"]) - float(normalized_amount)) >= 0.01:
+            if (
+                not has_text_identity
+                and normalized_amount not in (None, "")
+                and abs(float(item["amount"]) - float(normalized_amount)) >= 0.01
+            ):
                 continue
             matches.append(item)
         return matches
@@ -1128,6 +1172,25 @@ class AgentService:
         normalized = re.sub(r"[^a-z0-9]+", " ", str(value or "").strip().lower())
         normalized = re.sub(r"\s+", " ", normalized).strip()
         return normalized
+
+    @staticmethod
+    def _normalized_text_matches(needle: str, haystack: str) -> bool:
+        needle_tokens = set(needle.split())
+        haystack_tokens = set(haystack.split())
+        required_plan_tokens = needle_tokens & {"plus", "pro", "free"}
+        if required_plan_tokens and not required_plan_tokens.issubset(haystack_tokens):
+            return False
+        compact_needle = needle.replace(" ", "")
+        compact_haystack = haystack.replace(" ", "")
+        return (
+            needle_tokens.issubset(haystack_tokens)
+            or haystack_tokens.issubset(needle_tokens)
+            or needle in haystack
+            or haystack in needle
+            or compact_needle in compact_haystack
+            or compact_haystack in compact_needle
+        )
+
     def _delete_matching_reminders(self, criteria: dict) -> tuple[int, dict]:
         matches = self._find_matching_reminders(criteria)
         if not matches:
@@ -1211,6 +1274,10 @@ class AgentService:
         if tool_name == "get_recent_transactions":
             limit = max(1, min(int(arguments.get("limit", 8)), 15))
             return {"transactions": self._expense_service.list_expenses()[:limit]}
+        if tool_name == "retrieve_finance_context":
+            if self._rag_service is None:
+                return {"error": "RAG service is not available."}
+            return self._rag_service.retrieve_context(str(arguments.get("question") or "").strip(), top_k=arguments.get("top_k"))
         if tool_name == "get_upcoming_recurring_items":
             days = max(1, min(int(arguments.get("days", 21)), 60))
             return self._recurring_service.upcoming_calendar(days)
@@ -1284,9 +1351,30 @@ class AgentService:
     @staticmethod
     def _looks_like_manual_action_command(task: str) -> bool:
         normalized = task.lower()
-        action_words = ("add", "create", "set up", "update", "change", "edit", "delete", "remove", "replace", "set")
-        domain_words = ("reminder", "recurring", "bill", "bills", "cost", "costs", "subscription", "transaction", "expense", "income", "budget")
+        action_words = ("add", "create", "set up", "update", "change", "edit", "delete", "remove", "replace", "set", "send", "email")
+        domain_words = ("reminder", "recurring", "bill", "bills", "cost", "costs", "subscription", "transaction", "expense", "income", "budget", "email", "report")
         return any(word in normalized for word in action_words) and any(word in normalized for word in domain_words)
+
+    @staticmethod
+    def _looks_like_email_dispatch_command(task: str) -> bool:
+        normalized = task.lower()
+        return any(word in normalized for word in ("email", "send", "mail")) and any(
+            word in normalized for word in ("report", "briefing", "summary", "bill", "bills", "due", "financial", "finance")
+        )
+
+    @staticmethod
+    def _looks_like_upcoming_bills_email_command(task: str) -> bool:
+        normalized = task.lower()
+        return any(word in normalized for word in ("bill", "bills", "due", "upcoming")) and not any(
+            phrase in normalized for phrase in ("financial report", "finance report", "month-end", "month end")
+        )
+
+    @staticmethod
+    def _looks_like_financial_report_email_command(task: str) -> bool:
+        normalized = task.lower()
+        return any(phrase in normalized for phrase in ("financial report", "finance report", "current report", "month-end", "month end")) or (
+            "report" in normalized and any(word in normalized for word in ("financial", "finance", "current", "monthly", "email", "send"))
+        )
 
     @staticmethod
     def _parse_final_payload(content: str) -> dict:
@@ -1337,17 +1425,14 @@ class AgentService:
         }
 
     def _upsert_matching_reminder(self, payload: dict) -> tuple[dict, str, str]:
-        list_items = getattr(self._recurring_service, "list_items", None)
-        existing_items = list_items() if callable(list_items) else []
-        normalized_description = payload["description"].strip().lower()
-        matching_items = [
-            item
-            for item in existing_items
-            if item["description"].strip().lower() == normalized_description
-            and item["frequency"] == payload["frequency"]
-            and item["entry_type"] == payload["entry_type"]
-            and abs(float(item["amount"]) - float(payload["amount"])) < 0.01
-        ]
+        matching_items = self._find_matching_reminders(
+            {
+                "description": payload.get("description"),
+                "category": payload.get("category"),
+                "frequency": payload.get("frequency"),
+                "entry_type": payload.get("entry_type"),
+            }
+        )
         if matching_items:
             primary_item = sorted(matching_items, key=lambda item: item["id"])[0]
             updated = self._recurring_service.update_item(primary_item["id"], payload)
@@ -1572,6 +1657,27 @@ class AgentService:
             {
                 "type": "function",
                 "function": {
+                    "name": "retrieve_finance_context",
+                    "description": "Retrieve semantically relevant finance context for grounded question answering.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "question": {
+                                "type": "string",
+                                "description": "The finance question to ground against the RAG knowledge base.",
+                            },
+                            "top_k": {
+                                "type": "integer",
+                                "description": "How many relevant knowledge chunks to retrieve.",
+                            }
+                        },
+                        "required": ["question"],
+                    },
+                },
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "get_upcoming_recurring_items",
                     "description": "Get upcoming recurring bills and income reminders.",
                     "parameters": {
@@ -1594,13 +1700,3 @@ class AgentService:
                 },
             },
         ]
-
-
-
-
-
-
-
-
-
-

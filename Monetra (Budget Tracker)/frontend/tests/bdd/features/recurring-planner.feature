@@ -6,22 +6,17 @@ Feature: Recurring planner
       | id | category | description    | amount | entry_type | frequency | start_date | active |
       | 1  | Housing  | Rent           | 700.00 | expense    | monthly   | 2026-03-01 | true   |
       | 2  | Travel   | Weekly commute | 45.00  | expense    | weekly    | 2026-03-24 | true   |
-    When I open the budget tracker homepage
-    Then I should see the text "Upcoming bills and frequent purchases"
-    And I should see the text "Weekly commute"
+    When I request all recurring reminders
+    Then the latest collection should contain the text "Weekly commute"
+    When I request the recurring calendar
+    Then the latest result should contain the text "2026-03-24"
 
   Scenario: Add a recurring reminder
     Given the budget tracker API is mocked
-    When I open the budget tracker homepage
-    And I click the button "Add reminder"
-    Then I should see the text "Recurring item #3 created successfully."
-    And I should see the text "Gym"
+    When I create a recurring reminder in category "Health" described as "Gym" amount "32.00" frequency "monthly" starting "2026-04-01"
+    Then the latest result should contain the text "Gym"
 
   Scenario: Update a recurring reminder
     Given the budget tracker API is mocked
-    When I open the budget tracker homepage
-    And I click the text "Rent"
-    And I fill the field "Description" with "Updated rent"
-    And I click the button "Update reminder"
-    Then I should see the text "Recurring item #1 updated successfully."
-    And I should see the text "Updated rent"
+    When I update recurring reminder "1" to category "Housing" description "Updated rent" amount "720.00" frequency "monthly" start date "2026-03-01"
+    Then the latest result should contain the text "Updated rent"

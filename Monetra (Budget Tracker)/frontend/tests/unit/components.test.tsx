@@ -359,6 +359,7 @@ describe("presentational components", () => {
           },
         ]}
         activeWorkflowName={null}
+        liveStatusMessage={null}
         onRunWorkflow={onRunWorkflow}
       />,
     );
@@ -366,8 +367,32 @@ describe("presentational components", () => {
     fireEvent.click(screen.getByText("Run workflow"));
 
     expect(screen.getByText("Agent workflows for repetitive finance tasks")).toBeInTheDocument();
-    expect(screen.getByText("Recent workflow runs")).toBeInTheDocument();
+    expect(screen.queryByText("Recent workflow runs")).not.toBeInTheDocument();
     expect(onRunWorkflow).toHaveBeenCalledWith("month_end_close");
+  });
+
+  it("shows a fallback live message while an automation workflow is running", () => {
+    render(
+      <AutomationCenter
+        workflows={[
+          {
+            id: "month_end_close",
+            label: "Month-end close",
+            description: "Generate the monthly report and review KPIs.",
+            automation_focus: "Automates month-end reporting.",
+            default_task: "Run the workflow.",
+          },
+        ]}
+        runs={[]}
+        activeWorkflowName="month_end_close"
+        liveStatusMessage={null}
+        onRunWorkflow={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Month-end close is running.")).toBeInTheDocument();
+    expect(screen.getByText("The workflow is gathering finance context and preparing its automation summary.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Running workflow..." })).toBeDisabled();
   });
 });
 

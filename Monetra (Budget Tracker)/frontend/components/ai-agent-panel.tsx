@@ -1,6 +1,7 @@
 "use client";
 
 import { AgentBriefingResponse } from "@/lib/types";
+import { formatBackendTimestamp } from "@/lib/date-time";
 
 interface AiAgentPanelProps {
   taskDraft: string;
@@ -17,13 +18,6 @@ export function AiAgentPanel({
   onTaskDraftChange,
   onRun,
 }: AiAgentPanelProps) {
-  const traceSteps = Array.isArray(result?.trace?.execution_results)
-    ? result.trace.execution_results
-    : [];
-  const plannedSteps = Array.isArray(result?.trace?.plan?.steps)
-    ? result.trace.plan.steps
-    : [];
-  const successCriteria = normalizeStringList(result?.trace?.plan?.success_criteria);
   const summaryParagraphs = normalizeParagraphs(result?.summary);
   const emailParagraphs = normalizeParagraphs(result?.email_draft);
   const recommendedActions = normalizeStringList(result?.recommended_actions).map(normalizeSentence);
@@ -82,7 +76,7 @@ export function AiAgentPanel({
               ))}
             </div>
             <div className="agent-meta">
-              <span>Generated {formatTimestamp(result.generated_at)}</span>
+              <span>Generated {formatBackendTimestamp(result.generated_at)}</span>
               <span>{result.tools_used.length} tools used</span>
             </div>
           </article>
@@ -121,83 +115,6 @@ export function AiAgentPanel({
               </a>
             ) : null}
           </article>
-
-          <article className="insight-card trace-card trace-card-plan full-span-card">
-            <div className="card-header">
-              <h3>Agent trace</h3>
-              <span className="muted">Plan, tools, verification</span>
-            </div>
-            <div className="trace-grid">
-              <div className="trace-column">
-                <p className="trace-label">Planner intent</p>
-                <div className="trace-block">
-                  <strong>{normalizeSentence(result.trace?.plan?.intent ?? "No explicit planner intent returned.")}</strong>
-                  {successCriteria.length ? (
-                    <div className="trace-list">
-                      {successCriteria.map((criterion) => (
-                        <div key={criterion} className="agent-action">
-                          {normalizeSentence(criterion)}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-              <div className="trace-column">
-                <p className="trace-label">Planned steps</p>
-                <div className="trace-list">
-                  {plannedSteps.length ? (
-                    plannedSteps.map((step, index) => (
-                      <div key={`${step.tool ?? "step"}-${index}`} className="trace-step-card">
-                        <strong>{index + 1}. {step.tool ?? "Unknown tool"}</strong>
-                        <p>{normalizeSentence(step.reason ?? "No reasoning provided.")}</p>
-                        {step.arguments ? <code>{safeJson(step.arguments)}</code> : null}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="muted">No plan trace was returned.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="trace-grid">
-              <div className="trace-column">
-                <p className="trace-label">Tool execution</p>
-                <div className="trace-list">
-                  {traceSteps.length ? (
-                    traceSteps.map((step, index) => (
-                      <div key={`${step.tool}-${index}`} className="trace-step-card">
-                        <strong>{step.tool}</strong>
-                        <p>{normalizeSentence(step.reason)}</p>
-                        <code>{safeJson(step.arguments)}</code>
-                        <pre>{safeJson(step.result)}</pre>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="muted">No tool execution trace was returned.</p>
-                  )}
-                </div>
-              </div>
-
-              <div className="trace-column">
-                <p className="trace-label">Verifier output</p>
-                <div className="trace-block">
-                  <strong>{normalizeSentence(result.trace?.verification?.headline ?? result.headline)}</strong>
-                  <div className="agent-prose compact-prose">
-                    {normalizeParagraphs(result.trace?.verification?.summary ?? result.summary).map((paragraph) => (
-                      <p key={paragraph}>{paragraph}</p>
-                    ))}
-                  </div>
-                  <div className="trace-list compact-trace-list">
-                    <div className="agent-action">Repair attempts: {result.trace?.repair_attempts ?? 0}</div>
-                    <div className="agent-action">Risk: {normalizeSentence(result.trace?.verification?.risk_level ?? result.risk_level).replace(/[.!?]$/, "")}</div>
-                    <div className="agent-action">Tools used: {result.tools_used.join(", ") || "None"}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </article>
         </div>
       ) : (
         <p className="muted">
@@ -216,19 +133,6 @@ function mapRiskStatus(riskLevel: string) {
     return "warning";
   }
   return "within";
-}
-
-function formatTimestamp(value: string) {
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString("en-GB");
-}
-
-function safeJson(value: unknown) {
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 function normalizeStringList(value: unknown): string[] {

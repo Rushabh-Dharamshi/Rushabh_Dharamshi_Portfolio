@@ -15,6 +15,9 @@ const mockApiClient = {
   getWordCloud: jest.fn(),
   getFinancialPulse: jest.fn(),
   getPrediction: jest.fn(),
+  getRagStatus: jest.fn(),
+  reindexRag: jest.fn(),
+  queryRag: jest.fn(),
   startFinanceBriefingAgent: jest.fn(),
   getFinanceBriefingJob: jest.fn(),
   listAgentWorkflows: jest.fn(),
@@ -79,6 +82,9 @@ describe("useBudgetTracker unit coverage", () => {
     mockApiClient.getWordCloud.mockResolvedValue({ top_category: "Food", frequencies: [] });
     mockApiClient.getFinancialPulse.mockResolvedValue({ health_score: 80, average_transaction: 25, transaction_count: 4, spend_velocity: 14.2, top_category_share: 42, runway_days: 18, narrative: "Steady spending rhythm.", cash_in: 1500, cash_out: 420, net_cash_flow: 1080, income_coverage: 357.14, recent_transactions: [], recent_expenses: [] });
     mockApiClient.getPrediction.mockResolvedValue({ next_month: "April 2026", predicted_spending: 880, is_budget_exceeded: false, monthly_budget: 1050 });
+    mockApiClient.getRagStatus.mockResolvedValue({ available: true, collection_name: "monetra-finance-knowledge", indexed_at: "2026-04-15T09:00:00Z", document_count: 12, chunk_count: 36, signature: "sig" });
+    mockApiClient.reindexRag.mockResolvedValue({ available: true, collection_name: "monetra-finance-knowledge", indexed_at: "2026-04-15T09:05:00Z", document_count: 13, chunk_count: 39, signature: "sig-2", reindexed: true });
+    mockApiClient.queryRag.mockResolvedValue({ question: "What changed?", answer: "Spending is concentrated in food and housing.", confidence: "high", follow_up_questions: ["Which reminders are due next?"], sources: [{ source_label: "Dashboard March 2026", doc_type: "dashboard", document_id: "dashboard::2026-03", excerpt: "Monthly budget is GBP 1050.", score: 0.95, metadata: {} }], generated_at: "2026-04-15T09:10:00Z" });
     mockApiClient.startFinanceBriefingAgent.mockResolvedValue({ id: "job-1", status: "queued", task: "brief", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: null });
     mockApiClient.getFinanceBriefingJob.mockResolvedValue({ id: "job-1", status: "completed", task: "brief", created_at: "2026-03-21T10:00:00Z", started_at: "2026-03-21T10:00:01Z", completed_at: "2026-03-21T10:00:05Z", error: null, result: { headline: "Finance briefing", summary: "Stable month.", risk_level: "low", recommended_actions: [], email_subject: "Finance briefing", email_draft: "Stable month.", task: "Prepare", model: "mistral", tools_used: ["get_dashboard_summary"], report_download_url: "/api/reports/monthly", generated_at: "2026-03-21T10:00:00Z", action_result: { type: "expense_created" } } });
     mockApiClient.listAgentWorkflows.mockResolvedValue([{ id: "month_end_close", label: "Month-end close", description: "Generate report", automation_focus: "Automates reporting.", default_task: "Run." }]);
@@ -125,6 +131,9 @@ describe("useBudgetTracker unit coverage", () => {
       await result.current.searchExpenseById();
       await result.current.importExpenses(new File(["csv"], "import.csv", { type: "text/csv" }));
       await result.current.predictNextMonth();
+      result.current.setRagQuestionDraft("What changed?");
+      await result.current.runRagQuery();
+      await result.current.reindexRagKnowledge();
       result.current.checkBudgetStatus();
       result.current.showAllRecords();
       result.current.setBudgetDraft("1200");
@@ -147,11 +156,87 @@ describe("useBudgetTracker unit coverage", () => {
 
     expect(result.current.prediction?.next_month).toBe("April 2026");
     expect(result.current.agentBriefing?.headline).toBe("Finance briefing");
+    expect(result.current.ragAnswer?.confidence).toBe("high");
+    expect(result.current.ragStatus?.chunk_count).toBeGreaterThanOrEqual(36);
+    expect(mockApiClient.reindexRag).toHaveBeenCalledWith(true);
     expect(mockApiClient.sendMonthEndEmailNow).toHaveBeenCalled();
     expect(mockApiClient.runAutomationRefresh).toHaveBeenCalled();
   });
 
-  it("surfaces validation and request errors for guarded actions", async () => {
+
+
+  it("reports pluralized rag source counts on successful queries", async () => {
+    mockApiClient.listAgentWorkflows.mockResolvedValue([]);
+    mockApiClient.runAutomationBootstrap.mockResolvedValue([]);
+    mockApiClient.queryRag.mockResolvedValue({
+      question: "What changed?",
+      answer: "Housing and travel are the main drivers.",
+      confidence: "high",
+      follow_up_questions: [],
+      sources: [
+        { source_label: "Dashboard March 2026", doc_type: "dashboard", document_id: "dashboard::2026-03", excerpt: "Budget.", score: 0.95, metadata: {} },
+        { source_label: "Recurring #1", doc_type: "recurring", document_id: "recurring::1", excerpt: "Rent.", score: 0.91, metadata: {} },
+      ],
+      generated_at: "2026-04-15T09:10:00Z",
+    });
+
+    const { result } = renderHook(() => useBudgetTracker());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.setRagQuestionDraft("What changed?");
+    });
+    await act(async () => {
+      await result.current.runRagQuery();
+    });
+
+    expect(result.current.statusMessage).toBe("RAG answer generated from 2 knowledge chunks.");
+  });
+  it("covers rag validation, rag failures, and no-op reindex messaging", async () => {
+    mockApiClient.listAgentWorkflows.mockResolvedValue([]);
+    mockApiClient.runAutomationBootstrap.mockResolvedValue([]);
+    mockApiClient.queryRag.mockRejectedValue(new Error("RAG failed"));
+    mockApiClient.reindexRag
+      .mockRejectedValueOnce(new Error("Reindex failed"))
+      .mockResolvedValueOnce({
+        available: true,
+        collection_name: "monetra-finance-knowledge",
+        indexed_at: "2026-04-15T09:20:00Z",
+        document_count: 12,
+        chunk_count: 36,
+        signature: "sig",
+        reindexed: false,
+      });
+
+    const { result } = renderHook(() => useBudgetTracker());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => {
+      result.current.setRagQuestionDraft("   ");
+    });
+    await act(async () => {
+      await result.current.runRagQuery();
+    });
+    expect(result.current.errorMessage).toBe("Enter a finance question before querying the knowledge base.");
+
+    act(() => {
+      result.current.setRagQuestionDraft("What changed?");
+    });
+    await act(async () => {
+      await result.current.runRagQuery();
+    });
+    expect(result.current.errorMessage).toBe("RAG failed");
+
+    await act(async () => {
+      await result.current.reindexRagKnowledge();
+    });
+    expect(result.current.errorMessage).toBe("Reindex failed");
+
+    await act(async () => {
+      await result.current.reindexRagKnowledge();
+    });
+    expect(result.current.statusMessage).toBe("Knowledge base is already up to date.");
+  });  it("surfaces validation and request errors for guarded actions", async () => {
     mockApiClient.listAgentWorkflows.mockResolvedValue([]);
     mockApiClient.runAutomationBootstrap.mockResolvedValue([]);
     mockApiClient.searchExpenseById.mockRejectedValue(new Error("Expense not found."));
@@ -193,4 +278,10 @@ describe("useBudgetTracker unit coverage", () => {
     expect(result.current.errorMessage).toBe("SMTP unavailable");
   });
 });
+
+
+
+
+
+
 

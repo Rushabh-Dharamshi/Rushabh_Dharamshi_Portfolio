@@ -8,6 +8,7 @@ from budget_tracker_api.blueprints.auth import auth_bp
 from budget_tracker_api.blueprints.expenses import expenses_bp
 from budget_tracker_api.blueprints.health import health_bp
 from budget_tracker_api.blueprints.predictions import predictions_bp
+from budget_tracker_api.blueprints.rag import rag_bp
 from budget_tracker_api.blueprints.recurring import recurring_bp
 from budget_tracker_api.blueprints.reports import reports_bp
 from budget_tracker_api.blueprints.settings import settings_bp
@@ -29,7 +30,9 @@ from budget_tracker_api.services.email_service import EmailService
 from budget_tracker_api.services.expense_service import ExpenseService
 from budget_tracker_api.services.fastmcp_client_service import FastMcpClientService
 from budget_tracker_api.services.ollama_client import OllamaClient
+from budget_tracker_api.services.ollama_embedding_client import OllamaEmbeddingClient
 from budget_tracker_api.services.prediction_service import PredictionService
+from budget_tracker_api.services.rag_service import RagService
 from budget_tracker_api.services.recurring_service import RecurringService
 from budget_tracker_api.services.report_service import ReportService
 from budget_tracker_api.services.settings_service import SettingsService
@@ -95,12 +98,38 @@ def _register_services(app: Flask) -> None:
         app.config["SMTP_PASSWORD"],
         app.config["SMTP_USE_TLS"],
         app.config["REPORT_EMAIL_TO"],
+        app.config["REPORT_EMAIL_RECIPIENT_NAME"],
     )
     agent_memory_service = AgentMemoryService(app.config["AGENT_MEMORY_PATH"])
     mcp_client_service = FastMcpClientService(
-        python_executable=str(Path(app.root_path).parent / ".venv" / "Scripts" / "python.exe"),
+        python_executable=app.config["FASTMCP_PYTHON_EXECUTABLE"],
         backend_root=Path(app.root_path).parent,
         log_file_path=app.config["LOG_FILE_PATH"].with_name("fastmcp-server.log"),
+    )
+    embedding_client = OllamaEmbeddingClient(
+        app.config["OLLAMA_BASE_URL"],
+        app.config["RAG_EMBEDDING_MODEL"],
+        min(app.config["OLLAMA_TIMEOUT_SECONDS"], 120),
+    )
+    rag_service = RagService(
+        expense_service=expense_service,
+        recurring_service=recurring_service,
+        analytics_service=analytics_service,
+        prediction_service=prediction_service,
+        settings_service=settings_service,
+        agent_run_repository=agent_run_repository,
+        embedding_client=embedding_client,
+        answer_client=ollama_client,
+        memory_service=agent_memory_service,
+        persist_directory=app.config["RAG_PERSIST_DIRECTORY"],
+        manifest_path=app.config["RAG_MANIFEST_PATH"],
+        collection_name=app.config["RAG_COLLECTION_NAME"],
+        chunk_size=app.config["RAG_CHUNK_SIZE"],
+        chunk_overlap=app.config["RAG_CHUNK_OVERLAP"],
+        top_k=app.config["RAG_TOP_K"],
+        chroma_http_host=app.config["CHROMA_HTTP_HOST"],
+        chroma_http_port=app.config["CHROMA_HTTP_PORT"],
+        chroma_http_ssl=app.config["CHROMA_HTTP_SSL"],
     )
     agent_service = AgentService(
         ollama_client,
@@ -113,6 +142,7 @@ def _register_services(app: Flask) -> None:
         agent_run_repository,
         agent_memory_service=agent_memory_service,
         mcp_tool_adapter=mcp_client_service,
+        rag_service=rag_service,
     )
     automation_service = AutomationService(
         agent_service,
@@ -136,6 +166,7 @@ def _register_services(app: Flask) -> None:
         "automation_service": automation_service,
         "email_service": email_service,
         "agent_memory_service": agent_memory_service,
+        "rag_service": rag_service,
     }
     if app.config["AUTOMATION_SCHEDULER_ENABLED"] and not app.testing:
         scheduler = AutomationScheduler(app, app.config["AUTOMATION_POLL_SECONDS"])
@@ -151,6 +182,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(analytics_bp)
     app.register_blueprint(agents_bp)
     app.register_blueprint(predictions_bp)
+    app.register_blueprint(rag_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(recurring_bp)

@@ -36,6 +36,18 @@ class FinanceMcpServer:
                 },
             },
             {
+                "name": "retrieve_finance_context",
+                "description": "Retrieve semantically similar finance knowledge chunks for RAG-style question answering.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string"},
+                        "top_k": {"type": "integer"},
+                    },
+                    "required": ["question"],
+                },
+            },
+            {
                 "name": "list_recurring_reminders",
                 "description": "Read the current recurring reminders list.",
                 "input_schema": {"type": "object", "properties": {}},
@@ -62,7 +74,10 @@ class FinanceMcpServer:
                 "description": "Update the monthly income in pounds sterling, optionally for a specific month in YYYY-MM.",
                 "input_schema": {
                     "type": "object",
-                    "properties": {"monthly_income": {"type": "number"}, "month": {"type": "string"}},
+                    "properties": {
+                        "monthly_income": {"type": "number"},
+                        "month": {"type": "string"},
+                    },
                     "required": ["monthly_income"],
                 },
             },
@@ -178,4 +193,3 @@ class FinanceMcpServer:
         if handler is None:
             raise ValidationError(f"Unknown MCP tool '{tool_name}'.")
         return handler(arguments or {})
-

@@ -1,10 +1,27 @@
 import logging
 import os
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from time import perf_counter
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, g, request
+
+
+class TimezoneFormatter(logging.Formatter):
+    def __init__(self, fmt: str, timezone_name: str):
+        super().__init__(fmt)
+        try:
+            self._timezone = ZoneInfo(timezone_name)
+        except ZoneInfoNotFoundError:
+            self._timezone = ZoneInfo("UTC")
+
+    def formatTime(self, record, datefmt=None):  # noqa: N802
+        timestamp = datetime.fromtimestamp(record.created, self._timezone)
+        if datefmt:
+            return timestamp.strftime(datefmt)
+        return f"{timestamp:%Y-%m-%d %H:%M:%S},{int(timestamp.microsecond / 1000):03d}"
 
 
 def configure_logging(app: Flask) -> None:
@@ -13,8 +30,9 @@ def configure_logging(app: Flask) -> None:
     log_file = Path(app.config["LOG_FILE_PATH"])
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    formatter = logging.Formatter(
-        "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+    formatter = TimezoneFormatter(
+        "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+        str(app.config.get("LOG_TIMEZONE", "Europe/London")),
     )
 
     root_logger = logging.getLogger()
@@ -56,12 +74,14 @@ def register_request_logging(app: Flask) -> None:
     @app.after_request
     def log_request_response(response):
         started_at = getattr(g, "request_started_at", None)
-        duration_ms = 0.0 if started_at is None else (perf_counter() - started_at) * 1000
+        duration_seconds = 0.0 if started_at is None else perf_counter() - started_at
+        duration_ms = duration_seconds * 1000
         app.logger.info(
-            "Request completed | method=%s path=%s status=%s duration_ms=%.1f",
+            "Request completed | method=%s path=%s status=%s duration_seconds=%.3f duration_ms=%.1f",
             request.method,
             request.path,
             response.status_code,
+            duration_seconds,
             duration_ms,
         )
         return response

@@ -14,6 +14,8 @@ import {
   FinancialPulseResponse,
   FormState,
   PredictionResponse,
+  RagAnswerResponse,
+  RagStatusResponse,
   RecurringCalendarResponse,
   RecurringItem,
   RecurringItemPayload,
@@ -29,6 +31,8 @@ const emptyForm: FormState = {
 };
 const defaultAgentTask =
   "Prepare a CFO-style monthly finance briefing with cash-flow risk, recurring bill pressure, recommended actions, and an email-ready summary.";
+const defaultRagQuestion =
+  "What are the biggest spending drivers this month and which recurring commitments are likely to pressure cash flow next?";
 
 function delay(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -36,6 +40,15 @@ function delay(milliseconds: number) {
 
 function currentMonthKey() {
   return new Date().toISOString().slice(0, 7);
+}
+
+/* istanbul ignore next */
+function shouldSkipAutomationBootstrap() {
+  return process.env.NODE_ENV !== "test" && process.env.NEXT_PUBLIC_AUTOMATION_BOOTSTRAP_ENABLED !== "true";
+}
+
+function shouldRefreshAutomationAfterAgentAction(actionType: string) {
+  return !["month_end_email_sent", "upcoming_bills_email_sent", "upcoming_bills_email_skipped"].includes(actionType);
 }
 
 export function useBudgetTracker() {
@@ -50,6 +63,11 @@ export function useBudgetTracker() {
   const [recurringItems, setRecurringItems] = useState<RecurringItem[]>([]);
   const [recurringCalendar, setRecurringCalendar] = useState<RecurringCalendarResponse | null>(null);
   const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
+  const [ragQuestionDraft, setRagQuestionDraft] = useState(defaultRagQuestion);
+  const [ragAnswer, setRagAnswer] = useState<RagAnswerResponse | null>(null);
+  const [ragStatus, setRagStatus] = useState<RagStatusResponse | null>(null);
+  const [isRagQueryRunning, setIsRagQueryRunning] = useState(false);
+  const [isRagReindexing, setIsRagReindexing] = useState(false);
   const [agentTaskDraft, setAgentTaskDraft] = useState(defaultAgentTask);
   const [agentBriefing, setAgentBriefing] = useState<AgentBriefingResponse | null>(null);
   const [agentWorkflows, setAgentWorkflows] = useState<AgentWorkflowDefinition[]>([]);
@@ -87,6 +105,7 @@ export function useBudgetTracker() {
         recurringCalendarData,
         workflowData,
         agentRunData,
+        ragStatusData,
       ] = await Promise.all([
         apiClient.listExpenses(),
         apiClient.getDashboard(),
@@ -98,6 +117,7 @@ export function useBudgetTracker() {
         apiClient.getRecurringCalendar(),
         apiClient.listAgentWorkflows(),
         apiClient.listAgentRuns(),
+        apiClient.getRagStatus(),
       ]);
 
       setExpenses(expenseData);
@@ -113,6 +133,7 @@ export function useBudgetTracker() {
       setRecurringCalendar(recurringCalendarData);
       setAgentWorkflows(workflowData);
       setAgentRuns(agentRunData);
+      setRagStatus(ragStatusData);
     } catch (error) {
       setErrorMessage((error as Error).message);
     } finally {
@@ -124,6 +145,10 @@ export function useBudgetTracker() {
   }, []);
 
   useEffect(() => {
+    /* istanbul ignore if -- production disables automatic workflow startup unless explicitly enabled */
+    if (shouldSkipAutomationBootstrap()) {
+      return;
+    }
     if (isLoading || !agentWorkflows.length || isBootstrappingAutomation) {
       return;
     }
@@ -257,8 +282,9 @@ export function useBudgetTracker() {
         return;
       }
       setStatusMessage("Finance data saved. Refreshing the automation workflows with the latest live data...");
+      const startedAt = Date.now();
       await Promise.all(
-        jobs.map((job) => waitForWorkflowRun(job.id, job.workflow_name, { quiet: true }))
+        jobs.map((job) => waitForWorkflowRun(job.id, job.workflow_name, startedAt))
       );
       const refreshedRuns = await apiClient.listAgentRuns();
       setAgentRuns(refreshedRuns);
@@ -405,6 +431,49 @@ export function useBudgetTracker() {
     }
   }
 
+  async function runRagQuery() {
+    const normalizedQuestion = ragQuestionDraft.trim();
+    if (!normalizedQuestion) {
+      setErrorMessage("Enter a finance question before querying the knowledge base.");
+      return;
+    }
+
+    try {
+      setErrorMessage(null);
+      setIsRagQueryRunning(true);
+      setStatusMessage("Querying the local finance knowledge base...");
+      const result = await apiClient.queryRag(normalizedQuestion);
+      setRagAnswer(result);
+      const latestStatus = await apiClient.getRagStatus();
+      setRagStatus(latestStatus);
+      setStatusMessage(`RAG answer generated from ${result.sources.length} knowledge chunk${result.sources.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setStatusMessage(null);
+      setErrorMessage((error as Error).message);
+    } finally {
+      setIsRagQueryRunning(false);
+    }
+  }
+
+  async function reindexRagKnowledge(force = true) {
+    try {
+      setErrorMessage(null);
+      setIsRagReindexing(true);
+      setStatusMessage("Reindexing the local finance knowledge base...");
+      const status = await apiClient.reindexRag(force);
+      setRagStatus(status);
+      setStatusMessage(
+        status.reindexed
+          ? `Knowledge base rebuilt with ${status.chunk_count} chunks across ${status.document_count} documents.`
+          : "Knowledge base is already up to date.",
+      );
+    } catch (error) {
+      setStatusMessage(null);
+      setErrorMessage((error as Error).message);
+    } finally {
+      setIsRagReindexing(false);
+    }
+  }
   async function runFinanceBriefingAgent() {
     try {
       setErrorMessage(null);
@@ -419,7 +488,12 @@ export function useBudgetTracker() {
           : null;
       if (actionType) {
         await loadAllData();
-        void refreshAutomationCenter(actionType);
+        if (shouldRefreshAutomationAfterAgentAction(actionType)) {
+          void refreshAutomationCenter(actionType);
+        } else {
+          const refreshedRuns = await apiClient.listAgentRuns();
+          setAgentRuns(refreshedRuns);
+        }
       }
       setStatusMessage(`AI briefing generated with ${result.tools_used.length} tool calls.`);
     } catch (error) {
@@ -455,9 +529,11 @@ export function useBudgetTracker() {
       setActiveWorkflowName(workflowName);
       setStatusMessage("Workflow request queued. Preparing the local agent worker...");
       const job = await apiClient.startAgentWorkflow(workflowName);
-      const result = await waitForWorkflowRun(job.id, workflowName);
-      setAgentRuns((current) => [result, ...current.filter((item) => item.id !== result.id)].slice(0, 8));
-      setStatusMessage(`${result.workflow_label} completed with ${result.tools_used.length} automated steps.`);
+      const result = await waitForWorkflowRun(job.id, workflowName, Date.now());
+      await loadAllData();
+      const refreshedRuns = await apiClient.listAgentRuns();
+      setAgentRuns([result, ...refreshedRuns].slice(0, 8));
+      setStatusMessage(`${result.workflow_label} completed: ${result.headline} ${result.tools_used.length} automated steps used.`);
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -469,10 +545,11 @@ export function useBudgetTracker() {
   async function waitForWorkflowRun(
     jobId: string,
     workflowName: string,
-    options?: { quiet?: boolean },
+    startedAt: number,
   ) {
     for (;;) {
       const job: AgentWorkflowJob = await apiClient.getAgentWorkflowJob(jobId);
+      const elapsedSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
       if (job.status === "completed" && job.result) {
         return job.result;
       }
@@ -484,13 +561,11 @@ export function useBudgetTracker() {
         throw new Error(workflowError);
       }
 
-      if (!options?.quiet) {
-        setStatusMessage(
-          job.status === "running"
-            ? `${workflowName.replaceAll("_", " ")} is running through the local agent pipeline...`
-            : `Waiting for ${workflowName.replaceAll("_", " ")} to start...`,
-        );
-      }
+      setStatusMessage(
+        job.status === "running"
+          ? `${workflowName.replaceAll("_", " ")} is running through the local agent pipeline. Elapsed: ${elapsedSeconds}s.`
+          : `Waiting for ${workflowName.replaceAll("_", " ")} to start. Status: ${job.status}. Elapsed: ${elapsedSeconds}s.`,
+      );
       await delay(2000);
     }
   }
@@ -538,11 +613,16 @@ export function useBudgetTracker() {
     recurringItems,
     recurringCalendar,
     prediction,
+    ragQuestionDraft,
+    ragAnswer,
+    ragStatus,
     agentTaskDraft,
     agentBriefing,
     agentWorkflows,
     agentRuns,
     isAgentRunning,
+    isRagQueryRunning,
+    isRagReindexing,
     isBootstrappingAutomation,
     activeWorkflowName,
     activeEmailDispatchId,
@@ -560,6 +640,7 @@ export function useBudgetTracker() {
     setBudgetDraft,
     setIncomeDraft,
     setIncomeMonthDraft,
+    setRagQuestionDraft,
     setAgentTaskDraft,
     selectExpense,
     resetForm,
@@ -578,6 +659,8 @@ export function useBudgetTracker() {
     deleteRecurringItem,
     markRecurringOccurrencePaid,
     markRecurringOccurrenceUnpaid,
+    runRagQuery,
+    reindexRagKnowledge,
     runFinanceBriefingAgent,
     runAutomationWorkflow,
     sendUpcomingBillsEmailNow,
@@ -585,13 +668,3 @@ export function useBudgetTracker() {
     refresh: loadAllData,
   };
 }
-
-
-
-
-
-
-
-
-
-

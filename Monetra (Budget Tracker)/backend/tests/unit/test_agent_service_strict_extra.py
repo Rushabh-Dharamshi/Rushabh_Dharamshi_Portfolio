@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from budget_tracker_api.errors import ValidationError
@@ -14,12 +16,17 @@ from tests.unit.test_agent_service_helpers import (
 )
 
 
+class RagServiceStub:
+    def retrieve_context(self, question, top_k=None):
+        return {"question": question, "retrieved_count": int(top_k or 6), "sources": [{"source_label": "Dashboard"}]}
+
+
 class EmailAutomationStub:
     def run_upcoming_bills_email_now(self):
-        return {"summary": "Upcoming bills sent", "report_download_url": None}
+        return {"headline": "Upcoming bills email sent", "summary": "Upcoming bills sent", "report_download_url": None}
 
     def run_month_end_email_now(self):
-        return {"summary": "Month end sent", "report_download_url": "/api/reports/monthly"}
+        return {"headline": "Month-end report sent", "summary": "Month end sent", "report_download_url": "/api/reports/monthly"}
 
 
 def build_service(ollama=None):
@@ -32,6 +39,7 @@ def build_service(ollama=None):
         StubExpenseService(),
         StubSettingsService(),
         StubRepository(),
+        rag_service=RagServiceStub(),
     )
     service._automation_service = EmailAutomationStub()
     return service
@@ -51,6 +59,7 @@ def test_agent_service_manual_legacy_and_mcp_wrappers(monkeypatch):
     monkeypatch.setattr(service, "_parse_reminder_payload", lambda payload, fallback_date: {"parsed": payload, "start_date": fallback_date})
 
     assert handlers["set_monthly_budget"]({"monthly_budget": 1200})["setting_key"] == "monthly_budget"
+    assert handlers["retrieve_finance_context"]({"question": "What changed?", "top_k": 3})["retrieved_count"] == 3
     assert handlers["set_monthly_income"]({"monthly_income": 1500, "month": "2026-04"})["setting_key"] == "monthly_income"
     assert handlers["create_transaction"]({"description": "Tube"})["operation"] == "create"
     assert handlers["update_transaction_by_match"]({"target": {"description": "Tube"}, "entity": {"amount": 7}})["operation"] == "update"
@@ -75,8 +84,21 @@ def test_agent_service_email_wrappers_and_parse_edges():
         service._mcp_send_month_end_email_now({})
 
     service._automation_service = EmailAutomationStub()
-    assert service._mcp_send_upcoming_bills_email_now({})["action_result"]["type"] == "upcoming_bills_email_sent"
-    assert service._mcp_send_month_end_email_now({})["action_result"]["type"] == "month_end_email_sent"
+    upcoming_result = service._mcp_send_upcoming_bills_email_now({})
+    month_end_result = service._mcp_send_month_end_email_now({})
+    assert upcoming_result["action_result"]["type"] == "upcoming_bills_email_sent"
+    assert month_end_result["action_result"]["type"] == "month_end_email_sent"
+    json.dumps(upcoming_result)
+    json.dumps(month_end_result)
+    assert service._looks_like_manual_action_command("send me the month-end report email")
+    assert service._looks_like_manual_action_command("email me if bills are due")
+
+    report_email = service.run_finance_briefing({"task": "send an email of my current financial report"})
+    assert report_email["action_result"]["type"] == "month_end_email_sent"
+    assert report_email["report_download_url"] == "/api/reports/monthly"
+
+    bills_email = service.run_finance_briefing({"task": "email me if bills are due"})
+    assert bills_email["action_result"]["type"] == "upcoming_bills_email_sent"
 
     bad_json_service = build_service(StubOllamaClient("not-json"))
     with pytest.raises(ValidationError, match="could not understand the requested action"):
@@ -145,5 +167,27 @@ def test_agent_service_schedule_helper_edges(monkeypatch):
         service._build_monthly_due_date(2026, 2, 0)
     assert service._previous_due_date(__import__("datetime").date(2026, 4, 23), "weekly").isoformat() == "2026-04-16"
     assert any(tool["function"]["name"] == "generate_monthly_report" for tool in service._tool_definitions())
+    assert any(tool["function"]["name"] == "retrieve_finance_context" for tool in service._tool_definitions())
 
+
+def test_agent_service_rag_handlers_fail_cleanly_when_rag_is_missing():
+    service = build_service()
+    service._rag_service = None
+
+    with pytest.raises(ValidationError, match="RAG service"):
+        service._mcp_retrieve_finance_context({"question": "What changed?"})
+
+    assert service._execute_tool("retrieve_finance_context", {"question": "What changed?"}) == {
+        "error": "RAG service is not available.",
+    }
+
+
+def test_agent_service_execute_tool_returns_rag_context_when_available():
+    service = build_service()
+
+    assert service._execute_tool("retrieve_finance_context", {"question": "What changed?", "top_k": 2}) == {
+        "question": "What changed?",
+        "retrieved_count": 2,
+        "sources": [{"source_label": "Dashboard"}],
+    }
 

@@ -53,6 +53,29 @@ def test_create_app_starts_scheduler_when_enabled(monkeypatch, tmp_path):
     assert app.extensions["automation_scheduler"] is created[0]
 
 
+def test_create_app_uses_configured_fastmcp_python_executable(monkeypatch, tmp_path):
+    module = importlib.import_module("budget_tracker_api")
+    created = {}
+
+    class FakeFastMcpClientService:
+        def __init__(self, **kwargs):
+            created.update(kwargs)
+
+    monkeypatch.setattr(module, "FastMcpClientService", FakeFastMcpClientService)
+
+    create_app(
+        {
+            "TESTING": True,
+            "LOGIN_REQUIRED": False,
+            "DATABASE_URL": f"sqlite+pysqlite:///{tmp_path / 'mcp.db'}",
+            "GENERATED_REPORTS_DIR": tmp_path / "reports",
+            "FASTMCP_PYTHON_EXECUTABLE": "python",
+        }
+    )
+
+    assert created["python_executable"] == "python"
+
+
 def test_auth_login_returns_500_when_password_hash_missing(tmp_path):
     app = create_app(
         {
@@ -167,6 +190,64 @@ def test_automation_service_additional_email_branches(monkeypatch):
     assert "Net cash flow for April 2026 was negative at GBP 300.00." in body
     assert "AI summary" in body
     assert "review" in body
+
+
+def test_upcoming_bills_email_uses_seven_day_window():
+    class RecordingRecurringService(FakeRecurringService):
+        def __init__(self):
+            super().__init__([])
+            self.requested_days = None
+
+        def upcoming_calendar(self, days_ahead):
+            self.requested_days = days_ahead
+            return {
+                "occurrences": [
+                    {
+                        "recurring_item_id": 7,
+                        "date": "2026-05-12",
+                        "description": "Internet",
+                        "amount": 35.0,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "days_until_due": 7,
+                    },
+                    {
+                        "recurring_item_id": 9,
+                        "date": "2026-05-13",
+                        "description": "Insurance",
+                        "amount": 85.0,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "days_until_due": 8,
+                    },
+                    {
+                        "recurring_item_id": 8,
+                        "date": "2026-05-20",
+                        "description": "Salary",
+                        "amount": 1500.0,
+                        "entry_type": "income",
+                        "frequency": "monthly",
+                        "days_until_due": 7,
+                    },
+                ]
+            }
+
+    recurring_service = RecordingRecurringService()
+    service = AutomationService(
+        RecordingAgentService(),
+        FakeReportService(),
+        FakeEmailService(),
+        FakeRunRepository(),
+        recurring_service,
+        FakeAnalyticsService(),
+        month_end_email_hour=22,
+        month_end_email_minute=15,
+    )
+
+    due_expenses = service._get_due_expenses_within_days(7)
+
+    assert recurring_service.requested_days == 8
+    assert [item["description"] for item in due_expenses] == ["Internet"]
 
 
 

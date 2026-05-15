@@ -105,6 +105,8 @@ def test_automation_service_bootstrap_refresh_and_helpers(monkeypatch):
     refresh_jobs = service.queue_realtime_refresh(fake_app, "expense_created")
     assert len(refresh_jobs) == 3
     assert all(job["reuse_active"] is True for job in refresh_jobs)
+    assert service.queue_realtime_refresh(fake_app, "month_end_email_sent") == []
+    assert service.queue_realtime_refresh(fake_app, "upcoming_bills_email_sent") == []
     assert "expense created changed" in agent_service.jobs[0]["payload"]["task"]
     assert service._workflow_refresh_task("month_end_close", "finance_state_changed").startswith("Refresh the month end close workflow")
     assert service._realtime_workflow_names("unknown_event") == service._bootstrap_workflow_names()
@@ -156,8 +158,8 @@ def test_automation_service_bootstrap_thread_and_dispatch_variants(monkeypatch):
     due_expenses = service._get_due_expenses_within_days(7)
     assert due_expenses == []
     upcoming = service.run_upcoming_bills_email_now()
-    assert upcoming["headline"] == "Upcoming bills cleared email sent"
-    assert email_service.sent_messages[-1]["subject"] == "Upcoming bills update: no bills due in the next 7 days"
+    assert upcoming["headline"] == "No upcoming bills email sent"
+    assert email_service.sent_messages == []
     assert service._upcoming_bills_signature(
         [{"recurring_item_id": 2, "date": "2026-04-02", "description": "B"}, {"recurring_item_id": 1, "date": "2026-04-01", "description": "A"}]
     ).startswith("UPCOMING_BILLS_SIGNATURE:")
