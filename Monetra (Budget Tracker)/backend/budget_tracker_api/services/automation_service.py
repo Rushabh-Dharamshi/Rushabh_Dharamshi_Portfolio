@@ -5,6 +5,7 @@ from datetime import UTC, datetime, datetime as _real_datetime
 from pathlib import Path
 from threading import Lock, Thread
 
+from budget_tracker_api.errors import ValidationError
 from budget_tracker_api.repositories.agent_run_repository import AgentRunRepository
 from budget_tracker_api.services.agent_service import AgentService
 from budget_tracker_api.services.analytics_service import AnalyticsService

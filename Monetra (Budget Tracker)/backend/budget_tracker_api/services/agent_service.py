@@ -1351,14 +1351,23 @@ class AgentService:
     @staticmethod
     def _looks_like_manual_action_command(task: str) -> bool:
         normalized = task.lower()
-        action_words = ("add", "create", "set up", "update", "change", "edit", "delete", "remove", "replace", "set", "send", "email")
+        if AgentService._looks_like_email_dispatch_command(normalized):
+            return True
+        action_words = ("add", "create", "set up", "update", "change", "edit", "delete", "remove", "replace", "set", "send")
         domain_words = ("reminder", "recurring", "bill", "bills", "cost", "costs", "subscription", "transaction", "expense", "income", "budget", "email", "report")
         return any(word in normalized for word in action_words) and any(word in normalized for word in domain_words)
 
     @staticmethod
     def _looks_like_email_dispatch_command(task: str) -> bool:
         normalized = task.lower()
-        return any(word in normalized for word in ("email", "send", "mail")) and any(
+        dispatch_requested = (
+            re.search(r"\b(send|mail)\b", normalized) is not None
+            or "email me" in normalized
+            or "email the" in normalized
+            or "email my" in normalized
+            or "email this" in normalized
+        )
+        return dispatch_requested and any(
             word in normalized for word in ("report", "briefing", "summary", "bill", "bills", "due", "financial", "finance")
         )
 

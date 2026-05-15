@@ -229,6 +229,44 @@ def test_upcoming_bills_email_does_not_send_all_clear_after_bills_disappear():
     assert len(email_service.sent_messages) == 1
 
 
+def test_manual_upcoming_bills_email_sends_when_bills_exist_and_private_guard_rejects_empty_list():
+    repository = FakeRunRepository()
+    email_service = FakeEmailService()
+    service = AutomationService(
+        FakeAgentService(),
+        FakeReportService(),
+        email_service,
+        repository,
+        FakeRecurringService([
+            {
+                "recurring_item_id": 1,
+                "date": "2026-03-25",
+                "description": "Rent",
+                "amount": 700.0,
+                "entry_type": "expense",
+                "frequency": "monthly",
+            }
+        ]),
+        FakeAnalyticsService(),
+    )
+
+    result = service.run_upcoming_bills_email_now()
+
+    assert result["headline"] == "Upcoming bills alert emailed"
+    assert email_service.sent_messages[-1]["subject"] == "Upcoming bills summary"
+
+    import pytest
+    from budget_tracker_api.errors import ValidationError
+
+    with pytest.raises(ValidationError, match="No expense reminders"):
+        service._dispatch_upcoming_bills_email(
+            due_expenses=[],
+            signature="empty",
+            workflow_name="upcoming_bills_email_manual_dispatch",
+            workflow_label="Upcoming bills email manual dispatch",
+        )
+
+
 
 
 

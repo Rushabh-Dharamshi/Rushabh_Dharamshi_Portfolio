@@ -383,3 +383,201 @@ def test_rag_service_default_chroma_factory_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(Exception, match="ChromaDB is not installed"):
         RagService._default_chroma_client_factory(tmp_path)
+
+
+def test_rag_service_remaining_retrieval_document_and_helper_edges(monkeypatch, tmp_path):
+    import builtins
+    import sys
+    import types
+    from datetime import date
+
+    class CompletedRecurringService(StubRecurringService):
+        def upcoming_calendar(self, days):
+            payload = super().upcoming_calendar(days)
+            payload["completed_occurrences"] = [
+                {
+                    "recurring_item_id": 10,
+                    "date": "2026-06-15",
+                    "category": "Housing",
+                    "description": "Rent",
+                    "amount": 700.0,
+                    "entry_type": "expense",
+                    "frequency": "monthly",
+                    "days_until_due": 31,
+                    "transaction_id": 99,
+                    "updated_at": "2026-06-15T08:00:00Z",
+                }
+            ]
+            return payload
+
+    fake_client = FakeChromaClient()
+    memory = AgentMemoryService(tmp_path / "memory.json")
+    memory.remember(
+        kind="rag_query",
+        task="previous question",
+        summary="previous answer",
+        tools_used=["retrieve_finance_context"],
+    )
+    service = RagService(
+        expense_service=StubExpenseService(),
+        recurring_service=CompletedRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(""),
+        memory_service=memory,
+        persist_directory=tmp_path / "chroma",
+        manifest_path=tmp_path / "rag-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: fake_client,
+    )
+
+    docs = service._build_source_documents()
+    assert any("Paid True" in doc["text"] for doc in docs)
+    assert any(doc["metadata"]["doc_type"] == "agent_memory" for doc in docs)
+
+    no_match = service.retrieve_context("Do I have bills due in December 2099?", top_k=4)
+    assert no_match["sources"][0]["doc_type"] == "recurring_occurrence_search"
+
+    injected_source = {
+        "source_label": "Injected calendar",
+        "doc_type": "recurring_occurrence",
+        "document_id": "recurring-occurrence::99::2026-05-20",
+        "excerpt": "Injected bill due on 2026-05-20.",
+        "score": 1.0,
+        "metadata": {"doc_type": "recurring_occurrence", "chunk_index": 0},
+    }
+    monkeypatch.setattr(
+        RagService,
+        "_calendar_month_sources",
+        classmethod(lambda cls, collection, question: [injected_source]),
+    )
+    injected = service.retrieve_context("What changed in my finances?", top_k=4)
+    assert any(source["source_label"] == "Injected calendar" for source in injected["sources"])
+
+    class RaisingCollection:
+        def get(self, *args, **kwargs):
+            raise RuntimeError("collection unavailable")
+
+    assert RagService._calendar_month_sources(RaisingCollection(), "Do I have bills due in 2026-05?") == [
+        injected_source
+    ]
+    monkeypatch.undo()
+    assert RagService._calendar_month_sources(RaisingCollection(), "Do I have bills due in 2026-05?") == []
+    assert RagService._essential_finance_sources(RaisingCollection()) == []
+
+    class MixedCollection:
+        def get(self, where=None, include=None):
+            return {
+                "documents": ["dashboard", "income reminder", "expense reminder"],
+                "metadatas": [
+                    {"doc_type": "dashboard", "document_id": "dashboard::1"},
+                    {"doc_type": "recurring_occurrence", "entry_type": "income", "document_id": "income::1"},
+                    {
+                        "doc_type": "recurring_occurrence",
+                        "entry_type": "expense",
+                        "document_id": "expense::1",
+                        "source_label": "Expense reminder",
+                    },
+                ],
+            }
+
+    month_sources = RagService._calendar_month_sources(MixedCollection(), "Do I have bills due in May 2026?")
+    assert [source["document_id"] for source in month_sources] == ["expense::1"]
+
+    assert "through" in RagService._no_calendar_match_source("Do I have bills due until 2026-07?")["excerpt"]
+    assert "requested period" in RagService._no_calendar_match_source("Do I have any bills?")["excerpt"]
+    assert RagService._extract_requested_month_key("Do I have bills due in 2026-07?") == "2026-07"
+    assert RagService._extract_requested_month_scope("Do I have bills due until 2026-07?")["end_month"] == "2026-07"
+    assert RagService._month_keys_between("2026-07", "2026-05") == ["2026-05", "2026-06", "2026-07"]
+    assert RagService._month_keys_between("2026-12", "2027-01") == ["2026-12", "2027-01"]
+
+    ranked = RagService._rerank_sources(
+        "Is rent due on 2026-05-20?",
+        [
+            {
+                "source_label": "Rent",
+                "doc_type": "recurring_occurrence",
+                "document_id": "rent",
+                "excerpt": "Rent due.",
+                "score": 0.1,
+                "metadata": {"doc_type": "recurring_occurrence", "entry_type": "expense", "date": "2026-05-20"},
+            }
+        ],
+        1,
+    )
+    assert ranked[0]["document_id"] == "rent"
+
+    occurrences = RagService._build_recurring_occurrences_for_index(
+        [
+            {"active": False, "start_date": "2026-05-01", "frequency": "monthly"},
+            {"active": True, "start_date": "bad-date", "frequency": "monthly"},
+            {
+                "id": 50,
+                "active": True,
+                "start_date": "2026-05-01",
+                "end_date": "2026-05-15",
+                "frequency": "weekly",
+                "description": "Weekly gym",
+                "category": "Health",
+                "amount": 12.0,
+                "entry_type": "expense",
+            },
+        ]
+    )
+    assert all(item["recurring_item_id"] == 50 for item in occurrences)
+    assert RagService._parse_date("bad-date") is None
+    assert RagService._next_recurring_due_date(date(2026, 5, 1), "weekly") == date(2026, 5, 8)
+    assert RagService._sanitize_metadata({"skip": None, "plain": "value", "nested": {"a": 1}}) == {
+        "plain": "value",
+        "nested": '{"a": 1}',
+    }
+    assert service._parse_answer_payload("")["answer"].startswith("I could not produce")
+
+    http_service = RagService(
+        expense_service=StubExpenseService(),
+        recurring_service=StubRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "http-memory.json"),
+        persist_directory=tmp_path / "http-chroma",
+        manifest_path=tmp_path / "http-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_http_host="chroma",
+        chroma_http_port=8000,
+    )
+    monkeypatch.setattr(http_service, "_http_chroma_client_factory", lambda: "http-client")
+    assert http_service._create_chroma_client() == "http-client"
+    monkeypatch.undo()
+
+    fake_chroma = types.SimpleNamespace(HttpClient=lambda host, port, ssl: {"host": host, "port": port, "ssl": ssl})
+    monkeypatch.setitem(sys.modules, "chromadb", fake_chroma)
+    assert http_service._http_chroma_client_factory() == {"host": "chroma", "port": 8000, "ssl": False}
+
+    monkeypatch.setitem(sys.modules, "chromadb", types.SimpleNamespace())
+    with pytest.raises(Exception, match="HTTP-only client"):
+        RagService._default_chroma_client_factory(tmp_path)
+
+    monkeypatch.delitem(sys.modules, "chromadb", raising=False)
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "chromadb":
+            raise ImportError("missing chroma")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(Exception, match="ChromaDB HTTP client is not installed"):
+        http_service._http_chroma_client_factory()

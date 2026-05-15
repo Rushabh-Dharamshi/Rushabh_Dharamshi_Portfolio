@@ -277,3 +277,23 @@ def test_finance_server_recurring_match_handles_chatgpt_variants_without_matchin
     assert [item["id"] for item in matches] == [1]
 
 
+def test_finance_server_empty_text_match_and_create_recurring_branch(finance_server):
+    module, services = finance_server
+
+    assert module._text_matches("", "anything") is True
+
+    created = module.create_recurring_reminder(
+        "Insurance",
+        "Car cover",
+        45.0,
+        "expense",
+        "monthly",
+        "2026-04-10",
+        None,
+        True,
+    )
+
+    assert created["headline"] == "Recurring reminder created"
+    assert created["action_result"]["type"] == "recurring_item_created"
+    assert created["action_result"]["recurring_item"]["description"] == "Car cover"
+

@@ -161,6 +161,23 @@ def test_agent_service_handles_prediction_validation_gracefully():
     assert result["risk_level"] == "medium"
 
 
+def test_agent_service_email_ready_briefing_is_not_direct_email_dispatch():
+    service = AgentService(
+        FakeOllamaClient(),
+        FakeAnalyticsService(),
+        FakePredictionService(),
+        FakeRecurringService(),
+        FakeReportService(),
+        FakeExpenseService(),
+        FakeSettingsService(),
+        FakeAgentRunRepository(),
+    )
+
+    assert service._run_direct_email_dispatch_if_requested("Prepare an email-ready summary") is None
+    assert service._run_direct_email_dispatch_if_requested("send me a summary") is None
+    assert service._normalized_text_matches("chat gpt pro", "chat gpt plus") is False
+
+
 def test_agent_service_runs_workflow_and_logs_the_result():
     repository = FakeAgentRunRepository()
 
