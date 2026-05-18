@@ -90,9 +90,15 @@ export function OperationsPanel({
 
       <div className="operations-grid">
         <label className="file-upload">
-          <span>Import CSV</span>
+          <span className="file-upload-icon" aria-hidden="true">CSV</span>
+          <span className="file-upload-copy">
+            <strong>Import transactions</strong>
+            <small>Only .csv files are accepted</small>
+          </span>
+          <span className="file-upload-action" aria-hidden="true">Choose CSV file</span>
           <input
             type="file"
+            aria-label="Import CSV"
             accept=".csv"
             onChange={(event) => {
               const file = event.target.files?.[0];

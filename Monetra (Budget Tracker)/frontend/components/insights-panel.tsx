@@ -95,12 +95,16 @@ export function InsightsPanel({ categories, wordCloud }: InsightsPanelProps) {
           <>
             <div className="wordcloud-stats">
               <div className="wordcloud-stat-card">
-                <span>Category total</span>
-                <strong>{formatCurrency(cloudCategoryTotal)}</strong>
+                <p className="wordcloud-stat-line">
+                  <span>Category total: </span>
+                  <strong>{formatCurrency(cloudCategoryTotal)}</strong>
+                </p>
               </div>
               <div className="wordcloud-stat-card">
-                <span>Descriptions surfaced</span>
-                <strong>{cloudItems.length}</strong>
+                <p className="wordcloud-stat-line">
+                  <span>Descriptions surfaced: </span>
+                  <strong>{cloudItems.length}</strong>
+                </p>
               </div>
             </div>
 

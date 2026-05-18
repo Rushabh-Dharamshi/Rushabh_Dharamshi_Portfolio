@@ -131,6 +131,7 @@ class FakeCollection:
         self.documents = []
         self.metadatas = []
         self.embeddings = []
+        self.query_calls = 0
 
     def upsert(self, ids, documents, metadatas, embeddings):
         self.ids = list(ids)
@@ -139,6 +140,7 @@ class FakeCollection:
         self.embeddings = list(embeddings)
 
     def query(self, query_embeddings, n_results, include):
+        self.query_calls += 1
         return {
             "documents": [self.documents[:n_results]],
             "metadatas": [self.metadatas[:n_results]],
@@ -226,8 +228,10 @@ def test_rag_service_retrieves_context_and_answers_questions(rag_service):
     memory_items = memory.recall(limit=5)
 
     assert retrieval["retrieved_count"] == 2
+    assert retrieval["query_count"] == 1
     assert retrieval["sources"][0]["source_label"]
     assert answer["confidence"] == "high"
+    assert answer["signature"]
     assert answer["sources"]
     assert memory_items[0]["kind"] == "rag_query"
 
@@ -240,8 +244,182 @@ def test_rag_service_multi_query_includes_requested_month_recurring_occurrences(
     assert retrieval["sources"][0]["doc_type"] == "recurring_occurrence"
     assert any(source["doc_type"] == "recurring_occurrence" for source in retrieval["sources"])
     assert any("2026-05-15" in source["excerpt"] for source in retrieval["sources"])
+    assert retrieval["query_count"] > 1
     assert len(service._build_query_variants("Do I have any bills due in the whole of May?")) > 1
     assert service._rerank_sources("bills due in May", retrieval["sources"], 1)[0]["doc_type"] == "recurring_occurrence"
+
+
+def test_rag_service_caches_retrieval_and_answers_when_signature_is_unchanged(rag_service):
+    service, fake_client, _ = rag_service
+
+    first_retrieval = service.retrieve_context("What is driving spending?", top_k=2)
+    query_calls_after_first = fake_client.collection.query_calls
+    second_retrieval = service.retrieve_context("What is driving spending?", top_k=2)
+
+    assert second_retrieval == first_retrieval
+    assert fake_client.collection.query_calls == query_calls_after_first
+
+    first_answer = service.answer_question("What is driving spending?")
+    answer_calls_after_first = len(service._answer_client.messages)
+    cached_answer = service.answer_question("What is driving spending?")
+
+    assert cached_answer == first_answer
+    assert len(service._answer_client.messages) == answer_calls_after_first
+
+    service.reindex(force=True)
+    service.retrieve_context("What is driving spending?", top_k=2)
+
+    assert fake_client.collection.query_calls > query_calls_after_first
+
+
+def test_rag_service_documents_and_prompt_use_cost_colon_format(rag_service):
+    service, _, _ = rag_service
+
+    docs = service._build_source_documents()
+    assert any("Cost: GBP" in document["text"] for document in docs)
+
+    service.answer_question("What is driving spending?")
+    system_prompt = service._answer_client.messages[-1][0]["content"]
+    assert "Cost: <value>" in system_prompt
+
+
+def test_rag_service_uses_structured_answers_for_exact_finance_questions(rag_service):
+    service, _, memory = rag_service
+
+    latest = service.answer_question("What is my most recent expense?")
+
+    assert "Transaction #2" in latest["answer"]
+    assert "Cost: GBP 80.00" in latest["answer"]
+    assert latest["sources"][0]["document_id"] == "expense::2"
+    assert service._answer_client.messages == []
+    assert memory.recall(1)[0]["tools_used"] == ["find_latest_expense"]
+
+    recurring = service.answer_question("Show my recurring reminders")
+
+    assert recurring["answer"].startswith("Recurring reminders:")
+    assert "Rent" in recurring["answer"]
+    assert recurring["sources"][0]["doc_type"] == "recurring"
+
+    total = service.answer_question("How much did I spend on Food in March 2026?")
+
+    assert "Total spent for Food in 2026-03: GBP 65.25" in total["answer"]
+    assert total["sources"][0]["document_id"] == "expense::1"
+
+
+def test_rag_service_structured_answer_empty_and_next_week_edges(tmp_path):
+    class EmptyExpenseService:
+        def list_expenses(self, sort_direction="desc"):
+            return []
+
+    class EmptyRecurringService:
+        def list_items(self):
+            return []
+
+        def upcoming_calendar(self, days):
+            return {"window_start": "2026-05-18", "window_end": "2026-05-25", "occurrences": [], "completed_occurrences": []}
+
+    class NextWeekRecurringService(StubRecurringService):
+        def upcoming_calendar(self, days):
+            return {
+                "window_start": "2026-05-18",
+                "window_end": "2026-05-25",
+                "occurrences": [
+                    {
+                        "recurring_item_id": 20,
+                        "date": "2026-05-20",
+                        "category": "Subscription",
+                        "description": "Gemini Pro Subscription",
+                        "amount": 18.99,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "days_until_due": 2,
+                    }
+                ],
+                "completed_occurrences": [],
+            }
+
+    empty_service = RagService(
+        expense_service=EmptyExpenseService(),
+        recurring_service=EmptyRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "empty-memory.json"),
+        persist_directory=tmp_path / "empty-chroma",
+        manifest_path=tmp_path / "empty-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: FakeChromaClient(),
+    )
+    assert "could not find" in empty_service.answer_question("latest expense")["answer"]
+    assert "none found" in empty_service.answer_question("recurring reminders")["answer"]
+    assert "GBP 0.00" in empty_service.answer_question("total groceries in May 2026")["answer"]
+    assert empty_service._structured_answer("general finance health") is None
+    assert empty_service._matching_category("unknown category", []) is None
+    assert empty_service._format_gbp("not-a-number") == "GBP 0.00"
+
+    next_week_service = RagService(
+        expense_service=StubExpenseService(),
+        recurring_service=NextWeekRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "next-week-memory.json"),
+        persist_directory=tmp_path / "next-week-chroma",
+        manifest_path=tmp_path / "next-week-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: FakeChromaClient(),
+    )
+    next_week = next_week_service.answer_question("Which recurring reminders are due next week?")
+    assert next_week["answer"].startswith("Recurring reminders due next week:")
+    assert "Gemini Pro Subscription" in next_week["answer"]
+    assert next_week["sources"][0]["doc_type"] == "recurring_occurrence"
+
+
+def test_rag_service_structured_total_skips_bad_dates_and_formats_ranges(tmp_path):
+    class MixedExpenseService:
+        def list_expenses(self, sort_direction="desc"):
+            return [
+                {"id": 1, "date": "bad-date", "category": "Food", "description": "Broken import", "amount": 99.0, "entry_type": "expense"},
+                {"id": 2, "date": "2026-03-03", "category": "Food", "description": "March shop", "amount": 12.0, "entry_type": "expense"},
+                {"id": 3, "date": "2026-06-03", "category": "Food", "description": "June shop", "amount": 15.5, "entry_type": "expense"},
+            ]
+
+    service = RagService(
+        expense_service=MixedExpenseService(),
+        recurring_service=StubRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "range-memory.json"),
+        persist_directory=tmp_path / "range-chroma",
+        manifest_path=tmp_path / "range-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: FakeChromaClient(),
+    )
+
+    june = service._spending_total_answer("How much did I spend on Food in June 2026?")
+    assert june["answer"] == "Total spent for Food in 2026-06: GBP 15.50 across 1 expense transaction."
+
+    through = service._spending_total_answer("How much did I spend until June 2026?")
+    assert "through 2026-06" in through["answer"]
 
 
 def test_rag_service_month_questions_are_exact_unless_through_scope_is_requested(rag_service):

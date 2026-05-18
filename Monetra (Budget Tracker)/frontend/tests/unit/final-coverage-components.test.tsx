@@ -245,7 +245,7 @@ describe("final component coverage branches", () => {
 
     expect(screen.getAllByText("Week 1").length).toBeGreaterThan(0);
     expect(screen.getByText("Food")).toBeInTheDocument();
-    expect(screen.getByText("scheduled occurrences", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("scheduled", { exact: false })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Weekly" }));
     fireEvent.click(screen.getByRole("button", { name: "Monthly" }));

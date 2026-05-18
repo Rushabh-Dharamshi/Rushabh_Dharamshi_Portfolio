@@ -82,10 +82,14 @@ class ExpenseService:
         }
 
     def export_csv(self) -> str:
+        today = datetime.now().date()
+        month_key = today.strftime("%Y-%m")
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(["ID", "Date", "Category", "Description", "Amount", "Type"])
         for expense in self._repository.list_expenses("desc", entry_type="expense"):
+            if not str(expense.date).startswith(month_key) or str(expense.date) > today.isoformat():
+                continue
             writer.writerow(
                 [
                     expense.id,
@@ -108,9 +112,11 @@ class ExpenseService:
             raise ValidationError("date, category, description, and amount are required.")
 
         try:
-            datetime.strptime(date, "%Y-%m-%d")
+            parsed_date = datetime.strptime(date, "%Y-%m-%d").date()
         except ValueError as exc:
             raise ValidationError("date must use YYYY-MM-DD format.") from exc
+        if parsed_date > datetime.now().date():
+            raise ValidationError("date cannot be in the future.")
 
         try:
             amount = round(float(amount_value), 2)

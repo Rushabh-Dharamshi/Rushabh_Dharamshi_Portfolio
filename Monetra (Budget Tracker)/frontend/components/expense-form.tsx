@@ -10,6 +10,10 @@ interface ExpenseFormProps {
   onClear: () => void;
 }
 
+function currentDateInputMax() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function ExpenseForm({
   form,
   selectedExpenseId,
@@ -40,6 +44,7 @@ export function ExpenseForm({
           <span>Date</span>
           <input
             type="date"
+            max={currentDateInputMax()}
             value={form.date}
             onChange={(event) => updateField("date", event.target.value)}
           />

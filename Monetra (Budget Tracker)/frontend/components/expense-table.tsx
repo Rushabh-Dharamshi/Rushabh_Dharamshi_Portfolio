@@ -48,7 +48,7 @@ export function ExpenseTable({
         </button>
       </div>
 
-      <div className="table-wrapper">
+      <div className="table-wrapper expense-table-wrapper">
         <table>
           <thead>
             <tr>

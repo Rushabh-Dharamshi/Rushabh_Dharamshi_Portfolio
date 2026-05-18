@@ -201,6 +201,10 @@ describe("frontend strict branch fill", () => {
         items={[
           { id: 1, category: "Bills", description: "Alpha", amount: 10, entry_type: "expense", frequency: "monthly", start_date: "2026-04-02", end_date: null, active: false },
           { id: 2, category: "Bills", description: "Beta", amount: 10, entry_type: "expense", frequency: "monthly", start_date: "2026-04-02", end_date: "2026-06-02", active: true },
+          { id: 3, category: "Bills", description: "Gamma", amount: 11, entry_type: "expense", frequency: "monthly", start_date: "2026-04-03", end_date: "2026-06-03", active: true },
+          { id: 4, category: "Bills", description: "Delta", amount: 12, entry_type: "expense", frequency: "monthly", start_date: "2026-04-04", end_date: "2026-06-04", active: true },
+          { id: 5, category: "Bills", description: "Epsilon", amount: 13, entry_type: "expense", frequency: "monthly", start_date: "2026-04-05", end_date: "2026-06-05", active: true },
+          { id: 6, category: "Bills", description: "Zeta", amount: 14, entry_type: "expense", frequency: "monthly", start_date: "2026-04-06", end_date: "2026-06-06", active: true },
         ]}
         calendar={{
           window_start: "2026-03-31",
@@ -211,6 +215,10 @@ describe("frontend strict branch fill", () => {
           ],
           completed_occurrences: [
             { recurring_item_id: 1, date: "2026-04-01", category: "Bills", description: "Alpha", amount: 10, entry_type: "expense", frequency: "monthly", days_until_due: 0, transaction_id: null },
+            { recurring_item_id: 2, date: "2026-04-02", category: "Bills", description: "Beta", amount: 10, entry_type: "expense", frequency: "monthly", days_until_due: 0, transaction_id: 2 },
+            { recurring_item_id: 3, date: "2026-04-03", category: "Bills", description: "Gamma", amount: 11, entry_type: "expense", frequency: "monthly", days_until_due: 0, transaction_id: 3 },
+            { recurring_item_id: 4, date: "2026-04-04", category: "Bills", description: "Delta", amount: 12, entry_type: "expense", frequency: "monthly", days_until_due: 0, transaction_id: 4 },
+            { recurring_item_id: 5, date: "2026-04-05", category: "Bills", description: "Epsilon", amount: 13, entry_type: "expense", frequency: "monthly", days_until_due: 0, transaction_id: 5 },
           ],
         }}
         onCreate={jest.fn()}
@@ -225,6 +233,9 @@ describe("frontend strict branch fill", () => {
     expect(onMarkPaid).not.toHaveBeenCalled();
     expect(screen.getByText("Bills | monthly | due in 1 day")).toBeInTheDocument();
     expect(screen.getByText("Bills | cleared for 2026-04-01")).toBeInTheDocument();
+    expect(screen.getByText("Recurring reminders")).toBeInTheDocument();
+    expect(screen.getAllByText("Zeta").some((item) => item.closest(".recurring-reminder-list"))).toBe(true);
+    expect(screen.getAllByText("Epsilon").some((item) => item.closest(".completed-reminder-list"))).toBe(true);
   });
 });
 

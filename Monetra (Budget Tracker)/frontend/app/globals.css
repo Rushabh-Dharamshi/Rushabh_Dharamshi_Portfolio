@@ -358,14 +358,90 @@ select {
 }
 
 .file-upload input {
-  padding: 10px 0 0;
-  background: transparent;
-  border: 0;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.file-upload {
+  position: relative;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 76px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 2px dashed rgba(15, 118, 110, 0.42);
+  background:
+    linear-gradient(135deg, rgba(246, 255, 254, 0.98), rgba(255, 253, 249, 0.96)),
+    linear-gradient(90deg, rgba(15, 118, 110, 0.14), transparent);
+  color: #11413d;
+  cursor: pointer;
+  box-shadow: 0 18px 32px rgba(15, 118, 110, 0.13);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.file-upload:hover {
+  border-color: rgba(15, 118, 110, 0.7);
+  box-shadow: 0 22px 38px rgba(15, 118, 110, 0.18);
+  transform: translateY(-1px);
+}
+
+.file-upload:focus-within {
+  outline: 4px solid rgba(15, 118, 110, 0.12);
+  border-color: rgba(15, 118, 110, 0.42);
+}
+
+.file-upload-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: #0f766e;
+  color: #f6fffe;
+  font-size: 0.78rem;
+  font-weight: 800;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.24);
+}
+
+.file-upload-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.file-upload-copy strong {
+  color: #11413d;
+}
+
+.file-upload-copy small {
+  color: var(--muted);
+}
+
+.file-upload-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #0f766e, #115e59);
+  color: #f6fffe;
+  box-shadow: 0 12px 22px rgba(15, 118, 110, 0.22);
+  font-size: 0.86rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .table-wrapper {
   overflow: auto;
   max-width: 100%;
+}
+
+.expense-table-wrapper {
+  max-height: calc(48px + (52px * 10));
 }
 
 table {
@@ -381,10 +457,33 @@ td {
 }
 
 thead th {
+  height: 48px;
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
+}
+
+.expense-table-wrapper thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(255, 253, 249, 0.96);
+}
+
+.expense-table-wrapper tbody tr {
+  height: 52px;
+}
+
+.expense-table-wrapper th,
+.expense-table-wrapper td {
+  white-space: nowrap;
+}
+
+.expense-table-wrapper td:nth-child(4) {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 tbody tr {
@@ -947,6 +1046,47 @@ tbody tr:hover,
 }
 .reminder-breakdown {
   margin-top: 18px;
+}
+
+.reminder-list-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.bounded-reminder-list {
+  display: grid;
+  gap: 10px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.next-week-reminder-list {
+  max-height: calc((112px * 3) + 20px);
+}
+
+.all-reminder-list {
+  max-height: calc((82px * 5) + 40px);
+}
+
+.completed-reminder-list {
+  max-height: calc((92px * 4) + 30px);
+}
+
+.recurring-reminders-header {
+  margin-top: 18px;
+}
+
+.recurring-reminder-list {
+  max-height: calc((76px * 5) + 40px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.rag-source-list {
+  max-height: calc((154px * 2) + 24px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .month-breakdown-card {
@@ -1743,6 +1883,15 @@ th,
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.72);
   border: 1px solid rgba(24, 32, 39, 0.08);
+}
+
+.wordcloud-stat-line {
+  margin: 0;
+  color: var(--muted);
+}
+
+.wordcloud-stat-line strong {
+  color: var(--ink);
 }
 
 .wordcloud-stage {

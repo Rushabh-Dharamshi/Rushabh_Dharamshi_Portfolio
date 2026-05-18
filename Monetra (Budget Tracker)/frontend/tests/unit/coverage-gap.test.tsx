@@ -113,7 +113,7 @@ describe("frontend coverage gaps", () => {
     const onUpdate = jest.fn();
     const onDelete = jest.fn();
 
-    render(
+    const { container } = render(
       <>
         <ExpenseForm
           form={{ date: "2026-04-01", category: "Travel", description: "Bus", amount: "4.50", entry_type: "expense" }}
@@ -247,9 +247,10 @@ describe("frontend coverage gaps", () => {
       }),
     );
 
-    expect(screen.getByText("April 2026")).toBeInTheDocument();
-    expect(screen.getByText("June 2026")).toBeInTheDocument();
-    expect(screen.getByText("February 2027")).toBeInTheDocument();
+    const allReminderRows = Array.from(container.querySelectorAll(".month-breakdown-row")).map((node) => node.textContent ?? "");
+    expect(allReminderRows.some((value) => value.includes("April 2026") && value.includes("Long-term rent"))).toBe(true);
+    expect(allReminderRows.some((value) => value.includes("June 2026") && value.includes("Long-term rent"))).toBe(true);
+    expect(allReminderRows.some((value) => value.includes("February 2027") && value.includes("Weekly pay"))).toBe(true);
     expect(screen.getAllByText((_, element) => !!element?.textContent && element.textContent.includes("250.00") && element.className.includes("amount-positive")).length).toBeGreaterThan(0);
   });
 

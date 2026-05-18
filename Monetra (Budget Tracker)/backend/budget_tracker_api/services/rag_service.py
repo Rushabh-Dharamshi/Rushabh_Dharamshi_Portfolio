@@ -54,6 +54,8 @@ class RagService:
         self._chroma_http_port = int(chroma_http_port)
         self._chroma_http_ssl = bool(chroma_http_ssl)
         self._chroma_client_factory = chroma_client_factory or self._default_chroma_client_factory
+        self._retrieval_cache: dict[tuple[str, str, int], dict] = {}
+        self._answer_cache: dict[tuple[str, str], dict] = {}
 
     def status(self) -> dict:
         manifest = self._load_manifest()
@@ -71,7 +73,7 @@ class RagService:
         chunks = self._build_chunks(source_documents)
         signature = self._build_signature(source_documents)
         manifest = self._load_manifest()
-        if not force and manifest.get("signature") == signature and int(manifest.get("chunk_count", 0)) == len(chunks):
+        if not force and manifest.get("signature") == signature:
             return {
                 **self.status(),
                 "reindexed": False,
@@ -106,6 +108,8 @@ class RagService:
             "signature": signature,
         }
         self._manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._retrieval_cache.clear()
+        self._answer_cache.clear()
         return {
             **payload,
             "available": True,
@@ -117,10 +121,15 @@ class RagService:
         normalized_question = str(question or "").strip()
         if not normalized_question:
             raise ValidationError("question is required.")
-        self.reindex(force=False)
+        index_status = self.reindex(force=False)
+        signature = str(index_status.get("signature") or "")
         client = self._create_chroma_client()
         collection = client.get_or_create_collection(name=self._collection_name, metadata={"hnsw:space": "cosine"})
         n_results = max(1, min(int(top_k or self._top_k), 12))
+        cache_key = (signature, normalized_question, n_results)
+        cached = self._retrieval_cache.get(cache_key)
+        if cached is not None:
+            return json.loads(json.dumps(cached))
         scoped_bill_question = self._is_bill_question(normalized_question) and self._extract_requested_month_scope(normalized_question) is not None
         query_variants = self._build_query_variants(normalized_question)
         query_embeddings = self._embedding_client.embed_texts(query_variants)
@@ -156,15 +165,46 @@ class RagService:
                 merged_sources.setdefault(key, source)
 
         sources = self._rerank_sources(normalized_question, list(merged_sources.values()), n_results)
-        return {
+        retrieval = {
             "question": normalized_question,
             "sources": sources,
             "retrieved_count": len(sources),
+            "query_count": len(query_variants),
             "indexed_at": self._load_manifest().get("indexed_at"),
+            "signature": signature,
         }
+        self._retrieval_cache[cache_key] = json.loads(json.dumps(retrieval))
+        return retrieval
 
     def answer_question(self, question: str) -> dict:
         retrieval = self.retrieve_context(question)
+        signature = str(retrieval.get("signature") or "")
+        cache_key = (signature, str(question or "").strip())
+        cached = self._answer_cache.get(cache_key)
+        if cached is not None:
+            return json.loads(json.dumps(cached))
+
+        structured = self._structured_answer(str(question or "").strip())
+        if structured is not None:
+            answer = {
+                "question": question,
+                "answer": structured["answer"],
+                "confidence": "high",
+                "follow_up_questions": structured["follow_up_questions"],
+                "sources": structured["sources"],
+                "generated_at": self._utc_now(),
+                "signature": signature,
+            }
+            self._memory_service.remember(
+                kind="rag_query",
+                task=question,
+                summary=structured["answer"],
+                tools_used=structured["tools_used"],
+                metadata={"confidence": "high", "answer_mode": "structured"},
+            )
+            self._answer_cache[cache_key] = json.loads(json.dumps(answer))
+            return answer
+
         if not retrieval["sources"]:
             raise ValidationError("No indexed finance knowledge is available yet.")
 
@@ -179,6 +219,9 @@ class RagService:
                     "Answer only from the retrieved finance context. "
                     "All currency is GBP. If the context is insufficient, say that clearly. "
                     "For recurring bills, use every retrieved recurring occurrence date as evidence. "
+                    "For exact totals, dates, transaction IDs, and recurring reminders, prefer structured transaction and recurring source lines over agent memory. "
+                    "Do arithmetic internally and show only the final concise calculation. "
+                    "When describing costs, use the exact label format 'Cost: <value>'. "
                     "Return JSON with keys: answer, confidence, follow_up_questions."
                 ),
             },
@@ -197,6 +240,7 @@ class RagService:
             "follow_up_questions": parsed["follow_up_questions"],
             "sources": retrieval["sources"],
             "generated_at": self._utc_now(),
+            "signature": signature,
         }
         self._memory_service.remember(
             kind="rag_query",
@@ -205,7 +249,193 @@ class RagService:
             tools_used=["retrieve_finance_context"],
             metadata={"confidence": parsed["confidence"]},
         )
+        self._answer_cache[cache_key] = json.loads(json.dumps(answer))
         return answer
+
+    def _structured_answer(self, question: str) -> dict | None:
+        normalized = str(question or "").lower()
+        if self._is_latest_expense_question(normalized):
+            return self._latest_expense_answer()
+        if self._is_recurring_reminder_question(normalized):
+            return self._recurring_reminder_answer(normalized)
+        if self._is_spending_total_question(normalized):
+            return self._spending_total_answer(question)
+        return None
+
+    def _latest_expense_answer(self) -> dict | None:
+        expenses = [
+            expense
+            for expense in self._expense_service.list_expenses("desc")
+            if expense.get("entry_type") == "expense" and self._parse_date(expense.get("date")) is not None
+        ]
+        today = date.today()
+        expenses = [
+            expense
+            for expense in expenses
+            if (self._parse_date(expense.get("date")) or today) <= today
+        ]
+        if not expenses:
+            return {
+                "answer": "I could not find any completed expense transactions in the structured ledger.",
+                "follow_up_questions": ["Do you want to review imported transactions for missing expense dates?"],
+                "sources": [self._structured_source("Structured expense ledger", "expense_search", "expense-search::latest", "No completed expense transactions were found.")],
+                "tools_used": ["find_latest_expense"],
+            }
+        latest = sorted(expenses, key=lambda item: (str(item.get("date") or ""), int(item.get("id") or 0)), reverse=True)[0]
+        cost = self._format_gbp(latest.get("amount"))
+        excerpt = (
+            f"Transaction #{latest.get('id')} on {latest.get('date')}. Category {latest.get('category')}. "
+            f"Description {latest.get('description')}. Cost: {cost}. Entry type expense."
+        )
+        return {
+            "answer": (
+                f"The most recent expense is Transaction #{latest.get('id')} on {latest.get('date')}. "
+                f"Category: {latest.get('category')}. Description: {latest.get('description')}. Cost: {cost}."
+            ),
+            "follow_up_questions": ["Do you want the largest expenses for the same month?"],
+            "sources": [self._structured_source(f"Transaction #{latest.get('id')}", "expense", f"expense::{latest.get('id')}", excerpt, {"date": latest.get("date"), "category": latest.get("category"), "entry_type": "expense"})],
+            "tools_used": ["find_latest_expense"],
+        }
+
+    def _recurring_reminder_answer(self, normalized_question: str) -> dict | None:
+        if "next week" in normalized_question or "7 days" in normalized_question:
+            calendar = self._recurring_service.upcoming_calendar(7)
+            reminders = [
+                item
+                for item in calendar.get("occurrences", [])
+                if item.get("entry_type") == "expense" and int(item.get("days_until_due") or 0) <= 7
+            ]
+            label = "Recurring reminders due next week"
+            tools_used = ["get_recurring_reminders_due_next_week"]
+        else:
+            reminders = [
+                item
+                for item in self._recurring_service.list_items()
+                if item.get("active") and item.get("entry_type") == "expense"
+            ]
+            label = "Recurring reminders"
+            tools_used = ["list_recurring_reminders"]
+        if not reminders:
+            return {
+                "answer": f"{label}: none found in the structured recurring reminder data.",
+                "follow_up_questions": ["Do you want to add a recurring reminder?"],
+                "sources": [self._structured_source(label, "recurring_search", "recurring-search::none", f"{label}: no active expense reminders found.")],
+                "tools_used": tools_used,
+            }
+        lines = [f"{label}:"]
+        sources = []
+        for item in sorted(reminders, key=lambda value: (str(value.get("date") or value.get("start_date") or ""), str(value.get("description") or ""))):
+            due_text = f"due {item.get('date')}" if item.get("date") else f"starts {item.get('start_date')}"
+            end_text = f" | ends {item.get('end_date')}" if item.get("end_date") else ""
+            cost = self._format_gbp(item.get("amount"))
+            lines.append(
+                f"- {item.get('description')}: {item.get('category')} | {item.get('frequency')} | {due_text}{end_text}. Cost: {cost}."
+            )
+            document_id = f"recurring::{item.get('id') or item.get('recurring_item_id')}"
+            if item.get("date"):
+                document_id = f"recurring-occurrence::{item.get('recurring_item_id')}::{item.get('date')}"
+            sources.append(
+                self._structured_source(
+                    str(item.get("description") or "Recurring reminder"),
+                    "recurring_occurrence" if item.get("date") else "recurring",
+                    document_id,
+                    f"{item.get('description')} {due_text}. Category {item.get('category')}. Frequency {item.get('frequency')}. Cost: {cost}.",
+                    {"category": item.get("category"), "date": item.get("date") or item.get("start_date"), "entry_type": item.get("entry_type")},
+                )
+            )
+        return {
+            "answer": "\n".join(lines),
+            "follow_up_questions": ["Which reminders are due next week?"],
+            "sources": sources,
+            "tools_used": tools_used,
+        }
+
+    def _spending_total_answer(self, question: str) -> dict | None:
+        scope = self._extract_requested_month_scope(question)
+        expenses = [
+            expense
+            for expense in self._expense_service.list_expenses("desc")
+            if expense.get("entry_type") == "expense"
+        ]
+        category = self._matching_category(question, expenses)
+        if scope is None and category is None:
+            return None
+        filtered = []
+        for expense in expenses:
+            expense_date = self._parse_date(expense.get("date"))
+            if expense_date is None:
+                continue
+            month_key = expense_date.isoformat()[:7]
+            if scope and month_key not in self._month_keys_between(scope["start_month"], scope["end_month"]):
+                continue
+            if category and str(expense.get("category") or "").lower() != category.lower():
+                continue
+            filtered.append(expense)
+        total = round(sum(float(item.get("amount") or 0) for item in filtered), 2)
+        month_text = ""
+        if scope and scope["start_month"] == scope["end_month"]:
+            month_text = f" in {scope['end_month']}"
+        elif scope:
+            month_text = f" from {scope['start_month']} through {scope['end_month']}"
+        category_text = f" for {category}" if category else ""
+        answer = f"Total spent{category_text}{month_text}: {self._format_gbp(total)} across {len(filtered)} expense transaction{'' if len(filtered) == 1 else 's'}."
+        sources = [
+            self._structured_source(
+                f"Transaction #{expense.get('id')}",
+                "expense",
+                f"expense::{expense.get('id')}",
+                f"Transaction #{expense.get('id')} on {expense.get('date')}. Category {expense.get('category')}. Description {expense.get('description')}. Cost: {self._format_gbp(expense.get('amount'))}.",
+                {"date": expense.get("date"), "category": expense.get("category"), "entry_type": "expense"},
+            )
+            for expense in filtered[:12]
+        ] or [self._structured_source("Structured expense total", "expense_total", "expense-total::empty", answer)]
+        return {
+            "answer": answer,
+            "follow_up_questions": ["Do you want this broken down by transaction?"],
+            "sources": sources,
+            "tools_used": ["calculate_structured_expense_total"],
+        }
+
+    @staticmethod
+    def _is_latest_expense_question(question: str) -> bool:
+        return ("expense" in question or "transaction" in question) and any(term in question for term in ("most recent", "latest", "last expense", "last transaction"))
+
+    @staticmethod
+    def _is_recurring_reminder_question(question: str) -> bool:
+        return any(term in question for term in ("recurring reminder", "recurring reminders", "subscriptions", "subscription", "upcoming reminders"))
+
+    @staticmethod
+    def _is_spending_total_question(question: str) -> bool:
+        return any(term in question for term in ("how much", "total", "spent", "spend")) and not RagService._is_recurring_reminder_question(question)
+
+    @staticmethod
+    def _matching_category(question: str, expenses: list[dict]) -> str | None:
+        normalized = str(question or "").lower()
+        categories = sorted({str(expense.get("category") or "") for expense in expenses if expense.get("category")}, key=len, reverse=True)
+        for category in categories:
+            if category.lower() in normalized:
+                return category
+        return None
+
+    @staticmethod
+    def _format_gbp(value: object) -> str:
+        try:
+            amount = float(value or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        return f"GBP {amount:.2f}"
+
+    @staticmethod
+    def _structured_source(source_label: str, doc_type: str, document_id: str, excerpt: str, metadata: dict | None = None) -> dict:
+        source_metadata = {"doc_type": doc_type, **(metadata or {})}
+        return {
+            "source_label": source_label,
+            "doc_type": doc_type,
+            "document_id": document_id,
+            "excerpt": excerpt,
+            "score": 1.0,
+            "metadata": source_metadata,
+        }
 
     def _build_source_documents(self) -> list[dict]:
         dashboard = self._analytics_service.dashboard()
@@ -227,11 +457,11 @@ class RagService:
                 "id": f"dashboard::{dashboard.get('month_key', 'current')}",
                 "text": (
                     f"Dashboard summary for {dashboard.get('month_label')}. "
-                    f"Monthly budget is GBP {dashboard.get('monthly_budget')}. "
-                    f"Expenses this month are GBP {dashboard.get('current_month_total')}. "
-                    f"Monthly income is GBP {dashboard.get('monthly_income')}. "
-                    f"Net cash flow is GBP {dashboard.get('net_cash_flow')}. "
-                    f"Remaining budget is GBP {dashboard.get('remaining_budget')}. "
+                    f"Monthly budget: GBP {dashboard.get('monthly_budget')}. "
+                    f"Expenses this month: GBP {dashboard.get('current_month_total')}. "
+                    f"Monthly income: GBP {dashboard.get('monthly_income')}. "
+                    f"Net cash flow: GBP {dashboard.get('net_cash_flow')}. "
+                    f"Remaining budget: GBP {dashboard.get('remaining_budget')}. "
                     f"Budget status is {dashboard.get('status')}."
                 ),
                 "metadata": {
@@ -245,8 +475,8 @@ class RagService:
                 "text": (
                     f"Financial pulse narrative: {pulse.get('narrative')}. "
                     f"Health score {pulse.get('health_score')}. "
-                    f"Cash in GBP {pulse.get('cash_in')}. Cash out GBP {pulse.get('cash_out')}. "
-                    f"Net cash flow GBP {pulse.get('net_cash_flow')}. Runway days {pulse.get('runway_days')}."
+                    f"Cash in: GBP {pulse.get('cash_in')}. Cash out: GBP {pulse.get('cash_out')}. "
+                    f"Net cash flow: GBP {pulse.get('net_cash_flow')}. Runway days: {pulse.get('runway_days')}."
                 ),
                 "metadata": {
                     "doc_type": "financial_pulse",
@@ -259,13 +489,13 @@ class RagService:
                 "text": (
                     "Category insights. Top categories: "
                     + "; ".join(
-                        f"{item.get('category')} GBP {item.get('amount')}" for item in categories.get("top_categories", [])
+                        f"{item.get('category')} Cost: GBP {item.get('amount')}" for item in categories.get("top_categories", [])
                     )
                     + ". Bottom categories: "
                     + "; ".join(
-                        f"{item.get('category')} GBP {item.get('amount')}" for item in categories.get("bottom_categories", [])
+                        f"{item.get('category')} Cost: GBP {item.get('amount')}" for item in categories.get("bottom_categories", [])
                     )
-                    + f". Total spending GBP {categories.get('total_spending')}."
+                    + f". Total spending: GBP {categories.get('total_spending')}."
                 ),
                 "metadata": {
                     "doc_type": "category_insights",
@@ -276,8 +506,8 @@ class RagService:
             {
                 "id": f"settings::{dashboard.get('month_key', 'current')}",
                 "text": (
-                    f"Budget settings. Monthly budget GBP {settings.get('monthly_budget')}. "
-                    f"Monthly income GBP {settings.get('monthly_income')} for {settings.get('income_month') or dashboard.get('month_key')}."
+                    f"Budget settings. Monthly budget: GBP {settings.get('monthly_budget')}. "
+                    f"Monthly income: GBP {settings.get('monthly_income')} for {settings.get('income_month') or dashboard.get('month_key')}."
                 ),
                 "metadata": {
                     "doc_type": "settings",
@@ -292,9 +522,9 @@ class RagService:
                     "id": f"prediction::{prediction.get('next_month')}",
                     "text": (
                         f"Prediction for {prediction.get('next_month')}. "
-                        f"Predicted spending GBP {prediction.get('predicted_spending')}. "
+                        f"Predicted spending: GBP {prediction.get('predicted_spending')}. "
                         f"Budget exceeded {prediction.get('is_budget_exceeded')}. "
-                        f"Budget baseline GBP {prediction.get('monthly_budget')}."
+                        f"Budget baseline: GBP {prediction.get('monthly_budget')}."
                     ),
                     "metadata": {
                         "doc_type": "prediction",
@@ -309,7 +539,7 @@ class RagService:
                     "id": f"expense::{expense['id']}",
                     "text": (
                         f"Transaction on {expense['date']}. Category {expense['category']}. "
-                        f"Description {expense['description']}. Amount GBP {expense['amount']}. "
+                        f"Description {expense['description']}. Cost: GBP {expense['amount']}. "
                         f"Entry type {expense['entry_type']}."
                     ),
                     "metadata": {
@@ -327,7 +557,7 @@ class RagService:
                     "id": f"recurring::{item['id']}",
                     "text": (
                         f"Recurring reminder {item['description']}. Category {item['category']}. "
-                        f"Amount GBP {item['amount']}. Frequency {item['frequency']}. "
+                        f"Cost: GBP {item['amount']}. Frequency {item['frequency']}. "
                         f"Start date {item['start_date']}. End date {item.get('end_date') or 'open ended'}. "
                         f"Active {item['active']}."
                     ),
@@ -359,7 +589,7 @@ class RagService:
                     "text": (
                         f"Recurring calendar from {recurring_calendar.get('window_start')} to {recurring_calendar.get('window_end')}. "
                         + " ".join(
-                            f"{item.get('description')} is due on {item.get('date')} for GBP {item.get('amount')} "
+                            f"{item.get('description')} is due on {item.get('date')}. Cost: GBP {item.get('amount')} "
                             f"as {item.get('entry_type')} and paid status is {bool(item.get('is_paid'))}."
                             for item in all_occurrences
                         )
@@ -380,7 +610,7 @@ class RagService:
                     "text": (
                         f"Recurring bill occurrence due on {date_value}. "
                         f"Description {occurrence.get('description')}. Category {occurrence.get('category')}. "
-                        f"Amount GBP {occurrence.get('amount')}. Entry type {occurrence.get('entry_type')}. "
+                        f"Cost: GBP {occurrence.get('amount')}. Entry type {occurrence.get('entry_type')}. "
                         f"Frequency {occurrence.get('frequency')}. Days until due {occurrence.get('days_until_due')}. "
                         f"Paid {is_paid}."
                     ),
@@ -725,7 +955,12 @@ class RagService:
 
     @staticmethod
     def _build_signature(source_documents: list[dict]) -> str:
-        payload = json.dumps(source_documents, sort_keys=True, ensure_ascii=False)
+        signature_documents = [
+            document
+            for document in source_documents
+            if (document.get("metadata") or {}).get("doc_type") != "agent_memory"
+        ]
+        payload = json.dumps(signature_documents, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _load_manifest(self) -> dict[str, Any]:

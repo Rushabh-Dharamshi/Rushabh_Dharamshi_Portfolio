@@ -44,6 +44,23 @@ export function RecurringCalendarPanel({
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, string>>({});
   const calendarModel = useMemo(() => buildCalendarModel(calendar), [calendar]);
   const monthBreakdown = useMemo(() => buildReminderMonthBreakdown(items, calendar?.window_start), [items, calendar?.window_start]);
+  const nextWeekOccurrences = useMemo(
+    () =>
+      (calendar?.occurrences ?? [])
+        .filter((occurrence) => occurrence.days_until_due >= 0 && occurrence.days_until_due <= 7)
+        .sort((left, right) => left.days_until_due - right.days_until_due || left.description.localeCompare(right.description)),
+    [calendar?.occurrences],
+  );
+  const allReminderOccurrences = useMemo(
+    () =>
+      monthBreakdown.months.flatMap((month) =>
+        month.items.map((occurrence) => ({
+          ...occurrence,
+          monthLabel: month.label,
+        })),
+      ),
+    [monthBreakdown],
+  );
 
   function fillForm(item: RecurringItem) {
     setSelectedItemId(item.id);
@@ -115,8 +132,13 @@ export function RecurringCalendarPanel({
             ))}
           </div>
 
-          <div className="upcoming-list">
-            {calendar?.occurrences.slice(0, 8).map((occurrence) => {
+          <div className="upcoming-list reminder-list-section">
+            <div className="card-header">
+              <h3>Upcoming reminders due next week</h3>
+              <span className="muted">{nextWeekOccurrences.length} due in 7 days</span>
+            </div>
+            <div className="bounded-reminder-list next-week-reminder-list">
+              {nextWeekOccurrences.map((occurrence) => {
               const draftKey = occurrenceKey(occurrence.recurring_item_id, occurrence.date);
               return (
                 <article
@@ -165,77 +187,72 @@ export function RecurringCalendarPanel({
                 </article>
               );
             })}
-            {!calendar?.occurrences.length ? (
-              <p className="muted">No recurring reminders scheduled yet.</p>
+            </div>
+            {!nextWeekOccurrences.length ? (
+              <p className="muted">No recurring reminders are due in the next 7 days.</p>
             ) : null}
           </div>
 
-          <div className="upcoming-list reminder-breakdown">
+          <div className="upcoming-list reminder-breakdown reminder-list-section">
             <div className="card-header">
-              <h3>Reminder schedule by month</h3>
-              <span className="muted">{monthBreakdown.totalOccurrences} scheduled occurrences</span>
+              <h3>All reminders</h3>
+              <span className="muted">{monthBreakdown.totalOccurrences} scheduled</span>
             </div>
             <p className="muted">
               Bounded reminders are shown through their saved end date. Open-ended reminders are projected for the next 12 months.
             </p>
-            {monthBreakdown.months.map((month) => (
-              <article key={month.key} className="month-breakdown-card">
-                <div className="card-header">
-                  <strong>{month.label}</strong>
-                  <span className="muted">{month.occurrenceCount} due</span>
-                </div>
-                <div className="month-breakdown-list">
-                  {month.items.map((occurrence) => (
-                    <div
-                      key={`${month.key}-${occurrence.recurring_item_id}-${occurrence.date}`}
-                      className="month-breakdown-row"
-                    >
-                      <div>
-                        <strong>{occurrence.description}</strong>
-                        <p>
-                          {occurrence.category} | {occurrence.frequency} | due {occurrence.date}
-                        </p>
-                      </div>
-                      <span className={occurrence.entry_type === "income" ? "amount-positive" : ""}>
-                        {occurrence.entry_type === "income" ? "+" : "-"}
-                        {formatCurrency(occurrence.amount)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </article>
-            ))}
-            {!monthBreakdown.months.length ? (
+            <div className="bounded-reminder-list all-reminder-list">
+              {allReminderOccurrences.map((occurrence) => (
+                <article
+                  key={`${occurrence.monthLabel}-${occurrence.recurring_item_id}-${occurrence.date}`}
+                  className="month-breakdown-row"
+                >
+                  <div>
+                    <strong>{occurrence.description}</strong>
+                    <p>
+                      {occurrence.monthLabel} | {occurrence.category} | {occurrence.frequency} | due {occurrence.date}
+                    </p>
+                  </div>
+                  <span className={occurrence.entry_type === "income" ? "amount-positive" : ""}>
+                    {occurrence.entry_type === "income" ? "+" : "-"}
+                    {formatCurrency(occurrence.amount)}
+                  </span>
+                </article>
+              ))}
+            </div>
+            {!allReminderOccurrences.length ? (
               <p className="muted">No saved recurring reminders are scheduled ahead.</p>
             ) : null}
           </div>
 
-          <div className="upcoming-list">
+          <div className="upcoming-list reminder-list-section completed-reminder-section">
             <div className="card-header">
               <h3>Completed for this window</h3>
               <span className="muted">{calendar?.completed_occurrences.length ?? 0} cleared</span>
             </div>
-            {calendar?.completed_occurrences.slice(0, 6).map((occurrence) => (
-              <article
-                key={`paid-${occurrence.recurring_item_id}-${occurrence.date}-${occurrence.description}`}
-                className="activity-item"
-              >
-                <div>
-                  <strong>{occurrence.description}</strong>
-                  <p>
-                    {occurrence.category} | cleared for {occurrence.date}
-                    {occurrence.transaction_id ? ` | transaction #${occurrence.transaction_id}` : ""}
-                  </p>
-                </div>
-                <button
-                  className="button button-ghost"
-                  type="button"
-                  onClick={() => onMarkUnpaid(occurrence.recurring_item_id, occurrence.date)}
+            <div className="bounded-reminder-list completed-reminder-list">
+              {calendar?.completed_occurrences.map((occurrence) => (
+                <article
+                  key={`paid-${occurrence.recurring_item_id}-${occurrence.date}-${occurrence.description}`}
+                  className="activity-item"
                 >
-                  Restore reminder
-                </button>
-              </article>
-            ))}
+                  <div>
+                    <strong>{occurrence.description}</strong>
+                    <p>
+                      {occurrence.category} | cleared for {occurrence.date}
+                      {occurrence.transaction_id ? ` | transaction #${occurrence.transaction_id}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    className="button button-ghost"
+                    type="button"
+                    onClick={() => onMarkUnpaid(occurrence.recurring_item_id, occurrence.date)}
+                  >
+                    Restore reminder
+                  </button>
+                </article>
+              ))}
+            </div>
             {!calendar?.completed_occurrences.length ? (
               <p className="muted">Nothing has been marked as paid in this window yet.</p>
             ) : null}
@@ -371,7 +388,11 @@ export function RecurringCalendarPanel({
             </button>
           </div>
 
-          <div className="bar-list">
+          <div className="card-header recurring-reminders-header">
+            <h3>Recurring reminders</h3>
+            <span className="muted">{items.length} saved</span>
+          </div>
+          <div className="bar-list recurring-reminder-list">
             {items.map((item) => (
               <button
                 key={item.id}

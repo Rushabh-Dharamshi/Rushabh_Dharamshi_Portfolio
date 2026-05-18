@@ -67,6 +67,7 @@ describe("presentational components", () => {
     fireEvent.click(screen.getByText("Delete expense"));
     fireEvent.click(screen.getByText("Clear inputs"));
 
+    expect(screen.getByDisplayValue("2026-03-01")).toHaveAttribute("max", new Date().toISOString().slice(0, 10));
     expect(onChange).toHaveBeenCalled();
     expect(onCreate).toHaveBeenCalled();
     expect(onUpdate).toHaveBeenCalled();
@@ -79,19 +80,18 @@ describe("presentational components", () => {
     const onSearch = jest.fn();
     const onShowAll = jest.fn();
     const onSelect = jest.fn();
+    const expenses = Array.from({ length: 11 }, (_, index) => ({
+      id: index + 1,
+      date: "2026-03-01",
+      category: "Food",
+      description: index === 0 ? "Groceries" : `Groceries ${index + 1}`,
+      amount: 20.5 + index,
+      entry_type: "expense" as const,
+    }));
 
     render(
       <ExpenseTable
-        expenses={[
-          {
-            id: 1,
-            date: "2026-03-01",
-            category: "Food",
-            description: "Groceries",
-            amount: 20.5,
-            entry_type: "expense",
-          },
-        ]}
+        expenses={expenses}
         selectedExpenseId={1}
         searchId="1"
         onSearchIdChange={onSearchIdChange}
@@ -110,6 +110,7 @@ describe("presentational components", () => {
     expect(onSearch).toHaveBeenCalled();
     expect(onShowAll).toHaveBeenCalled();
     expect(onSelect).toHaveBeenCalled();
+    expect(screen.getByText("Groceries").closest(".expense-table-wrapper")).toHaveClass("expense-table-wrapper");
   });
 
   it("renders insights and word cloud data", () => {
@@ -122,6 +123,7 @@ describe("presentational components", () => {
         }}
         wordCloud={{
           top_category: "Food",
+          top_category_total: 220,
           frequencies: [{ label: "Groceries", value: 220 }],
         }}
       />,
@@ -129,6 +131,8 @@ describe("presentational components", () => {
 
     expect(screen.getByText("Top categories")).toBeInTheDocument();
     expect(screen.getByText("Groceries")).toBeInTheDocument();
+    expect(document.body.textContent).toContain("Category total: £220.00");
+    expect(document.body.textContent).toContain("Descriptions surfaced: 1");
   });
 
   it("renders operations, budget, and prediction controls", () => {
@@ -179,6 +183,7 @@ describe("presentational components", () => {
     fireEvent.click(screen.getByText("Check budget status"));
 
     expect(onImport).toHaveBeenCalledWith(file);
+    expect(screen.getByText("Choose CSV file")).toBeInTheDocument();
     expect(onBudgetDraftChange).toHaveBeenCalled();
     expect(onIncomeDraftChange).toHaveBeenCalled();
     expect(onIncomeMonthChange).toHaveBeenCalled();

@@ -261,7 +261,7 @@ def test_recurring_occurrence_paid_and_restored(client):
     matching_transaction = client.post(
         "/api/expenses",
         json={
-            "date": occurrence_date,
+            "date": today.isoformat(),
             "category": "Housing",
             "description": "Rent payment",
             "amount": "700.00",

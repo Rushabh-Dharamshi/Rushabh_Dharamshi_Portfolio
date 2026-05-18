@@ -143,6 +143,29 @@ def test_validate_payload_errors(payload, error_message):
         service.create_expense(payload)
 
 
+def test_expense_dates_cannot_be_in_the_future(monkeypatch):
+    import budget_tracker_api.services.expense_service as expense_service_module
+    from datetime import datetime as real_datetime
+
+    class FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 5, 15, 12, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(expense_service_module, "datetime", FrozenDateTime)
+    service = ExpenseService(StubExpenseRepository())
+
+    with pytest.raises(ValidationError, match="date cannot be in the future."):
+        service.create_expense(
+            {
+                "date": "2026-05-16",
+                "category": "Food",
+                "description": "Tomorrow lunch",
+                "amount": "12.00",
+            }
+        )
+
+
 def test_import_csv_counts_imported_and_skipped_rows_and_forces_expense_type():
     repository = StubExpenseRepository()
     service = ExpenseService(repository)
@@ -160,6 +183,31 @@ def test_import_csv_counts_imported_and_skipped_rows_and_forces_expense_type():
     assert repository.imported_rows[0]["description"] == "Groceries"
     assert repository.imported_rows[0]["entry_type"] == "expense"
     assert repository.imported_rows[1]["entry_type"] == "expense"
+
+
+def test_import_csv_skips_future_dated_expenses(monkeypatch):
+    import budget_tracker_api.services.expense_service as expense_service_module
+    from datetime import datetime as real_datetime
+
+    class FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 5, 15, 12, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(expense_service_module, "datetime", FrozenDateTime)
+    repository = StubExpenseRepository()
+    service = ExpenseService(repository)
+
+    file_storage = make_file_storage(
+        b"date,category,description,amount\n"
+        b"2026-05-15,Food,Today lunch,20.50\n"
+        b"2026-05-16,Food,Future lunch,10.00\n"
+    )
+
+    result = service.import_csv(file_storage)
+
+    assert result == {"imported_rows": 1, "skipped_rows": 1}
+    assert repository.imported_rows[0]["description"] == "Today lunch"
 
 
 def test_import_csv_cleans_headers_whitespace_and_missing_values():
@@ -225,11 +273,35 @@ def test_clean_csv_row_returns_none_for_blank_rows():
     assert service._clean_csv_row({"date": " ", "category": "", "description": None, "amount": ""}) is None
 
 
-def test_export_csv_outputs_header_and_only_expense_rows():
-    service = ExpenseService(StubExpenseRepository())
+def test_export_csv_outputs_header_and_only_current_may_to_date_expense_rows(monkeypatch):
+    import budget_tracker_api.services.expense_service as expense_service_module
+    from datetime import datetime as real_datetime
+
+    class FrozenDateTime(real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 5, 15, 12, 0, 0, tzinfo=tz)
+
+    monkeypatch.setattr(expense_service_module, "datetime", FrozenDateTime)
+
+    class MayExportRepository(StubExpenseRepository):
+        def __init__(self):
+            super().__init__()
+            self.rows = [
+                Expense(1, "2026-05-01", "Food", "Groceries", 20.0, "expense"),
+                Expense(2, "2026-05-15", "Travel", "Train", 12.5, "expense"),
+                Expense(3, "2026-05-16", "Food", "Future dinner", 30.0, "expense"),
+                Expense(4, "2026-04-30", "Bills", "April energy", 80.0, "expense"),
+                Expense(5, "2026-05-10", "Salary", "Payroll", 1500.0, "income"),
+            ]
+
+    service = ExpenseService(MayExportRepository())
 
     csv_output = service.export_csv()
 
     assert "ID,Date,Category,Description,Amount,Type" in csv_output
     assert "Groceries" in csv_output
+    assert "Train" in csv_output
+    assert "Future dinner" not in csv_output
+    assert "April energy" not in csv_output
     assert "Payroll" not in csv_output

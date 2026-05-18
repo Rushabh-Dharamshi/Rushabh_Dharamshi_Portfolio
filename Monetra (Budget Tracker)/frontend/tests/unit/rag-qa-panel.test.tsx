@@ -25,6 +25,22 @@ describe("RagQaPanel", () => {
               score: 0.94,
               metadata: {},
             },
+            {
+              source_label: "Transaction #1",
+              doc_type: "expense",
+              document_id: "expense::1",
+              excerpt: "Cost: GBP 20.00.",
+              score: 0.91,
+              metadata: {},
+            },
+            {
+              source_label: "Recurring #1",
+              doc_type: "recurring",
+              document_id: "recurring::1",
+              excerpt: "Cost: GBP 700.00.",
+              score: 0.88,
+              metadata: {},
+            },
           ],
           generated_at: "2026-04-15T09:10:00Z",
         }}
@@ -49,6 +65,7 @@ describe("RagQaPanel", () => {
     expect(screen.getByText("Chunks: 36")).toBeInTheDocument();
     expect(screen.getByText("Confidence: High")).toBeInTheDocument();
     expect(screen.getByText("Dashboard March 2026")).toBeInTheDocument();
+    expect(screen.getByText("Recurring #1").closest(".rag-source-list")).toHaveClass("rag-source-list");
 
     fireEvent.change(screen.getByLabelText("Finance question"), { target: { value: "How is cash flow?" } });
     fireEvent.click(screen.getByText("Ask knowledge base"));

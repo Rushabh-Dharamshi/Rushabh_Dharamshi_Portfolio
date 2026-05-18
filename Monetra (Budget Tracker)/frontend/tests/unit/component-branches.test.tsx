@@ -104,7 +104,8 @@ describe("component branch coverage", () => {
             window_start: "2026-03-31",
             window_end: "2026-05-04",
             occurrences: [
-              { recurring_item_id: 1, date: "2026-04-23", category: "Rent", description: "University House Rent", amount: 452.74, entry_type: "expense", frequency: "monthly", days_until_due: 23 },
+              { recurring_item_id: 1, date: "2026-04-23", category: "Rent", description: "University House Rent", amount: 452.74, entry_type: "expense", frequency: "monthly", days_until_due: 3 },
+              { recurring_item_id: 2, date: "2026-04-23", category: "Salary", description: "Zoo Scholarship", amount: 800, entry_type: "income", frequency: "weekly", days_until_due: 3 },
             ],
             completed_occurrences: [
               { recurring_item_id: 2, date: "2026-04-01", category: "Salary", description: "Scholarship", amount: 800, entry_type: "income", frequency: "weekly", days_until_due: 0, transaction_id: 77 },
@@ -121,10 +122,11 @@ describe("component branch coverage", () => {
 
     expect(screen.getByText("Update expense")).toBeDisabled();
     expect(screen.getByText("Delete expense")).toBeDisabled();
-    expect(screen.getByText("Reminder schedule by month")).toBeInTheDocument();
+    expect(screen.getByText("Upcoming reminders due next week")).toBeInTheDocument();
+    expect(screen.getByText("All reminders")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Paid transaction id"), { target: { value: "55" } });
-    fireEvent.click(screen.getByText("Verify and mark paid"));
+    fireEvent.change(screen.getAllByPlaceholderText("Paid transaction id")[0], { target: { value: "55" } });
+    fireEvent.click(screen.getAllByText("Verify and mark paid")[0]);
     expect(onMarkPaid).toHaveBeenCalledWith(1, "2026-04-23", 55);
 
     fireEvent.click(screen.getByText("Restore reminder"));
@@ -174,7 +176,7 @@ describe("component branch coverage", () => {
       </>,
     );
 
-    expect(screen.getByText("No recurring reminders scheduled yet.")).toBeInTheDocument();
+    expect(screen.getByText("No recurring reminders are due in the next 7 days.")).toBeInTheDocument();
     expect(screen.getByText("No saved recurring reminders are scheduled ahead.")).toBeInTheDocument();
     expect(screen.getByText("Nothing has been marked as paid in this window yet.")).toBeInTheDocument();
     expect(screen.getByText("No recurring purchases or income reminders created yet.")).toBeInTheDocument();

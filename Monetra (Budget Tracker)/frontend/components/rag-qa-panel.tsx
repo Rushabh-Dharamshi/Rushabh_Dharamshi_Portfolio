@@ -103,7 +103,7 @@ export function RagQaPanel({
               <h3>Retrieved sources</h3>
               <span className="muted">Semantic context used for the answer</span>
             </div>
-            <div className="trace-list">
+            <div className="trace-list rag-source-list">
               {answer.sources.map((source, index) => (
                 <div key={`${source.document_id}-${index}`} className="trace-step-card">
                   <strong>{source.source_label}</strong>
