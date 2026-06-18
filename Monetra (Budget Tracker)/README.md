@@ -186,6 +186,96 @@ flowchart LR
 - 🔮 `scikit-learn` predicts next-month spending from historical monthly totals
 - 📌 The AI layer is workflow-driven, not just prompt-driven, so mutations stay deterministic and auditable
 
+## 🧠 RAG Architecture
+
+Monetra uses `RAG` for finance question answering. RAG means the assistant does not answer from the language model alone. It first gathers the user's own finance context, retrieves the most relevant records, then asks the model to answer using that retrieved context.
+
+The RAG assistant has two answer paths:
+
+- `Deterministic metric path`: used for exact financial facts such as cash flow, monthly income, remaining budget, late reminders, budget usage, top categories, bottom categories, piggy bank balance, strongest month, and other dashboard KPI values. These answers come from Monetra services and database-backed calculations before the model is involved.
+- `Retrieval + LLM path`: used for broader natural-language questions where the user asks for explanation, interpretation, summaries, or patterns across finance records.
+
+### RAG Flow Diagram
+
+```mermaid
+flowchart TD
+    U[User asks finance question] --> FE[Next.js RAG chat UI]
+    FE --> API[Flask /api/rag/query endpoint]
+    API --> RS[RagService]
+
+    RS --> INTENT[Finance intent router]
+    INTENT -->|Exact KPI or numeric fact| DET[Deterministic metric registry]
+    DET --> DB1[(PostgreSQL via services/repositories)]
+    DB1 --> FACT[Verified financial answer]
+    FACT --> FE
+
+    INTENT -->|Open-ended or explanatory question| IDX{Index current?}
+    IDX --> SIG[Build source signature]
+    SIG -->|Data unchanged| CACHE[Use retrieval/answer cache]
+    SIG -->|Data changed or first run| BUILD[Build finance documents]
+
+    BUILD --> DOCS[Dashboard, settings, expenses, recurring reminders, recurring occurrences, predictions, reports, agent runs, agent memory]
+    DOCS --> CHUNK[Sentence-aware chunking with overlap]
+    CHUNK --> EMB[Ollama embeddings: nomic-embed-text]
+    EMB --> CHROMA[(Chroma vector database)]
+
+    CACHE --> RETRIEVE[Retrieve context]
+    CHROMA --> RETRIEVE
+    RETRIEVE --> MULTI[Multi-query expansion for bills, due dates, recurring reminders, and month scopes]
+    MULTI --> FILTER[Month-aware recurring calendar lookup]
+    FILTER --> ESSENTIAL[Add essential dashboard/settings/category/prediction context]
+    ESSENTIAL --> RERANK[Lightweight reranking by similarity, token overlap, month match, bill relevance, and exact date match]
+    RERANK --> PROMPT[Grounded prompt with retrieved source excerpts]
+    PROMPT --> OLLAMA[Ollama chat model: qwen2.5:7b]
+    OLLAMA --> JSON[Structured JSON answer]
+    JSON --> MEMORY[Save query to agent memory]
+    MEMORY --> FE
+```
+
+### What Gets Indexed
+
+The RAG index is rebuilt from live application data, not from static text files. The indexed knowledge includes:
+
+- dashboard totals such as budget, expenses, income, cash flow, remaining budget, and budget status
+- financial pulse metrics such as health score, cash in, cash out, net cash flow, and runway
+- category insights including top categories, bottom categories, and total spending
+- monthly settings such as budget and income records
+- next-month prediction output
+- individual transactions
+- recurring reminder definitions
+- recurring bill occurrences over the indexed calendar window
+- recent automation workflow runs
+- recent agent memory entries
+
+### How Retrieval Works
+
+1. Monetra builds a source signature from the user's current finance data.
+2. If the signature has not changed, cached retrieval and answer results can be reused.
+3. If data has changed, Monetra rebuilds the source documents, chunks them, embeds them with `nomic-embed-text`, and stores them in `Chroma`.
+4. For normal questions, Chroma similarity search retrieves the closest chunks.
+5. For bill, due-date, recurring-reminder, or month-scoped questions, Monetra also creates query variants and performs month-aware recurring-calendar lookup.
+6. Essential context such as dashboard, settings, category insights, prediction, and recurring calendar summaries is added so the answer does not miss core finance state.
+7. Sources are reranked using vector score, keyword overlap, month match, bill relevance, expense relevance, and exact date match.
+8. The final selected source excerpts are passed to the Ollama chat model, which must answer only from the retrieved context.
+
+This is not a separate cross-encoder reranker. The current reranking is a lightweight application-level reranker. A cross-encoder could be added later for stronger relevance scoring, but the existing design is easier to run locally and keeps the stack lighter.
+
+### Why Some Answers Are Deterministic
+
+For exact values, Monetra avoids relying on the LLM where possible. Questions such as "What is my cash flow?", "What is my budget consumption percentage?", "How many late reminders do I have?", or "Which category did I spend most on?" are routed to deterministic service logic. This reduces hallucination risk because the answer is calculated from the same backend services that power the dashboard.
+
+The LLM is used when the question needs natural language interpretation, such as explaining spending pressure, summarising patterns, or producing a user-friendly finance narrative from retrieved evidence.
+
+### RAG Components
+
+- `RagService`: orchestrates indexing, retrieval, deterministic routing, caching, reranking, and answer generation
+- `RagChunkingService`: splits finance documents into sentence-aware chunks with overlap
+- `OllamaEmbeddingClient`: creates embeddings with `nomic-embed-text`
+- `Chroma`: stores vector embeddings and supports similarity search
+- `OllamaClient`: generates grounded natural-language answers with `qwen2.5:7b`
+- `FinanceIntentRouter` and `MetricRegistry`: route exact metric questions to deterministic calculations
+- `AgentMemoryService`: stores previous RAG and agent outputs that can be indexed as recent context
+
 ## 🧱 Backend Architecture
 
 ### 📂 Backend Layers
