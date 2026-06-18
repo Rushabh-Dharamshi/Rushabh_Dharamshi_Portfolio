@@ -89,8 +89,24 @@ jobs:
       - run:
           name: Run Playwright E2E tests
           command: |
+            set -euo pipefail
             cd "Monetra (Budget Tracker)/frontend"
-            npm run test:e2e
+            API_PROXY_TARGET=http://127.0.0.1:5000 npm run dev > /tmp/monetra-next-e2e.log 2>&1 &
+            NEXT_PID=$!
+            trap 'kill "$NEXT_PID" >/dev/null 2>&1 || true' EXIT
+
+            for i in $(seq 1 60); do
+              if curl -fsS http://127.0.0.1:3000 >/dev/null; then
+                echo "Frontend dev server is ready."
+                PLAYWRIGHT_SKIP_WEB_SERVER=true npm run test:e2e
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "Frontend dev server did not become ready in time." >&2
+            cat /tmp/monetra-next-e2e.log >&2
+            exit 1
 
   monetra-dummy-load-tests:
     machine:

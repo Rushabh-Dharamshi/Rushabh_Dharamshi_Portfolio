@@ -168,17 +168,46 @@ async function fulfillBudgetTrackerRoute(
       contentType: "application/json",
       body: JSON.stringify({
         data: {
-          headline: "Finance briefing",
-          summary: "Cash flow remains positive and recurring costs are covered.",
-          risk_level: "low",
-          recommended_actions: ["Keep monitoring travel costs."],
-          email_subject: "Finance briefing",
-          email_draft: "Monthly briefing attached.",
+          id: "briefing-job-1",
+          status: "queued",
           task: "Prepare a finance briefing",
-          model: "mistral:latest",
-          tools_used: ["get_dashboard_summary", "get_upcoming_recurring_items"],
-          report_download_url: "/api/reports/monthly",
-          generated_at: "2026-03-21T10:00:00Z",
+          created_at: "2026-03-21T10:00:00Z",
+          started_at: null,
+          completed_at: null,
+          error: null,
+          result: null,
+        },
+      }),
+    });
+    return;
+  }
+
+  if (pathname === "/api/agents/finance-briefing/briefing-job-1") {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        data: {
+          id: "briefing-job-1",
+          status: "completed",
+          task: "Prepare a finance briefing",
+          created_at: "2026-03-21T10:00:00Z",
+          started_at: "2026-03-21T10:00:01Z",
+          completed_at: "2026-03-21T10:00:02Z",
+          error: null,
+          result: {
+            headline: "Finance briefing",
+            summary: "Cash flow remains positive and recurring costs are covered.",
+            risk_level: "low",
+            recommended_actions: ["Keep monitoring travel costs."],
+            email_subject: "Finance briefing",
+            email_draft: "Monthly briefing attached.",
+            task: "Prepare a finance briefing",
+            model: "mistral:latest",
+            tools_used: ["get_dashboard_summary", "get_upcoming_recurring_items"],
+            report_download_url: "/api/reports/monthly",
+            generated_at: "2026-03-21T10:00:00Z",
+          },
         },
       }),
     });
@@ -189,7 +218,7 @@ async function fulfillBudgetTrackerRoute(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ data: { monthly_budget: 1200 } }),
+      body: JSON.stringify({ data: { monthly_budget: 1200, budget_month: "2026-06" } }),
     });
     return;
   }
@@ -308,8 +337,44 @@ async function fulfillBudgetTrackerRoute(
     return;
   }
 
+  if (pathname === "/api/agents/bootstrap" && method === "POST") {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: [] }),
+    });
+    return;
+  }
+
+  if (pathname === "/api/agents/automation/refresh" && method === "POST") {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: [] }),
+    });
+    return;
+  }
+
+  if (pathname === "/api/observability/client-failure" && method === "POST") {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { recorded: true } }),
+    });
+    return;
+  }
+
   const payloads: Record<string, unknown> = {
     "/api/health": { status: "ok" },
+    "/api/auth/session": {
+      data: {
+        authenticated: true,
+        user_id: 1,
+        username: "E2E User",
+        email: "e2e@monetra.test",
+        registered_user_count: 1,
+      },
+    },
     "/api/expenses": { data: expenses },
     "/api/expenses/1": { data: expenses[0] },
     "/api/dashboard": {
@@ -361,6 +426,8 @@ async function fulfillBudgetTrackerRoute(
       data: {
         window_start: "2026-03-21",
         window_end: "2026-04-24",
+        completed_occurrences: [],
+        late_occurrences: [],
         occurrences: [
           {
             recurring_item_id: 1,
@@ -386,6 +453,42 @@ async function fulfillBudgetTrackerRoute(
       },
     },
     "/api/settings": { data: { monthly_budget: 1050, monthly_income: monthlyIncome } },
+    "/api/settings/income-records": {
+      data: [
+        {
+          month_key: "2026-03",
+          monthly_income: monthlyIncome,
+          updated_at: "2026-03-21T10:00:00Z",
+        },
+      ],
+    },
+    "/api/savings-goals": { data: [] },
+    "/api/rag/status": {
+      data: {
+        available: true,
+        collection_name: "monetra-finance-knowledge",
+        indexed_at: "2026-03-21T10:00:00Z",
+        document_count: 4,
+        chunk_count: 4,
+        signature: "e2e-signature",
+      },
+    },
+    "/api/observability/latency": {
+      data: {
+        scope: "current_user",
+        record_count: 0,
+        failed_count: 0,
+        summary: {
+          average_ms: 0,
+          minimum_ms: 0,
+          maximum_ms: 0,
+          p95_ms: 0,
+        },
+        latest_failures: [],
+        by_endpoint: [],
+        latest: [],
+      },
+    },
     "/api/predictions/next-month": {
       data: {
         next_month: "April 2026",

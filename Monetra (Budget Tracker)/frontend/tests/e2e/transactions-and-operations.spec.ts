@@ -9,11 +9,12 @@ test.beforeEach(async ({ page }) => {
 test("can add a new transaction", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByLabel("Date").fill("2026-03-02");
+  const expensePanel = page.locator("section").filter({ hasText: "Expense management" });
+  await page.getByRole("textbox", { name: "Date", exact: true }).fill("2026-03-02");
   await page.getByPlaceholder("Housing, Travel, Food").fill("Travel");
   await page.getByPlaceholder("Weekly groceries").fill("Bus");
-  await page.getByLabel("Amount (GBP)").fill("4.20");
-  await page.getByRole("button", { name: "Add transaction" }).click();
+  await expensePanel.getByLabel("Amount (GBP)").fill("4.20");
+  await page.getByRole("button", { name: "Add expense" }).click();
 
   await expect(page.getByText("Expense #3 added successfully.")).toBeVisible();
 });
@@ -31,18 +32,18 @@ test("can search and reset transaction records", async ({ page }) => {
 
 test("can select a transaction row for editing", async ({ page }) => {
   await page.goto("/");
-  await page.getByText("Groceries").click();
+  await page.getByRole("row", { name: /#1 2026-03-01 Food Groceries/ }).click();
 
-  await expect(page.getByLabel("Category")).toHaveValue("Food");
-  await expect(page.getByLabel("Description")).toHaveValue("Groceries");
+  await expect(page.getByPlaceholder("Housing, Travel, Food")).toHaveValue("Food");
+  await expect(page.getByPlaceholder("Weekly groceries")).toHaveValue("Groceries");
 });
 
 test("can save the monthly budget and check budget status", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByLabel("Monthly budget (GBP)").fill("1200");
-  await page.getByRole("button", { name: "Save budget" }).click();
-  await expect(page.getByText("Monthly budget updated to GBP 1200.00.")).toBeVisible();
+  await page.getByLabel(/Monthly budget for selected month/).fill("1200");
+  await page.getByRole("button", { name: "Save budget for month" }).click();
+  await expect(page.getByText(/Monthly budget updated to GBP 1200.00/)).toBeVisible();
 
   await page.getByRole("button", { name: "Check budget status" }).click();
   await expect(page.getByText(/spent GBP 420.00/)).toBeVisible();
