@@ -14,6 +14,14 @@ const baseTrackerState: any = {
   recurringItems: [],
   recurringCalendar: null,
   prediction: null,
+  latencyReport: {
+    scope: "current_user",
+    record_count: 0,
+    failed_count: 0,
+    summary: { average_ms: 0, minimum_ms: 0, maximum_ms: 0, p95_ms: 0 },
+    by_endpoint: [],
+    latest: [],
+  },
   agentTaskDraft: "Prepare a finance briefing",
   agentWorkflows: [],
   agentRuns: [],
@@ -53,6 +61,7 @@ const baseTrackerState: any = {
   runFinanceBriefingAgent: jest.fn(),
   runAutomationWorkflow: jest.fn(),
   refresh: jest.fn(),
+  refreshLatencyReport: jest.fn(),
 };
 
 const mockUseBudgetTracker = jest.fn(() => baseTrackerState);
@@ -87,7 +96,7 @@ describe("BudgetTrackerShell state coverage", () => {
     render(<BudgetTrackerShell />);
 
     expect(screen.getByText("Backend unavailable.")).toBeInTheDocument();
-    expect(screen.getByText("Local Ollama analysis agent")).toBeInTheDocument();
+    expect(screen.getByText("Ollama analysis agent")).toBeInTheDocument();
   });
 
   it("shows success feedback messages for sanity checks", () => {

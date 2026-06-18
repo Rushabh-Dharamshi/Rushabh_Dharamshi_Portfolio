@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import fastmcp
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 
 import budget_tracker_api.config as config_module
 from budget_tracker_api.errors import NotFoundError, ServiceUnavailableError, ValidationError
@@ -13,6 +14,7 @@ from budget_tracker_api.repositories.expense_repository import ExpenseRepository
 from budget_tracker_api.repositories.recurring_repository import RecurringRepository
 from budget_tracker_api.repositories.settings_repository import SettingsRepository
 from budget_tracker_api.schemas import Expense
+from budget_tracker_api.security import background_user_context, current_background_user_id
 from budget_tracker_api.services.agent_service import AgentService
 from budget_tracker_api.services.agentic_command_runtime import AgenticCommandRuntime
 from budget_tracker_api.services.analytics_service import AnalyticsService
@@ -118,6 +120,36 @@ class ExistingIncomeConnection(FakeConnection):
         self.committed = True
 
 
+class RacingSettingsConnection(FakeConnection):
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+        self.rolled_back = False
+
+    def execute(self, statement):
+        self.calls += 1
+        sql = str(statement)
+        self.executed.append(sql)
+
+        class Result:
+            def __init__(self, row=None):
+                self._row = row
+
+            def first(self):
+                return self._row
+
+        if sql.startswith("INSERT INTO settings"):
+            raise IntegrityError(sql, {}, Exception("duplicate settings user_id"))
+        if self.calls == 1:
+            return Result(None)
+        if "settings.monthly_budget" in sql:
+            return Result((600.0, 0.0))
+        return Result(None)
+
+    def rollback(self):
+        self.rolled_back = True
+
+
 class UpdateNoneRepository(StubExpenseRepository):
     def get_expense(self, expense_id):
         return Expense(expense_id, "2026-03-01", "Food", "Lunch", 12.0, "expense")
@@ -173,11 +205,16 @@ class FakeApp:
 
 
 class FakeAutomationService:
-    def run_upcoming_bills_email_if_due(self):
+    def run_upcoming_bills_email_if_due(self, recipient=None):
         return None
 
-    def run_month_end_email_if_due(self):
+    def run_month_end_email_if_due(self, recipient=None):
         return None
+
+
+class FinanceAutomationServiceAllUpcoming(StubAutomationService):
+    def run_all_upcoming_bills_email_now(self):
+        return {"summary": "All upcoming bills sent"}
 
 
 class FinanceExpenseServiceExact(FinanceExpenseService):
@@ -212,6 +249,19 @@ def build_agent_service(ollama=None, recurring=None):
 def test_config_explicit_database_url(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", "postgresql://explicit")
     assert config_module._build_database_url() == "postgresql://explicit"
+    monkeypatch.setenv("EMAIL_MODE", "real")
+    assert config_module._email_mode() == "smtp"
+    monkeypatch.setenv("EMAIL_MODE", "mock")
+    assert config_module._email_mode() == "dry_run"
+
+
+def test_app_repository_user_provider_background_and_no_request_paths(app):
+    provider = app.extensions["services"]["expense_service"]._repository._user_id_provider
+
+    with app.app_context():
+        assert provider() == 1
+        with background_user_context(42):
+            assert provider() == 42
 
 
 def test_finance_server_remaining_paths(monkeypatch):
@@ -223,7 +273,7 @@ def test_finance_server_remaining_paths(monkeypatch):
         "expense_service": FinanceExpenseServiceExact(),
         "recurring_service": FinanceRecurringServiceExact(),
         "report_service": FinanceReportService(),
-        "automation_service": StubAutomationService(),
+        "automation_service": FinanceAutomationServiceAllUpcoming(),
     }
     monkeypatch.setattr(module, "_app", SimpleNamespace(extensions={"services": services}, app_context=lambda: type("C", (), {"__enter__": lambda s: None, "__exit__": lambda s, *args: False})()))
 
@@ -231,6 +281,7 @@ def test_finance_server_remaining_paths(monkeypatch):
     assert module._match_recurring(services, {"frequency": "weekly"}) == []
     assert module._match_recurring(services, {"start_date": "2099-01-01"}) == []
     assert module._match_recurring(services, {"amount": 999.0}) == []
+    assert module.send_all_upcoming_bills_email_now()["summary"] == "All upcoming bills sent"
 
 
 def test_finance_server_main_guard_runs_with_patched_transport(monkeypatch):
@@ -276,6 +327,16 @@ def test_remaining_repository_and_service_edges(tmp_path):
     assert result["income_month"] == "2026-04"
     assert any("UPDATE monthly_income_records" in statement for statement in settings_connection.executed)
 
+    racing_settings_connection = RacingSettingsConnection()
+    racing_repository = SettingsRepository(lambda: racing_settings_connection, user_id_provider=lambda: 6)
+    assert racing_repository.get_settings("2026-06") == {
+        "monthly_budget": 600.0,
+        "budget_month": "2026-06",
+        "monthly_income": 0.0,
+        "income_month": "2026-06",
+    }
+    assert racing_settings_connection.rolled_back is True
+
     with pytest.raises(NotFoundError):
         ExpenseService(UpdateNoneRepository()).update_expense(1, {"date": "2026-03-01", "category": "Food", "description": "Lunch", "amount": "12.00"})
     with pytest.raises(NotFoundError):
@@ -284,13 +345,72 @@ def test_remaining_repository_and_service_edges(tmp_path):
 
 
 def test_remaining_analytics_and_scheduler_edges():
-    service = AnalyticsService(NegativeCashFlowRepository(), lambda: 1000.0, lambda _month=None: 500.0)
+    service = AnalyticsService(NegativeCashFlowRepository(), lambda _month=None: 1000.0, lambda _month=None: 500.0)
     assert service.financial_pulse()["narrative"] == "Cash outflow is currently ahead of income. Tighten discretionary spend."
 
     scheduler = AutomationScheduler(FakeApp(FakeAutomationService()), poll_seconds=900)
     now = datetime.now()
     scheduler._next_realtime_run_at = None
     assert scheduler._seconds_until_next_wake(now) >= 1.0
+
+
+def test_scheduler_runs_scheduled_email_checks_for_each_user_with_context():
+    class RecordingAutomation:
+        def __init__(self):
+            self.calls = []
+
+        def run_upcoming_bills_email_if_due(self, recipient=None):
+            self.calls.append((current_background_user_id(), recipient))
+
+    class UserService:
+        def list_users(self):
+            return [
+                {"id": 7, "username": "first", "email": "first@example.com"},
+                {"id": 8, "username": "second", "email": "second@example.com"},
+            ]
+
+    automation = RecordingAutomation()
+    scheduler = AutomationScheduler(FakeApp(automation), poll_seconds=900)
+
+    scheduler._run_scheduled_email_check(
+        {"automation_service": automation, "user_service": UserService()},
+        automation.run_upcoming_bills_email_if_due,
+    )
+
+    assert automation.calls == [
+        (7, "first@example.com"),
+        (8, "second@example.com"),
+    ]
+    assert current_background_user_id() is None
+
+
+def test_scheduler_skips_missing_email_and_logs_user_failures(caplog):
+    class FailingAutomation:
+        def __init__(self):
+            self.calls = []
+
+        def run_upcoming_bills_email_if_due(self, recipient=None):
+            self.calls.append((current_background_user_id(), recipient))
+            raise RuntimeError("smtp down")
+
+    class UserService:
+        def list_users(self):
+            return [
+                {"id": 7, "username": "missing", "email": ""},
+                {"id": 8, "username": "second", "email": "second@example.com"},
+            ]
+
+    automation = FailingAutomation()
+    scheduler = AutomationScheduler(FakeApp(automation), poll_seconds=900)
+
+    scheduler._run_scheduled_email_check(
+        {"automation_service": automation, "user_service": UserService()},
+        automation.run_upcoming_bills_email_if_due,
+    )
+
+    assert automation.calls == [(8, "second@example.com")]
+    assert current_background_user_id() is None
+    assert "Scheduled email automation failed for user_id=8" in caplog.text
 
 
 def test_remaining_automation_service_edges(caplog):

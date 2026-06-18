@@ -42,18 +42,22 @@ export function KpiVisuals({ expenses, summary }: KpiVisualsProps) {
         <article className="metric-card">
           <span>Month-end forecast</span>
           <strong>{formatCurrency(model.projectedMonthEnd)}</strong>
+          <small>Estimated month-end spend if the current daily spending pace continues.</small>
         </article>
         <article className="metric-card">
           <span>Largest category share</span>
           <strong>{model.topCategoryShare.toFixed(1)}%</strong>
+          <small>The percentage of this month&apos;s expense total coming from the biggest category.</small>
         </article>
         <article className="metric-card">
           <span>Average daily burn</span>
           <strong>{formatCurrency(model.averageDailySpend)}</strong>
+          <small>Current-month expenses divided by the number of days elapsed this month.</small>
         </article>
         <article className="metric-card">
           <span>Current-month transactions</span>
           <strong>{model.currentMonthExpenses.length}</strong>
+          <small>Number of expense transactions recorded in the current month.</small>
         </article>
       </div>
 

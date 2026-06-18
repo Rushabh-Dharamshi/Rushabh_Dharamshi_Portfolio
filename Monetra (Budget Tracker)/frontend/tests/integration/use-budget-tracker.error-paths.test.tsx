@@ -15,6 +15,8 @@ var mockApiClient = {
   getWordCloud: jest.fn(),
   getFinancialPulse: jest.fn(),
   getPrediction: jest.fn(),
+  getLatencyReport: jest.fn(),
+  recordClientFailure: jest.fn(),
   startFinanceBriefingAgent: jest.fn(),
   getFinanceBriefingJob: jest.fn(),
   listAgentWorkflows: jest.fn(),
@@ -94,6 +96,14 @@ describe("useBudgetTracker error and recurring paths", () => {
       predicted_spending: 880,
       is_budget_exceeded: false,
       monthly_budget: 1050,
+    });
+    mockApiClient.getLatencyReport.mockResolvedValue({
+      scope: "current_user",
+      record_count: 0,
+      failed_count: 0,
+      summary: { average_ms: 0, minimum_ms: 0, maximum_ms: 0, p95_ms: 0 },
+      by_endpoint: [],
+      latest: [],
     });
     mockApiClient.startFinanceBriefingAgent.mockResolvedValue({
       id: "job-1",

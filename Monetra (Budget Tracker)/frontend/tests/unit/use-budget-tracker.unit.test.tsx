@@ -10,11 +10,14 @@ const mockApiClient = {
   exportExpenses: jest.fn(),
   downloadMonthlyReport: jest.fn(),
   getSettings: jest.fn(),
+  listMonthlyIncomeRecords: jest.fn(),
   getDashboard: jest.fn(),
   getCategoryInsights: jest.fn(),
   getWordCloud: jest.fn(),
   getFinancialPulse: jest.fn(),
   getPrediction: jest.fn(),
+  getLatencyReport: jest.fn(),
+  recordClientFailure: jest.fn(),
   getRagStatus: jest.fn(),
   reindexRag: jest.fn(),
   queryRag: jest.fn(),
@@ -27,11 +30,16 @@ const mockApiClient = {
   getAgentWorkflowJob: jest.fn(),
   runAutomationRefresh: jest.fn(),
   sendUpcomingBillsEmailNow: jest.fn(),
+  sendAllUpcomingBillsEmailNow: jest.fn(),
   sendMonthEndEmailNow: jest.fn(),
   listRecurringItems: jest.fn(),
   getRecurringCalendar: jest.fn(),
+  listSavingsGoals: jest.fn(),
   updateMonthlyBudget: jest.fn(),
   updateMonthlyIncome: jest.fn(),
+  createSavingsGoal: jest.fn(),
+  updateSavingsGoal: jest.fn(),
+  deleteSavingsGoal: jest.fn(),
   createRecurringItem: jest.fn(),
   updateRecurringItem: jest.fn(),
   deleteRecurringItem: jest.fn(),
@@ -62,6 +70,15 @@ const workflowRun = {
   generated_at: "2026-03-21T10:00:00Z",
 };
 
+const emptyLatencyReport = {
+  scope: "current_user",
+  record_count: 0,
+  failed_count: 0,
+  summary: { average_ms: 0, minimum_ms: 0, maximum_ms: 0, p95_ms: 0 },
+  by_endpoint: [],
+  latest: [],
+};
+
 describe("useBudgetTracker unit coverage", () => {
   beforeEach(() => {
     jest.resetAllMocks();
@@ -77,11 +94,14 @@ describe("useBudgetTracker unit coverage", () => {
     mockApiClient.exportExpenses.mockReturnValue("/export");
     mockApiClient.downloadMonthlyReport.mockReturnValue("/report");
     mockApiClient.getSettings.mockResolvedValue({ monthly_budget: 1050, monthly_income: 1500, income_month: "2026-03" });
+    mockApiClient.listMonthlyIncomeRecords.mockResolvedValue([]);
     mockApiClient.getDashboard.mockResolvedValue({ monthly_budget: 1050, current_month_total: 420, monthly_expenses: 420, monthly_income: 1500, net_cash_flow: 1080, remaining_budget: 630, weekly_spending: 84.5, percent_spent: 40, status: "within", month_label: "March 2026", month_key: "2026-03", income_month: "2026-03" });
     mockApiClient.getCategoryInsights.mockResolvedValue({ top_categories: [], bottom_categories: [], total_spending: 0 });
     mockApiClient.getWordCloud.mockResolvedValue({ top_category: "Food", frequencies: [] });
     mockApiClient.getFinancialPulse.mockResolvedValue({ health_score: 80, average_transaction: 25, transaction_count: 4, spend_velocity: 14.2, top_category_share: 42, runway_days: 18, narrative: "Steady spending rhythm.", cash_in: 1500, cash_out: 420, net_cash_flow: 1080, income_coverage: 357.14, recent_transactions: [], recent_expenses: [] });
     mockApiClient.getPrediction.mockResolvedValue({ next_month: "April 2026", predicted_spending: 880, is_budget_exceeded: false, monthly_budget: 1050 });
+    mockApiClient.getLatencyReport.mockResolvedValue(emptyLatencyReport);
+    mockApiClient.recordClientFailure.mockResolvedValue({ recorded: true });
     mockApiClient.getRagStatus.mockResolvedValue({ available: true, collection_name: "monetra-finance-knowledge", indexed_at: "2026-04-15T09:00:00Z", document_count: 12, chunk_count: 36, signature: "sig" });
     mockApiClient.reindexRag.mockResolvedValue({ available: true, collection_name: "monetra-finance-knowledge", indexed_at: "2026-04-15T09:05:00Z", document_count: 13, chunk_count: 39, signature: "sig-2", reindexed: true });
     mockApiClient.queryRag.mockResolvedValue({ question: "What changed?", answer: "Spending is concentrated in food and housing.", confidence: "high", follow_up_questions: ["Which reminders are due next?"], sources: [{ source_label: "Dashboard March 2026", doc_type: "dashboard", document_id: "dashboard::2026-03", excerpt: "Monthly budget is GBP 1050.", score: 0.95, metadata: {} }], generated_at: "2026-04-15T09:10:00Z" });
@@ -94,11 +114,16 @@ describe("useBudgetTracker unit coverage", () => {
     mockApiClient.getAgentWorkflowJob.mockResolvedValue({ id: "workflow-job-1", status: "completed", workflow_name: "month_end_close", task: "Run", created_at: "2026-03-21T10:00:00Z", started_at: "2026-03-21T10:00:05Z", completed_at: "2026-03-21T10:00:10Z", error: null, result: workflowRun });
     mockApiClient.runAutomationRefresh.mockResolvedValue([{ id: "workflow-job-1", workflow_name: "month_end_close", status: "queued", task: "Refresh", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: null }]);
     mockApiClient.sendUpcomingBillsEmailNow.mockResolvedValue({ ...workflowRun, id: 2, workflow_name: "upcoming_bills_email", workflow_label: "Upcoming bills email" });
+    mockApiClient.sendAllUpcomingBillsEmailNow.mockResolvedValue({ ...workflowRun, id: 4, workflow_name: "all_upcoming_bills_email", workflow_label: "All upcoming bills email" });
     mockApiClient.sendMonthEndEmailNow.mockResolvedValue({ ...workflowRun, id: 3, workflow_name: "month_end_email", workflow_label: "Month-end email" });
     mockApiClient.listRecurringItems.mockResolvedValue([{ id: 1, category: "Housing", description: "Rent", amount: 700, entry_type: "expense", frequency: "monthly", start_date: "2026-03-01", active: true }]);
     mockApiClient.getRecurringCalendar.mockResolvedValue({ window_start: "2026-03-01", window_end: "2026-04-04", occurrences: [], completed_occurrences: [] });
+    mockApiClient.listSavingsGoals.mockResolvedValue([]);
     mockApiClient.updateMonthlyBudget.mockResolvedValue({ monthly_budget: 1200, monthly_income: 1500 });
     mockApiClient.updateMonthlyIncome.mockResolvedValue({ monthly_budget: 1200, monthly_income: 2400, income_month: "2026-03" });
+    mockApiClient.createSavingsGoal.mockResolvedValue({ id: 2 });
+    mockApiClient.updateSavingsGoal.mockResolvedValue({});
+    mockApiClient.deleteSavingsGoal.mockResolvedValue({});
     mockApiClient.createRecurringItem.mockResolvedValue({ id: 2 });
     mockApiClient.updateRecurringItem.mockResolvedValue({});
     mockApiClient.deleteRecurringItem.mockResolvedValue({});

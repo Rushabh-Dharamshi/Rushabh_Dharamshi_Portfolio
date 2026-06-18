@@ -10,12 +10,11 @@ from budget_tracker_api.repositories.expense_repository import ExpenseRepository
 
 
 class PredictionService:
-    def __init__(self, repository: ExpenseRepository, budget_provider: Callable[[], float]):
+    def __init__(self, repository: ExpenseRepository, budget_provider: Callable[[str | None], float]):
         self._repository = repository
         self._budget_provider = budget_provider
 
     def predict_next_month(self) -> dict:
-        monthly_budget = self._budget_provider()
         data = self._repository.monthly_spending("expense")
         if not data:
             raise ValidationError("No expense data available for prediction.")
@@ -55,6 +54,8 @@ class PredictionService:
         next_month_index = len(months)
         predicted_spending = float(grid_search.best_estimator_.predict([[next_month_index]])[0])
         next_month_date = (now.replace(day=1) + timedelta(days=32)).replace(day=1)
+        next_month_key = next_month_date.strftime("%Y-%m")
+        monthly_budget = self._budget_provider(next_month_key)
 
         return {
             "next_month": next_month_date.strftime("%B %Y"),

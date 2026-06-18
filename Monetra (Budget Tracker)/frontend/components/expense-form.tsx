@@ -28,7 +28,7 @@ export function ExpenseForm({
   }
 
   return (
-    <section className="panel">
+    <section className="panel expense-form-panel">
       <div className="section-heading">
         <div>
           <p className="eyebrow">Expense management</p>
@@ -37,6 +37,11 @@ export function ExpenseForm({
             Capture expense transactions with clean, validated fields so monthly spend, imports, dashboards, and reports all stay aligned. Monthly income is managed separately in Operations.
           </p>
         </div>
+      </div>
+
+      <div className="expense-action-hints">
+        <span>Add records to update KPIs, RAG context, reports, and workflow history.</span>
+        <span>Select a row from Expense records before using update or delete.</span>
       </div>
 
       <div className="form-grid">

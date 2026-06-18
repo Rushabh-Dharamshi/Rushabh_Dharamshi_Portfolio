@@ -11,11 +11,15 @@ from budget_tracker_api.schemas import Expense
 
 
 class ExpenseRepository:
-    def __init__(self, connection_factory: Callable[[], Connection]):
+    def __init__(self, connection_factory: Callable[[], Connection], user_id_provider: Callable[[], int] | None = None):
         self._connection_factory = connection_factory
+        self._user_id_provider = user_id_provider or (lambda: 1)
 
     def _db(self) -> Connection:
         return self._connection_factory()
+
+    def _user_id(self) -> int:
+        return int(self._user_id_provider() or 1)
 
     def list_expenses(
         self,
@@ -32,20 +36,25 @@ class ExpenseRepository:
             if sort_direction.lower() == "asc"
             else expenses_table.c.id.desc()
         )
-        query = select(expenses_table).order_by(order_column, order_id)
+        query = select(expenses_table).where(expenses_table.c.user_id == self._user_id()).order_by(order_column, order_id)
         query = self._apply_entry_type_filter(query, entry_type)
         rows = self._db().execute(query).mappings().all()
         return [Expense.from_row(row) for row in rows]
 
     def get_expense(self, expense_id: int) -> Expense | None:
         row = self._db().execute(
-            select(expenses_table).where(expenses_table.c.id == expense_id)
+            select(expenses_table).where(
+                expenses_table.c.id == expense_id,
+                expenses_table.c.user_id == self._user_id(),
+            )
         ).mappings().first()
         return Expense.from_row(row) if row else None
 
     def create_expense(self, payload: dict) -> Expense:
         db = self._db()
-        result = db.execute(insert(expenses_table).values(**self._coerce_payload(payload)))
+        result = db.execute(
+            insert(expenses_table).values(**self._coerce_payload(payload), user_id=self._user_id())
+        )
         db.commit()
         return self.get_expense(int(result.inserted_primary_key[0]))
 
@@ -53,7 +62,7 @@ class ExpenseRepository:
         db = self._db()
         result = db.execute(
             update(expenses_table)
-            .where(expenses_table.c.id == expense_id)
+            .where(expenses_table.c.id == expense_id, expenses_table.c.user_id == self._user_id())
             .values(**self._coerce_payload(payload))
         )
         db.commit()
@@ -63,7 +72,12 @@ class ExpenseRepository:
 
     def delete_expense(self, expense_id: int) -> bool:
         db = self._db()
-        result = db.execute(delete(expenses_table).where(expenses_table.c.id == expense_id))
+        result = db.execute(
+            delete(expenses_table).where(
+                expenses_table.c.id == expense_id,
+                expenses_table.c.user_id == self._user_id(),
+            )
+        )
         db.commit()
         return result.rowcount > 0
 
@@ -72,7 +86,10 @@ class ExpenseRepository:
             return 0
 
         db = self._db()
-        db.execute(insert(expenses_table), [self._coerce_payload(row) for row in rows])
+        db.execute(
+            insert(expenses_table),
+            [{**self._coerce_payload(row), "user_id": self._user_id()} for row in rows],
+        )
         db.commit()
         return len(rows)
 
@@ -106,6 +123,7 @@ class ExpenseRepository:
     def monthly_total(self, month_key: str, entry_type: str | None = "expense") -> float:
         start_date, end_date = self._month_bounds(month_key)
         query = select(func.sum(expenses_table.c.amount).label("total")).where(
+            expenses_table.c.user_id == self._user_id(),
             expenses_table.c.date >= start_date,
             expenses_table.c.date < end_date,
         )
@@ -131,6 +149,7 @@ class ExpenseRepository:
         entry_type: str | None = "expense",
     ) -> float:
         query = select(func.sum(expenses_table.c.amount).label("total")).where(
+            expenses_table.c.user_id == self._user_id(),
             expenses_table.c.date >= self._parse_date(start_date),
             expenses_table.c.date <= self._parse_date(end_date),
         )
@@ -159,6 +178,7 @@ class ExpenseRepository:
     ) -> int:
         start_date, end_date = self._month_bounds(month_key)
         query = select(func.count()).select_from(expenses_table).where(
+            expenses_table.c.user_id == self._user_id(),
             expenses_table.c.date >= start_date,
             expenses_table.c.date < end_date,
         )
@@ -173,6 +193,7 @@ class ExpenseRepository:
     ) -> list[Expense]:
         query = (
             select(expenses_table)
+            .where(expenses_table.c.user_id == self._user_id())
             .order_by(expenses_table.c.date.desc(), expenses_table.c.id.desc())
             .limit(limit)
         )
@@ -207,7 +228,11 @@ class ExpenseRepository:
         start_date, end_date = self._month_bounds(month_key)
         query = (
             select(expenses_table)
-            .where(expenses_table.c.date >= start_date, expenses_table.c.date < end_date)
+            .where(
+                expenses_table.c.user_id == self._user_id(),
+                expenses_table.c.date >= start_date,
+                expenses_table.c.date < end_date,
+            )
             .order_by(expenses_table.c.date.asc(), expenses_table.c.id.asc())
         )
         query = self._apply_entry_type_filter(query, entry_type)
@@ -233,7 +258,11 @@ class ExpenseRepository:
         start_date, end_date = self._month_bounds(month_key)
         query = (
             select(expenses_table)
-            .where(expenses_table.c.date >= start_date, expenses_table.c.date < end_date)
+            .where(
+                expenses_table.c.user_id == self._user_id(),
+                expenses_table.c.date >= start_date,
+                expenses_table.c.date < end_date,
+            )
             .order_by(
                 expenses_table.c.amount.desc(),
                 expenses_table.c.date.desc(),
@@ -246,8 +275,10 @@ class ExpenseRepository:
         return [Expense.from_row(row) for row in rows]
 
     def _list_rows(self, entry_type: str | None = None) -> list[dict]:
-        query = select(expenses_table.c.date, expenses_table.c.amount, expenses_table.c.entry_type).order_by(
-            expenses_table.c.date.asc()
+        query = (
+            select(expenses_table.c.date, expenses_table.c.amount, expenses_table.c.entry_type)
+            .where(expenses_table.c.user_id == self._user_id())
+            .order_by(expenses_table.c.date.asc())
         )
         query = self._apply_entry_type_filter(query, entry_type)
         return self._db().execute(query).mappings().all()

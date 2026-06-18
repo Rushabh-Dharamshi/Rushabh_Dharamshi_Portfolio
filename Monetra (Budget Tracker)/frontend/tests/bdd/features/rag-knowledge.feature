@@ -1,5 +1,5 @@
 Feature: RAG finance knowledge base
-  The user should be able to query and refresh the local finance knowledge base separately from the action agent.
+  The user should be able to query and refresh the finance knowledge base separately from the action agent.
 
   Scenario: Ask the semantic finance knowledge base a grounded question
     Given the budget tracker API is mocked
@@ -8,7 +8,7 @@ Feature: RAG finance knowledge base
     And the latest result should contain the text "Financial pulse"
     And the latest result should contain 2 sources
 
-  Scenario: Reindex the local finance knowledge base
+  Scenario: Reindex the finance knowledge base
     Given the budget tracker API is mocked
     When I reindex the finance knowledge base
     Then the latest result should contain the text "14"

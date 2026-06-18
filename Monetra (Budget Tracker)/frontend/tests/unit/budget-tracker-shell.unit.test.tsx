@@ -50,6 +50,14 @@ const baseTracker = {
   recurringItems: [],
   recurringCalendar: null,
   prediction: null,
+  latencyReport: {
+    scope: "current_user",
+    record_count: 0,
+    failed_count: 0,
+    summary: { average_ms: 0, minimum_ms: 0, maximum_ms: 0, p95_ms: 0 },
+    by_endpoint: [],
+    latest: [],
+  },
   ragQuestionDraft: "question",
   ragAnswer: null,
   ragStatus: { available: true, collection_name: "monetra-finance-knowledge", indexed_at: "2026-04-15T09:00:00Z", document_count: 12, chunk_count: 36, signature: "sig" },
@@ -101,8 +109,10 @@ const baseTracker = {
   runFinanceBriefingAgent: jest.fn(),
   runAutomationWorkflow: jest.fn(),
   sendUpcomingBillsEmailNow: jest.fn(),
+  sendAllUpcomingBillsEmailNow: jest.fn(),
   sendMonthEndEmailNow: jest.fn(),
   refresh: jest.fn(),
+  refreshLatencyReport: jest.fn(),
 };
 
 describe("BudgetTrackerShell unit coverage", () => {
@@ -124,7 +134,7 @@ describe("BudgetTrackerShell unit coverage", () => {
     expect(screen.getByText("Signed in as Owner")).toBeInTheDocument();
     expect(screen.getByText("GBP-native finance tracking")).toBeInTheDocument();
     expect(screen.getByText("RAG panel mock")).toBeInTheDocument();
-    expect(screen.getByText((value) => value.includes("1,050.00"))).toBeInTheDocument();
+    expect(screen.getAllByText((value) => value.includes("1,050.00")).length).toBeGreaterThan(0);
     expect(screen.getByText("Backend unavailable.")).toBeInTheDocument();
     expect(screen.getByText("Refreshed successfully.")).toBeInTheDocument();
 
@@ -151,11 +161,11 @@ describe("BudgetTrackerShell unit coverage", () => {
     mockUseBudgetTracker.mockReturnValue({
       ...baseTracker,
       activeWorkflowName: "month_end_close",
-      statusMessage: "month end close is running through the local agent pipeline. Elapsed: 4s.",
+      statusMessage: "month end close is running through the agent pipeline. Elapsed: 4s.",
     });
 
     render(<BudgetTrackerShell />);
 
-    expect(screen.getByText("Automation center mock: month end close is running through the local agent pipeline. Elapsed: 4s.")).toBeInTheDocument();
+    expect(screen.getByText("Automation center mock: month end close is running through the agent pipeline. Elapsed: 4s.")).toBeInTheDocument();
   });
 });

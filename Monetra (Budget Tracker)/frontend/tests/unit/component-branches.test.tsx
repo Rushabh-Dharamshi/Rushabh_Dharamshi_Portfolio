@@ -31,9 +31,9 @@ describe("component branch coverage", () => {
       </>,
     );
 
-    expect(screen.getByText("Upcoming bills is running.")).toBeInTheDocument();
+    expect(screen.getByText("Run Upcoming bills.")).toBeInTheDocument();
     expect(screen.getByText("upcoming bills check is running. Elapsed: 2s.")).toBeInTheDocument();
-    expect(screen.getByText("Processing your request.")).toBeInTheDocument();
+    expect(screen.getByText("Workflow-backed finance operations")).toBeInTheDocument();
     expect(screen.getByText("No recent transactions recorded.")).toBeInTheDocument();
     expect(screen.getByText("Stable")).toBeInTheDocument();
   });
@@ -68,12 +68,12 @@ describe("component branch coverage", () => {
       />,
     );
 
-    expect(screen.getByText("N. review.")).toBeInTheDocument();
+    expect(screen.getByText("Task completed successfully.")).toBeInTheDocument();
     expect(screen.queryByText("Agent trace")).not.toBeInTheDocument();
     expect(screen.queryByText("No plan trace was returned.")).not.toBeInTheDocument();
     expect(screen.queryByText("No tool execution trace was returned.")).not.toBeInTheDocument();
     expect(screen.getByText((value) => value.includes("invalid time"))).toBeInTheDocument();
-    expect(screen.getByText((value) => value.includes("Medium risk"))).toBeInTheDocument();
+    expect(screen.getByText("Successful")).toBeInTheDocument();
     expect(screen.queryByText("Download agent report")).not.toBeInTheDocument();
   });
 
@@ -122,7 +122,7 @@ describe("component branch coverage", () => {
 
     expect(screen.getByText("Update expense")).toBeDisabled();
     expect(screen.getByText("Delete expense")).toBeDisabled();
-    expect(screen.getByText("Upcoming reminders due next week")).toBeInTheDocument();
+    expect(screen.getByText("Upcoming reminders due soon")).toBeInTheDocument();
     expect(screen.getByText("All reminders")).toBeInTheDocument();
 
     fireEvent.change(screen.getAllByPlaceholderText("Paid transaction id")[0], { target: { value: "55" } });
@@ -176,7 +176,7 @@ describe("component branch coverage", () => {
       </>,
     );
 
-    expect(screen.getByText("No recurring reminders are due in the next 7 days.")).toBeInTheDocument();
+    expect(screen.getByText("No recurring reminders are due today or in the next 7 days.")).toBeInTheDocument();
     expect(screen.getByText("No saved recurring reminders are scheduled ahead.")).toBeInTheDocument();
     expect(screen.getByText("Nothing has been marked as paid in this window yet.")).toBeInTheDocument();
     expect(screen.getByText("No recurring purchases or income reminders created yet.")).toBeInTheDocument();
@@ -184,6 +184,93 @@ describe("component branch coverage", () => {
     expect(screen.getByText("No transactions available for the current month.")).toBeInTheDocument();
     expect(screen.getByText("Monthly trend data will appear once transactions are available.")).toBeInTheDocument();
     expect(screen.getByText("Week 1")).toBeInTheDocument();
+  });
+
+  it("marks all-reminder occurrences paid and ignores invalid transaction ids", () => {
+    const onMarkPaid = jest.fn();
+
+    render(
+      <RecurringCalendarPanel
+        items={[
+          { id: 9, category: "Subscription", description: "Annual software", amount: 120, entry_type: "expense", frequency: "monthly", start_date: "2026-07-15", end_date: "2026-07-15", active: true },
+        ]}
+        calendar={{
+          window_start: "2026-06-18",
+          window_end: "2026-06-25",
+          occurrences: [],
+          completed_occurrences: [],
+        }}
+        onCreate={jest.fn()}
+        onUpdate={jest.fn()}
+        onDelete={jest.fn()}
+        onMarkPaid={onMarkPaid}
+        onMarkUnpaid={jest.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Verify and mark paid"));
+    expect(onMarkPaid).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText("Paid transaction id"), { target: { value: "99" } });
+    fireEvent.click(screen.getByText("Verify and mark paid"));
+
+    expect(onMarkPaid).toHaveBeenCalledWith(9, "2026-07-15", 99);
+  });
+
+  it("orders automation responses with UK and SQL timestamp fallbacks", () => {
+    render(
+      <AutomationCenter
+        workflows={[
+          { id: "month_end_close", label: "Month-end close", description: "Generate report", automation_focus: "Reports", default_task: "Run" },
+          { id: "upcoming_bills_check", label: "Upcoming bills check", description: "Review bills", automation_focus: "Bills", default_task: "Run" },
+        ]}
+        runs={[
+          {
+            id: 1,
+            workflow_name: "month_end_close",
+            workflow_label: "Month-end close",
+            status: "completed",
+            headline: "Older close",
+            summary: "Older summary",
+            risk_level: "low",
+            recommended_actions: [],
+            automated_actions: [],
+            email_subject: "",
+            email_draft: "",
+            task: "run",
+            model: "qwen",
+            tools_used: [],
+            report_download_url: null,
+            generated_at: "17/06/2026, 18:13:54",
+          },
+          {
+            id: 2,
+            workflow_name: "upcoming_bills_check",
+            workflow_label: "Upcoming bills check",
+            status: "completed",
+            headline: "Latest bills",
+            summary: "Latest summary",
+            risk_level: "medium",
+            recommended_actions: ["Review bills"],
+            automated_actions: [],
+            email_subject: "",
+            email_draft: "",
+            task: "run",
+            model: "qwen",
+            tools_used: [],
+            report_download_url: null,
+            generated_at: "2026-06-17 19:13:54",
+          },
+        ]}
+        recurringCalendar={null}
+        activeWorkflowName={null}
+        liveStatusMessage={null}
+        onRunWorkflow={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Latest bills")).toBeInTheDocument();
+    expect(screen.getAllByText("completed")[0]).toHaveClass("status-warning");
   });
 });
 

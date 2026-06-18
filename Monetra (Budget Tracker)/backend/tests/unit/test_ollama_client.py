@@ -78,3 +78,20 @@ def test_ollama_client_rejects_invalid_json(monkeypatch):
 
     with pytest.raises(ServiceUnavailableError, match="invalid response"):
         client.chat([{"role": "user", "content": "hello"}])
+
+
+def test_ollama_client_classifies_finance_intent(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(http_request, timeout):
+        captured["body"] = http_request.data.decode("utf-8")
+        return FakeResponse('{"message": {"content": "METRIC_AVERAGE_DAILY_BURN\\n"}}')
+
+    monkeypatch.setattr("budget_tracker_api.services.ollama_client.request.urlopen", fake_urlopen)
+    client = OllamaClient("http://localhost:11434", "qwen2.5:7b", 45)
+
+    intent = client.classify_finance_intent("How fast am I spending each day?")
+
+    assert intent == "METRIC_AVERAGE_DAILY_BURN"
+    assert "Allowed tokens" in captured["body"]
+    assert "How fast am I spending each day?" in captured["body"]

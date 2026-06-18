@@ -92,7 +92,7 @@ def test_prediction_report_and_error_handler(client, app, tmp_path):
             }
 
     class FakeReportService:
-        def generate_monthly_report(self):
+        def generate_monthly_report(self, month=None):
             report_path = tmp_path / "report.pdf"
             report_path.write_bytes(b"%PDF-1.4 fake")
             return report_path

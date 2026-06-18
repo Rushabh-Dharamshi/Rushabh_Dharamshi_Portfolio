@@ -19,6 +19,27 @@
 
 Monetra is a full-stack personal finance platform for expense tracking, recurring payment management, KPI analytics, PDF reporting, predictive forecasting, and local agentic AI workflows. It combines a `Next.js + React + TypeScript` frontend with a `Flask + PostgreSQL` backend and a local `Ollama` runtime for AI-assisted finance operations.
 
+## Start Here
+
+If you are new to this project, start with [docs/START_HERE.md](docs/START_HERE.md). It explains the safest order to run, test, stage, and deploy Monetra.
+
+In simple terms, Monetra has four main parts:
+
+- a browser app where users manage finance data
+- a backend server that validates requests and stores data
+- a PostgreSQL database for users and finance records
+- a local AI layer for RAG questions, reports, and agent workflows
+
+Recommended order:
+
+1. Run locally with Docker.
+2. Register a fake test user.
+3. Check the core finance features.
+4. Run automated tests.
+5. Run dummy-user/load tests.
+6. Deploy to staging.
+7. Approve production deployment only after staging passes.
+
 ## 🌈 Highlights
 
 - 💳 End-to-end expense CRUD with validation, search, import, and export
@@ -29,6 +50,7 @@ Monetra is a full-stack personal finance platform for expense tracking, recurrin
 - 📄 Multi-section PDF reporting with generated insights and summaries
 - ✉️ Automated month-end and upcoming-bills email workflows
 - 🧪 Strict testing with `100%` frontend and backend coverage
+- 🧪 Dummy-user and load-test scenarios for staging-style validation
 
 ## ✨ Core Features
 
@@ -39,12 +61,22 @@ Monetra is a full-stack personal finance platform for expense tracking, recurrin
 - ❤️ Financial health insights: spend velocity, runway, recent activity, and pulse metrics
 - ☁️ Word cloud generation: prominent spend descriptions and top-category emphasis
 - 🔁 Recurring payments: schedule planning, due-date tracking, pay/unpay flows, and calendar views
+- 🎯 Savings goals: per-user savings targets with progress and remaining-balance tracking
 - 🤖 AI finance assistant: workflow planning, execution, verification, memory, and retries
 - 🧾 Reporting engine: PDF financial reports with charts, commentary, and highlights
 - 📬 Email automation: month-end close and upcoming-bills notifications
 - 🔐 Demo-safe controls: optional read-only and gated-access modes for portfolio use
 
 ## 🧰 Tech Stack
+
+You do not need to understand every tool to run the app. The short version is:
+
+- `Next.js` runs the browser app.
+- `Flask` runs the backend API.
+- `PostgreSQL` stores the finance data.
+- `Docker Compose` starts the app services together.
+- `Ollama` runs local AI models.
+- `CircleCI` runs tests and, later, deployment.
 
 ### 🎨 Frontend
 
@@ -259,6 +291,13 @@ flowchart LR
 - 🔹 `POST /api/recurring-items/<id>/occurrences/pay`
 - 🔹 `POST /api/recurring-items/<id>/occurrences/unpay`
 
+### 🎯 Savings Goals
+
+- 🔹 `GET /api/savings-goals`
+- 🔹 `POST /api/savings-goals`
+- 🔹 `PUT /api/savings-goals/<id>`
+- 🔹 `DELETE /api/savings-goals/<id>`
+
 ### 🤖 Agents / Automation
 
 - 🔹 `GET /api/agents/workflows`
@@ -270,7 +309,13 @@ flowchart LR
 
 - 🔹 `GET /api/settings`
 - 🔹 `PUT /api/settings`
+- 🔹 `PUT /api/settings/income`
 - 🔹 `GET /api/auth/session`
+- 🔹 `POST /api/auth/register`
+- 🔹 `POST /api/auth/login`
+- 🔹 `POST /api/auth/forgot-password`
+- 🔹 `POST /api/auth/reset-password`
+- 🔹 `POST /api/auth/logout`
 
 ## 🗂️ Project Structure
 
@@ -297,6 +342,183 @@ Monetra (Budget Tracker)/
 └── README.md
 ```
 
+## 🚀 Run Locally
+
+### Prerequisites
+
+- `Docker Desktop` with Docker Compose
+- `Node.js 22+`
+- `Python 3.11+`
+- `Ollama` running on the host machine for AI/RAG features
+
+Pull the local AI models used by Monetra:
+
+```powershell
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+```
+
+### Recommended: Docker Compose
+
+From the repository root:
+
+```powershell
+cd "Monetra (Budget Tracker)"
+docker compose up -d --build
+```
+
+Open:
+
+| Surface | URL |
+| --- | --- |
+| Frontend | `http://localhost:3000` |
+| Backend API | `http://localhost:8000` |
+| Health check | `http://localhost:8000/api/health` |
+| Chroma RAG store | `http://localhost:8001` |
+
+The Docker backend expects Ollama at `http://host.docker.internal:11434`, so Ollama must be running before using agentic AI or RAG features.
+
+Email safety is explicit:
+
+```env
+EMAIL_MODE=hybrid
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=rushabh.dharamshi@gmail.com
+SMTP_PASSWORD=your_gmail_app_password
+SMTP_USE_TLS=true
+SMTP_REQUIRE_AUTH=true
+EMAIL_FROM=rushabh.dharamshi@gmail.com
+ALLOWED_TEST_EMAILS=rushabh.dharamshi@gmail.com,testpurposes683@gmail.com,rushlovesgames28@gmail.com,rushabh.is.cool28@gmail.com
+EMAIL_MOCK_DOMAINS=monetra.test,example.test
+MOCK_EMAIL_FROM=demo@monetra.test
+```
+
+In hybrid mode, Monetra decides per recipient: allowlisted Gmail addresses are sent through Gmail SMTP, fake addresses on `@monetra.test` or `@example.test` are recorded as simulated emails, and every other recipient is blocked. For full dummy/load tests, `EMAIL_MODE=mock` is still available; no SMTP connection is opened and no real email is sent.
+
+Demo users can view simulated reset-code and report emails from the **Forgot password -> Demo email inbox** panel. Enter a mock address such as `user001@monetra.test` and refresh the inbox. Real Gmail recipients never appear in this panel.
+
+### First Local Smoke Test
+
+1. Open `http://localhost:3000`.
+2. Register a new test user.
+3. Log out and log back in.
+4. Add an income transaction and an expense transaction.
+5. Update the monthly budget and income.
+6. Create a recurring payment.
+7. Create a savings goal.
+8. Generate the monthly report.
+9. Reindex RAG and ask a finance question.
+10. Run an agent workflow.
+
+### Local Validation Helper
+
+Run code tests only:
+
+```powershell
+cd "Monetra (Budget Tracker)"
+powershell -ExecutionPolicy Bypass -File scripts\validate-local.ps1 -SkipDocker
+```
+
+Run tests plus local Docker health checks:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-local.ps1
+```
+
+Run dummy-user/load tests after the Docker stack is up:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\validate-local.ps1 -SkipBackend -SkipFrontend -RunLoad
+```
+
+Do not run dummy-user/load tests while real Gmail SMTP is active. Use `EMAIL_MODE=mock` for dummy users such as `user001@monetra.test`; Monetra records simulated sends without delivering real email.
+
+The dummy-user suite is intentionally rigorous. It checks auth, data isolation, full finance workflows, concurrent reads/writes, invalid inputs, reports, RAG/agent resilience, and API latency thresholds. Details are in `docs/DUMMY_USER_LOAD_TESTING.md`.
+
+Record a local latency baseline:
+
+```powershell
+$env:MONETRA_LATENCY_USERNAME="your-test-username"
+$env:MONETRA_LATENCY_PASSWORD="your-test-password"
+powershell -ExecutionPolicy Bypass -File scripts\measure-latency.ps1 -Environment local -BaseUrl http://localhost:8000 -Iterations 20
+```
+
+For multiple users, create a CSV such as `latency-users.local.csv`:
+
+```csv
+label,username,password
+primary,Rushabh,password-for-that-account
+test-683,testpurposes683@gmail.com,password-for-that-account
+```
+
+Then run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\measure-latency.ps1 -Environment local -BaseUrl http://localhost:8000 -Iterations 20 -UserCredentialCsv .\latency-users.local.csv
+```
+
+The script writes raw CSV, summary CSV, summary JSON, Markdown, and HTML reports to `latency-results/`. Each user/run gets a `report_id`, and every API call gets a `request_id` with timestamp, endpoint, status code, and latency. Use the same script later with your staging or production URL to compare environments. If you skip credentials, public endpoints such as `/api/health` still work, but protected endpoints may return `401`.
+
+### Manual Dev Mode
+
+Use this when you want backend/frontend hot reload instead of Docker.
+
+Backend:
+
+```powershell
+cd "Monetra (Budget Tracker)/backend"
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+python run.py
+```
+
+Frontend:
+
+```powershell
+cd "Monetra (Budget Tracker)/frontend"
+npm ci
+$env:API_PROXY_TARGET="http://127.0.0.1:5000"
+npm run dev
+```
+
+Manual dev URLs:
+
+| Surface | URL |
+| --- | --- |
+| Frontend | `http://localhost:3000` |
+| Backend API | `http://127.0.0.1:5000` |
+
+### Local Environment Notes
+
+- Keep real secrets in `backend/.env`; do not commit that file.
+- Use only email accounts you own when real Gmail SMTP is active, and add each one to `EMAIL_ALLOWED_RECIPIENTS` or `ALLOWED_TEST_EMAILS`.
+- SMTP/email automation only works when email delivery is configured. Use `EMAIL_MODE=hybrid` when you want allowlisted Gmail recipients to receive real email while fake demo recipients are simulated. Use `EMAIL_MODE=real` for real SMTP only and `EMAIL_MODE=mock` for dummy/load testing only. The older `EMAIL_DELIVERY_MODE=smtp/dry_run` names are still supported.
+- Agentic AI and RAG require Ollama plus the `qwen2.5:7b` and `nomic-embed-text` models.
+- Full local validation before Oracle deployment is documented in `docs/LOCAL_VALIDATION_RUNBOOK.md`.
+
+### Common Local Problems
+
+| Problem | What To Check |
+| --- | --- |
+| Frontend does not open | Check Docker Desktop is running, then run `docker compose ps`. |
+| Backend health check fails | Run `docker compose logs backend` and check PostgreSQL started correctly. |
+| Login/register fails | Confirm the backend is running and cookies are not blocked by the browser. |
+| AI/RAG does not answer | Confirm Ollama is running and both models were pulled. |
+| RAG indexing fails | Confirm Chroma is running at `http://localhost:8001`. |
+| Email does not send | Confirm SMTP settings exist in `backend/.env`; local testing can run without email. |
+| Port already in use | Stop the other app using ports `3000`, `8000`, `8001`, or `5432`, or change the Docker ports. |
+
+Useful commands:
+
+```powershell
+docker compose ps
+docker compose logs backend
+docker compose logs frontend
+docker compose down
+```
+
 ## 🧪 Test Commands
 
 ### ⚙️ Backend
@@ -320,9 +542,37 @@ npm run test:bdd
 npx tsc --noEmit
 ```
 
+### 🧪 Load / Dummy-User Simulation
+
+```bash
+cd "Monetra (Budget Tracker)"
+docker compose --profile load run --rm load-test-runner
+```
+
+### 🧯 Controlled Chaos Drills
+
+```powershell
+cd "Monetra (Budget Tracker)"
+powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill ChaosSmoke
+powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill ChromaOutage
+powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill PostgresOutage
+```
+
+## 📘 Production-Readiness Docs
+
+- `docs/START_HERE.md` explains what to read first and the safest local-to-production order
+- `docs/GLOSSARY.md` explains common technical terms in plain English
+- `docs/MONETRA_CHECKLIST.md` maps the app against the production-grade AI fintech checklist
+- `docs/API.md` documents the REST API surface
+- `docs/DEPLOYMENT.md` covers Docker, secrets, smoke checks, and rollback notes
+- `docs/LOCAL_VALIDATION_RUNBOOK.md` gives the local-first test path before Oracle VM deployment
+- `docs/DUMMY_USER_LOAD_TESTING.md` explains the rigorous fake-user concurrency and latency test suite
+- `docs/TESTING_STRATEGY.md` explains backend, frontend, E2E, load, and CI gates
+- `docs/FAULT_INJECTION.md` lists controlled staging failure scenarios and expected behavior
+
 ## 📝 Notes
 
 - 📁 Generated PDF reports are written to `backend/generated_reports/`
 - 🧠 The AI layer is local-model based rather than dependent on paid hosted inference APIs
-- 🔐 The current system is designed as a single-user finance platform rather than a multi-tenant product
+- 🔐 The interactive app supports registered users with per-user finance records and settings
 - 📌 The backend owns the core business logic; the frontend is intentionally API-driven and thin in business rules

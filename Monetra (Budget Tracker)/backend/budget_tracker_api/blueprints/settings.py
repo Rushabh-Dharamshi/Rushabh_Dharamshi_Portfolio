@@ -24,3 +24,9 @@ def update_budget():
 def update_income():
     payload = request.get_json(silent=True) or {}
     return jsonify({"data": _service().update_monthly_income(payload)})
+
+
+@settings_bp.get("/income-records")
+def list_income_records():
+    before_month = request.args.get("before")
+    return jsonify({"data": _service().list_monthly_income_records(before_month)})

@@ -4,12 +4,17 @@ import pytest
 
 from budget_tracker_api.errors import ValidationError
 from budget_tracker_api.services.agent_memory_service import AgentMemoryService
+from budget_tracker_api.services.metric_registry import FinanceIntent, FinanceIntentRouter, MetricRegistry
 from budget_tracker_api.services.rag_service import RagService
 
 
 class StubExpenseService:
     def list_expenses(self, sort_direction="desc"):
         return [
+            {"id": 10, "date": "2026-01-05", "category": "Income", "description": "January income", "amount": 1200.0, "entry_type": "income"},
+            {"id": 11, "date": "2026-01-08", "category": "Food", "description": "January groceries", "amount": 300.0, "entry_type": "expense"},
+            {"id": 12, "date": "2026-02-05", "category": "Income", "description": "February income", "amount": 900.0, "entry_type": "income"},
+            {"id": 13, "date": "2026-02-09", "category": "Travel", "description": "February travel", "amount": 1100.0, "entry_type": "expense"},
             {"id": 1, "date": "2026-03-01", "category": "Food", "description": "Groceries", "amount": 65.25, "entry_type": "expense"},
             {"id": 2, "date": "2026-03-03", "category": "Travel", "description": "Train pass", "amount": 80.0, "entry_type": "expense"},
         ]
@@ -51,6 +56,8 @@ class StubAnalyticsService:
             "monthly_income": 1500.0,
             "net_cash_flow": 1080.0,
             "remaining_budget": 630.0,
+            "weekly_spending": 145.25,
+            "percent_spent": 40.0,
             "status": "within",
         }
 
@@ -58,9 +65,13 @@ class StubAnalyticsService:
         return {
             "narrative": "Healthy but with housing pressure.",
             "health_score": 82,
+            "average_transaction": 96.0,
+            "spend_velocity": 14.0,
+            "top_category_share": 55.0,
             "cash_in": 1500.0,
             "cash_out": 420.0,
             "net_cash_flow": 1080.0,
+            "income_coverage": 357.14,
             "runway_days": 18,
         }
 
@@ -90,6 +101,12 @@ class StubPredictionService:
 class StubSettingsService:
     def get_settings(self, month_key=None):
         return {"monthly_budget": 1050.0, "monthly_income": 1500.0, "income_month": month_key or "2026-03"}
+
+    def list_monthly_income_records(self, before_month=None):
+        return [
+            {"month_key": "2026-01", "monthly_income": 1200.0},
+            {"month_key": "2026-02", "monthly_income": 900.0},
+        ]
 
 
 class StubAgentRunRepository:
@@ -231,6 +248,7 @@ def test_rag_service_retrieves_context_and_answers_questions(rag_service):
     assert retrieval["query_count"] == 1
     assert retrieval["sources"][0]["source_label"]
     assert answer["confidence"] == "high"
+    assert answer["follow_up_questions"] == []
     assert answer["signature"]
     assert answer["sources"]
     assert memory_items[0]["kind"] == "rag_query"
@@ -281,6 +299,240 @@ def test_rag_service_documents_and_prompt_use_cost_colon_format(rag_service):
     service.answer_question("What is driving spending?")
     system_prompt = service._answer_client.messages[-1][0]["content"]
     assert "Cost: <value>" in system_prompt
+    assert "helpful finance assistant speaking to the user" in system_prompt
+    assert "Avoid robotic phrases" in system_prompt
+    assert "Do not invent missing figures" in system_prompt
+    assert "Do not say 'planned expenses'" in system_prompt
+
+
+def test_rag_service_answers_monthly_income_from_settings(rag_service):
+    service, _, memory = rag_service
+
+    answer = service.answer_question("What is my monthly income?")
+
+    assert answer["confidence"] == "high"
+    assert "monthly income" in answer["answer"].lower()
+    assert "1500" in answer["answer"].replace(",", "")
+    assert "Cost:" not in answer["answer"]
+    assert answer["follow_up_questions"] == []
+    assert answer["sources"][0]["doc_type"] == "settings"
+    assert answer["sources"][0]["document_id"] == "settings::2026-03"
+    assert service._answer_client.messages == []
+    assert memory.recall(1)[0]["tools_used"] == ["settings_lookup"]
+
+
+def test_rag_service_answers_cash_flow_from_dashboard(rag_service):
+    service, _, memory = rag_service
+
+    answer = service.answer_question("What is my cash flow?")
+
+    assert answer["confidence"] == "high"
+    assert "cash flow" in answer["answer"].lower()
+    assert "1080" in answer["answer"].replace(",", "")
+    assert "Income:" in answer["answer"]
+    assert "Spending:" in answer["answer"]
+    assert "Monthly income:" not in answer["answer"]
+    assert answer["follow_up_questions"] == []
+    assert answer["sources"][0]["doc_type"] == "dashboard"
+    assert answer["sources"][0]["document_id"] == "dashboard::2026-03"
+    assert service._answer_client.messages == []
+    assert memory.recall(1)[0]["tools_used"] == ["dashboard_cash_flow_lookup"]
+
+
+def test_rag_service_answers_financial_status_from_dashboard_and_pulse(rag_service):
+    service, _, memory = rag_service
+
+    answer = service.answer_question("How is my financial status?")
+
+    assert answer["confidence"] == "high"
+    assert "financial status" in answer["answer"].lower()
+    assert "Your financial status looks within for March 2026" in answer["answer"]
+    assert "82/100" in answer["answer"]
+    assert "income GBP 1500.00" in answer["answer"]
+    assert "actual monthly expenses GBP 420.00" in answer["answer"]
+    assert "net cash flow GBP 1080.00" in answer["answer"]
+    assert "remaining budget GBP 630.00" in answer["answer"]
+    assert "planned expenses are separate from actual monthly expenses" in answer["answer"]
+    assert "no planned expenses" not in answer["answer"].lower()
+    assert answer["follow_up_questions"] == []
+    assert answer["sources"][0]["doc_type"] == "dashboard"
+    assert answer["sources"][1]["doc_type"] == "financial_pulse"
+    assert service._answer_client.messages == []
+    assert memory.recall(1)[0]["tools_used"] == ["dashboard_financial_status_lookup"]
+
+
+def test_rag_service_answers_remaining_budget_from_dashboard(rag_service):
+    service, _, memory = rag_service
+
+    answer = service.answer_question("What is my remaining budget after expenses?")
+
+    assert answer["confidence"] == "high"
+    assert "remaining budget" in answer["answer"].lower()
+    assert "GBP 630.00" in answer["answer"]
+    assert "GBP 1050.00 monthly budget - GBP 420.00 monthly expenses = GBP 630.00" in answer["answer"]
+    assert "different from net cash flow" in answer["answer"]
+    assert "monthly income minus monthly expenses" in answer["answer"]
+    assert "GBP 1080.00" not in answer["answer"]
+    assert answer["follow_up_questions"] == []
+    assert answer["sources"][0]["doc_type"] == "dashboard"
+    assert answer["sources"][0]["document_id"] == "dashboard::2026-03"
+    assert service._answer_client.messages == []
+    assert memory.recall(1)[0]["tools_used"] == ["dashboard_remaining_budget_lookup"]
+
+
+def test_rag_service_answers_budget_consumption_from_dashboard(rag_service):
+    service, _, memory = rag_service
+
+    answer = service.answer_question("What is my budget consumption as a percentage? how is this calculated?")
+
+    assert answer["confidence"] == "high"
+    assert "budget consumption" in answer["answer"].lower()
+    assert "40.00%" in answer["answer"]
+    assert "GBP 420.00 expenses / GBP 1050.00 monthly budget * 100 = 40.00%" in answer["answer"]
+    assert answer["follow_up_questions"] == []
+    assert answer["sources"][0]["doc_type"] == "dashboard"
+    assert answer["sources"][0]["document_id"] == "dashboard::2026-03"
+    assert service._answer_client.messages == []
+    assert memory.recall(1)[0]["tools_used"] == ["dashboard_budget_consumption_lookup"]
+
+
+def test_rag_service_answers_budget_overview_metrics_deterministically(rag_service):
+    service, fake_client, memory = rag_service
+
+    monthly_expenses = service.answer_question("What are my monthly expenses?")
+    monthly_budget = service.answer_question("What is my monthly budget?")
+    weekly_spending = service.answer_question("What is my weekly spending?")
+    budget_status = service.answer_question("What is my budget status?")
+
+    assert "Monthly expenses for March 2026: GBP 420.00" in monthly_expenses["answer"]
+    assert "Monthly budget for March 2026: GBP 1050.00" in monthly_budget["answer"]
+    assert "planned living-cost estimate" in monthly_budget["answer"]
+    assert "Weekly spending for March 2026: GBP 145.25" in weekly_spending["answer"]
+    assert "Budget status for March 2026: within" in budget_status["answer"]
+    assert monthly_expenses["sources"][0]["doc_type"] == "dashboard"
+    assert service._answer_client.messages == []
+    assert fake_client.collection.query_calls == 0
+    assert memory.recall(1)[0]["tools_used"] == ["dashboard_metric_lookup"]
+
+
+def test_rag_service_answers_piggy_bank_metrics_deterministically(rag_service):
+    service, fake_client, memory = rag_service
+
+    balance = service.answer_question("What is my piggy bank balance?")
+    contribution = service.answer_question("How much is added this month to the piggy bank?")
+    carryover = service.answer_question("What is my previous carryover?")
+
+    assert "Total piggy-bank balance for March 2026: GBP 1780.00" in balance["answer"]
+    assert "GBP 700.00 previous carryover + GBP 1080.00 current-month cash flow" in balance["answer"]
+    assert "This month's piggy-bank impact for March 2026: GBP 1080.00" in contribution["answer"]
+    assert "GBP 1500.00 monthly income - GBP 420.00 monthly expenses" in contribution["answer"]
+    assert "Previous carryover for March 2026: GBP 700.00" in carryover["answer"]
+    assert balance["sources"][0]["doc_type"] == "piggy_bank"
+    assert service._answer_client.messages == []
+    assert fake_client.collection.query_calls == 0
+    assert memory.recall(1)[0]["tools_used"] == ["piggy_bank_metric_lookup"]
+
+
+def test_rag_service_answers_monthly_category_insights_deterministically(rag_service):
+    service, fake_client, memory = rag_service
+
+    summary = service.answer_question("What are my monthly insights?")
+    top = service.answer_question("What are my top categories?")
+    bottom = service.answer_question("What are my bottom categories?")
+
+    assert "Monthly insights for March 2026" in summary["answer"]
+    assert "Housing: GBP 700.00" in summary["answer"]
+    assert "Food: GBP 65.25" in summary["answer"]
+    assert "Top categories for March 2026: Housing: GBP 700.00" in top["answer"]
+    assert "Bottom categories for March 2026: Food: GBP 65.25" in bottom["answer"]
+    assert summary["sources"][0]["doc_type"] == "category_insights"
+    assert service._answer_client.messages == []
+    assert fake_client.collection.query_calls == 0
+    assert memory.recall(1)[0]["tools_used"] == ["category_insights_lookup"]
+
+
+def test_rag_service_answers_spend_extremes_deterministically(rag_service):
+    service, fake_client, memory = rag_service
+
+    month_extremes = service.answer_question("Which month do I spend the most and least?")
+    category_extremes = service.answer_question("Which categories do I spend most and least?")
+    overall_category_extremes = service.answer_question("Which categories do I spend most and least overall?")
+
+    assert "highest-spend month is February 2026 at GBP 1100.00" in month_extremes["answer"]
+    assert "lowest-spend month is March 2026 at GBP 145.25" in month_extremes["answer"]
+    assert "expense transactions only; income records are excluded" in month_extremes["answer"]
+    assert month_extremes["sources"][0]["doc_type"] == "monthly_spend_extremes"
+
+    assert "For March 2026, your highest-spend category is Travel at GBP 80.00" in category_extremes["answer"]
+    assert "lowest-spend category is Food at GBP 65.25" in category_extremes["answer"]
+    assert category_extremes["sources"][0]["doc_type"] == "category_spend_extremes"
+
+    assert "For overall, your highest-spend category is Travel at GBP 1180.00" in overall_category_extremes["answer"]
+    assert "lowest-spend category is Food at GBP 365.25" in overall_category_extremes["answer"]
+    assert service._answer_client.messages == []
+    assert fake_client.collection.query_calls == 0
+    assert memory.recall(1)[0]["tools_used"] == ["category_spend_extremes_lookup"]
+
+
+def test_rag_service_answers_financial_pulse_metrics_deterministically(rag_service):
+    service, _, memory = rag_service
+
+    income_coverage = service.answer_question("What does income coverage mean?")
+    runway = service.answer_question("What is my budget runway?")
+    top_category_share = service.answer_question("What is top category share?")
+    spend_velocity = service.answer_question("What is spend velocity?")
+    average_transaction = service.answer_question("What is my average transaction?")
+
+    assert "Income coverage for March 2026: 357.1%" in income_coverage["answer"]
+    assert "monthly income divided by monthly expenses" in income_coverage["answer"]
+    assert "Budget runway for March 2026: 18 days" in runway["answer"]
+    assert "remaining budget would last" in runway["answer"]
+    assert "Top category share for March 2026: 55.0%" in top_category_share["answer"]
+    assert "largest spending category" in top_category_share["answer"]
+    assert "Spend velocity for March 2026: GBP 14.00/day" in spend_velocity["answer"]
+    assert "Average transaction for March 2026: GBP 96.00" in average_transaction["answer"]
+    assert income_coverage["sources"][0]["doc_type"] == "financial_pulse"
+    assert service._answer_client.messages == []
+    assert memory.recall(1)[0]["tools_used"] == ["financial_pulse_metric_lookup"]
+
+
+def test_rag_service_answers_kpi_and_comparison_metrics_deterministically(rag_service):
+    service, fake_client, memory = rag_service
+
+    daily_burn = service.answer_question("What is my average daily burn and how is it calculated?")
+    month_end_forecast = service.answer_question("What is my month-end forecast?")
+    current_transactions = service.answer_question("What are my current-month transactions?")
+    strongest_period = service.answer_question("What is the strongest period in Comparison Lab?")
+    average_spend = service.answer_question("What is the average spend in Comparison Lab?")
+
+    assert "Average daily burn for March 2026" in daily_burn["answer"]
+    assert "current-month expenses" in daily_burn["answer"]
+    assert "Month-end forecast for March 2026" in month_end_forecast["answer"]
+    assert "Current-month transactions for March 2026: 2" in current_transactions["answer"]
+    assert "Strongest period:" in strongest_period["answer"]
+    assert "Average spend:" in average_spend["answer"]
+    assert daily_burn["sources"][0]["doc_type"] == "kpi_studio"
+    assert strongest_period["sources"][0]["doc_type"] == "comparison_lab"
+    assert service._answer_client.messages == []
+    assert fake_client.collection.query_calls == 0
+    assert memory.recall(1)[0]["tools_used"] == ["comparison_lab_metric_lookup"]
+
+
+def test_rag_service_routes_paraphrased_metric_questions_through_registry(rag_service):
+    service, fake_client, memory = rag_service
+
+    daily_burn = service.answer_question("How fast am I spending each day?")
+    remaining = service.answer_question("How much money do I have left to spend this month?")
+    usage = service.answer_question("What percentage of my budget have I used?")
+    cash_flow = service.answer_question("What is my net position from income vs expenses?")
+
+    assert "Average daily burn for March 2026" in daily_burn["answer"]
+    assert "remaining budget" in remaining["answer"].lower()
+    assert "budget consumption" in usage["answer"].lower()
+    assert "cash flow" in cash_flow["answer"].lower()
+    assert service._answer_client.messages == []
+    assert fake_client.collection.query_calls == 0
+    assert memory.recall(1)[0]["tools_used"] == ["dashboard_cash_flow_lookup"]
 
 
 def test_rag_service_uses_structured_answers_for_exact_finance_questions(rag_service):
@@ -304,6 +556,70 @@ def test_rag_service_uses_structured_answers_for_exact_finance_questions(rag_ser
 
     assert "Total spent for Food in 2026-03: GBP 65.25" in total["answer"]
     assert total["sources"][0]["document_id"] == "expense::1"
+
+
+def test_rag_service_answers_late_reminders_from_calendar(tmp_path):
+    class LateRecurringService(StubRecurringService):
+        def upcoming_calendar(self, days):
+            return {
+                "window_start": "2026-06-01",
+                "window_end": "2026-07-06",
+                "occurrences": [],
+                "completed_occurrences": [],
+                "late_occurrences": [
+                    {
+                        "recurring_item_id": 31,
+                        "date": "2026-06-10",
+                        "category": "Bills",
+                        "description": "Monthly Test Late Bill Reminder",
+                        "amount": 12.5,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "days_until_due": -6,
+                    },
+                    {
+                        "recurring_item_id": 32,
+                        "date": "2026-06-10",
+                        "category": "Income",
+                        "description": "Monthly Test Late Deposit Reminder",
+                        "amount": 12.5,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "days_until_due": -6,
+                    },
+                ],
+            }
+
+    fake_client = FakeChromaClient()
+    service = RagService(
+        expense_service=StubExpenseService(),
+        recurring_service=LateRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "late-memory.json"),
+        persist_directory=tmp_path / "late-chroma",
+        manifest_path=tmp_path / "late-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: fake_client,
+    )
+
+    answer = service.answer_question("Do I have any late reminders? and how many?")
+
+    assert "2 late reminders" in answer["answer"]
+    assert "Monthly Test Late Bill Reminder" in answer["answer"]
+    assert "Monthly Test Late Deposit Reminder" in answer["answer"]
+    assert answer["follow_up_questions"] == []
+    assert answer["sources"][0]["doc_type"] == "recurring_late_occurrence"
+    assert answer["sources"][1]["doc_type"] == "recurring_late_occurrence"
+    assert service._answer_client.messages == []
+    assert fake_client.collection.query_calls == 0
 
 
 def test_rag_service_structured_answer_empty_and_next_week_edges(tmp_path):
@@ -387,6 +703,65 @@ def test_rag_service_structured_answer_empty_and_next_week_edges(tmp_path):
     assert next_week["sources"][0]["doc_type"] == "recurring_occurrence"
 
 
+def test_rag_service_next_payment_due_uses_earliest_recurring_occurrence(tmp_path):
+    class MultipleUpcomingRecurringService(StubRecurringService):
+        def upcoming_calendar(self, days):
+            return {
+                "window_start": "2099-06-04",
+                "window_end": "2099-09-01",
+                "occurrences": [
+                    {
+                        "recurring_item_id": 20,
+                        "date": "2099-06-07",
+                        "category": "Subscription",
+                        "description": "Chat GPT Plus",
+                        "amount": 21.99,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "days_until_due": 3,
+                    },
+                    {
+                        "recurring_item_id": 21,
+                        "date": "2099-06-06",
+                        "category": "Subscription",
+                        "description": "Gemini Pro Subscription",
+                        "amount": 18.99,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "days_until_due": 2,
+                    },
+                ],
+                "completed_occurrences": [],
+            }
+
+    service = RagService(
+        expense_service=StubExpenseService(),
+        recurring_service=MultipleUpcomingRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "next-payment-memory.json"),
+        persist_directory=tmp_path / "next-payment-chroma",
+        manifest_path=tmp_path / "next-payment-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: FakeChromaClient(),
+    )
+
+    answer = service.answer_question("What is my next payment due?")
+
+    assert "2099-06-06" in answer["answer"]
+    assert "Gemini Pro Subscription" in answer["answer"]
+    assert "Chat GPT Plus" not in answer["answer"]
+    assert answer["sources"][0]["document_id"] == "recurring-occurrence::21::2099-06-06"
+    assert service._answer_client.messages == []
+
+
 def test_rag_service_structured_total_skips_bad_dates_and_formats_ranges(tmp_path):
     class MixedExpenseService:
         def list_expenses(self, sort_direction="desc"):
@@ -418,8 +793,8 @@ def test_rag_service_structured_total_skips_bad_dates_and_formats_ranges(tmp_pat
     june = service._spending_total_answer("How much did I spend on Food in June 2026?")
     assert june["answer"] == "Total spent for Food in 2026-06: GBP 15.50 across 1 expense transaction."
 
-    through = service._spending_total_answer("How much did I spend until June 2026?")
-    assert "through 2026-06" in through["answer"]
+    through = service._spending_total_answer("How much did I spend until July 2026?")
+    assert "from 2026-06 through 2026-07" in through["answer"]
 
 
 def test_rag_service_month_questions_are_exact_unless_through_scope_is_requested(rag_service):
@@ -433,14 +808,14 @@ def test_rag_service_month_questions_are_exact_unless_through_scope_is_requested
     assert any("2026-06-15" in source["excerpt"] for source in june_occurrences)
     assert all("2026-05-15" not in source["excerpt"] for source in june_occurrences)
 
-    through_retrieval = service.retrieve_context("Do I have any bills due till June?", top_k=6)
+    through_retrieval = service.retrieve_context("Do I have any bills due till July?", top_k=6)
     through_months = {
         source["metadata"]["month_key"]
         for source in through_retrieval["sources"]
         if source["doc_type"] == "recurring_occurrence"
     }
 
-    assert {"2026-05", "2026-06"}.issubset(through_months)
+    assert {"2026-06", "2026-07"}.issubset(through_months)
 
 
 def test_rag_service_handles_prediction_failure_and_parsing_edges(tmp_path):
@@ -478,7 +853,7 @@ def test_rag_service_handles_prediction_failure_and_parsing_edges(tmp_path):
     assert service._parse_answer_payload(fenced_json_answer) == {
         "answer": "No recurring bills above GBP 500 are due in June. The only recurring bill found is due on 2026-06-23.",
         "confidence": "high",
-        "follow_up_questions": ["Are there any non-recurring bills above GBP 500 due in June?"],
+        "follow_up_questions": [],
     }
 
     with pytest.raises(ValidationError, match="empty"):
@@ -524,7 +899,7 @@ def test_rag_service_manifest_and_confidence_edge_paths(tmp_path):
     assert service._parse_answer_payload('{"answer":"Grounded","confidence":"uncertain","follow_up_questions":["next?"]}') == {
         "answer": "Grounded",
         "confidence": "medium",
-        "follow_up_questions": ["next?"],
+        "follow_up_questions": [],
     }
 
 
@@ -759,3 +1134,194 @@ def test_rag_service_remaining_retrieval_document_and_helper_edges(monkeypatch, 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     with pytest.raises(Exception, match="ChromaDB HTTP client is not installed"):
         http_service._http_chroma_client_factory()
+
+
+def test_rag_service_remaining_structured_answer_edges(rag_service, tmp_path):
+    service, _, _ = rag_service
+
+    first = service.answer_question("What is my cash flow?")
+    second = service.answer_question("What is my cash flow?")
+    assert first == second
+
+    class EmptyAnalytics(StubAnalyticsService):
+        def dashboard(self):
+            payload = super().dashboard()
+            payload.pop("percent_spent", None)
+            payload["monthly_budget"] = 0.0
+            payload["current_month_total"] = 0.0
+            payload["monthly_expenses"] = 0.0
+            return payload
+
+        def category_insights(self):
+            return {"top_categories": [], "bottom_categories": [], "total_spending": 0.0}
+
+        def financial_pulse(self):
+            payload = super().financial_pulse()
+            payload["runway_days"] = "bad"
+            return payload
+
+    class EmptyExpenseService(StubExpenseService):
+        def list_expenses(self, sort_direction="desc"):
+            return [
+                {"id": 1, "date": "bad-date", "category": "Food", "description": "Bad", "amount": "bad", "entry_type": "expense"},
+                {"id": 2, "date": "2026-03-02", "category": "Income", "description": "Income", "amount": 100, "entry_type": "income"},
+            ]
+
+    class EmptyRecurringService(StubRecurringService):
+        def upcoming_calendar(self, days):
+            return {"window_start": "2026-06-01", "window_end": "2026-06-30", "occurrences": [], "late_occurrences": [], "completed_occurrences": []}
+
+    empty_service = RagService(
+        expense_service=EmptyExpenseService(),
+        recurring_service=EmptyRecurringService(),
+        analytics_service=EmptyAnalytics(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "edge-memory.json"),
+        persist_directory=tmp_path / "edge-chroma",
+        manifest_path=tmp_path / "edge-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: FakeChromaClient(),
+    )
+
+    assert "No category data" in empty_service.answer_question("What are my top categories?")["answer"]
+    assert "could not find any expense transactions" in empty_service.answer_question("Which month do I spend the most and least?")["answer"]
+    assert "could not find any expense categories" in empty_service.answer_question("Which categories do I spend most and least?")["answer"]
+    assert "cannot be calculated" in empty_service.answer_question("What is my budget consumption as a percentage?")["answer"].lower()
+    assert "could not find any upcoming expense payments" in empty_service.answer_question("What is the next payment due?")["answer"]
+    assert "do not have any late reminders" in empty_service.answer_question("Do I have late reminders?")["answer"]
+
+    class MultiRecurringService(StubRecurringService):
+        def upcoming_calendar(self, days):
+            return {
+                "window_start": "2026-06-01",
+                "window_end": "2026-06-30",
+                "occurrences": [
+                    {"recurring_item_id": 1, "date": "2026-06-10", "category": "Subscription", "description": "Gemini", "amount": 18.99, "entry_type": "expense", "frequency": "monthly", "days_until_due": 1},
+                    {"recurring_item_id": 2, "date": "2026-06-10", "category": "Subscription", "description": "ChatGPT", "amount": 21.99, "entry_type": "expense", "frequency": "monthly", "days_until_due": 1},
+                ],
+                "late_occurrences": [],
+                "completed_occurrences": [],
+            }
+
+    multi_service = RagService(
+        expense_service=StubExpenseService(),
+        recurring_service=MultiRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "multi-memory.json"),
+        persist_directory=tmp_path / "multi-chroma",
+        manifest_path=tmp_path / "multi-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: FakeChromaClient(),
+    )
+    assert "Other payments are also due" in multi_service.answer_question("What is the next payment due?")["answer"]
+
+    class PositiveComparisonExpenseService(StubExpenseService):
+        def list_expenses(self, sort_direction="desc"):
+            return [
+                {"id": 1, "date": "2026-05-01", "category": "Food", "description": "May", "amount": 100, "entry_type": "expense"},
+                {"id": 2, "date": "2026-06-01", "category": "Food", "description": "June", "amount": 150, "entry_type": "expense"},
+            ]
+
+    class NoPercentAnalytics(StubAnalyticsService):
+        def dashboard(self):
+            payload = super().dashboard()
+            payload.pop("percent_spent", None)
+            payload["monthly_budget"] = 200.0
+            payload["current_month_total"] = 50.0
+            payload["monthly_expenses"] = 50.0
+            return payload
+
+    positive_service = RagService(
+        expense_service=PositiveComparisonExpenseService(),
+        recurring_service=StubRecurringService(),
+        analytics_service=NoPercentAnalytics(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "positive-memory.json"),
+        persist_directory=tmp_path / "positive-chroma",
+        manifest_path=tmp_path / "positive-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: FakeChromaClient(),
+    )
+    assert "+50.0%" in positive_service.answer_question("What is change vs previous?")["answer"]
+    assert "25.00%" in positive_service.answer_question("What is my budget consumption as a percentage?")["answer"]
+
+    assert RagService._is_cash_flow_question("cash and flow") is True
+    assert RagService._financial_pulse_metric("What is my health score?") == "health_score"
+    assert RagService._financial_pulse_metric("What is my income coverage?") == "income_coverage"
+    assert RagService._financial_pulse_metric("What is my top category share?") == "top_category_share"
+    assert RagService._financial_pulse_metric("What is my budget runway?") == "budget_runway"
+    assert RagService._financial_pulse_metric("unknown metric") is None
+    assert RagService._kpi_studio_metric("month end forecast") == "month_end_forecast"
+    assert RagService._kpi_studio_metric("largest category share") == "largest_category_share"
+    assert RagService._kpi_studio_metric("average daily burn") == "average_daily_burn"
+    assert RagService._kpi_studio_metric("current month transactions") == "current_month_transactions"
+    assert RagService._kpi_studio_metric("unknown metric") is None
+    assert RagService._comparison_metric("current period") == "current_period"
+    assert RagService._comparison_metric("average spend") == "average_spend"
+    assert RagService._comparison_metric("strongest period") == "strongest_period"
+    assert RagService._comparison_metric("change versus previous") == "change_vs_previous"
+    assert RagService._comparison_metric("unknown metric") is None
+    assert RagService._is_financial_status_question("how healthy are my finances") is False
+    assert RagService._is_remaining_budget_question("budget left") is True
+    assert RagService._is_budget_consumption_question("budget as a percentage") is True
+    assert RagService._is_monthly_income_question("income and bill") is False
+    assert RagService._as_float(object()) == 0.0
+    assert RagService._month_label("bad") == "bad"
+    assert RagService._scope_label({"start_month": "2026-01", "end_month": "2026-03"}) == "January 2026 through March 2026"
+    assert empty_service._dashboard_monthly_expenses({"monthly_expenses": 12.5}) == 12.5
+
+
+def test_metric_registry_and_router_remaining_intents():
+    registry = MetricRegistry({FinanceIntent.CASH_FLOW: lambda question: {"answer": question}})
+    assert registry.execute(FinanceIntent.OPEN_ENDED, "anything") is None
+    assert registry.execute(FinanceIntent.MONTHLY_BUDGET, "missing handler") is None
+    assert registry.execute(FinanceIntent.CASH_FLOW, "cash flow") == {"answer": "cash flow"}
+
+    router = FinanceIntentRouter()
+    cases = {
+        "monthly transaction count": FinanceIntent.CURRENT_MONTH_TRANSACTIONS,
+        "largest category share": FinanceIntent.LARGEST_CATEGORY_SHARE,
+        "income coverage": FinanceIntent.INCOME_COVERAGE,
+        "category share": FinanceIntent.TOP_CATEGORY_SHARE,
+        "runway": FinanceIntent.BUDGET_RUNWAY,
+        "health score": FinanceIntent.HEALTH_SCORE,
+        "spending velocity": FinanceIntent.SPEND_VELOCITY,
+        "avg transaction": FinanceIntent.AVERAGE_TRANSACTION,
+        "current period": FinanceIntent.CURRENT_PERIOD,
+        "average spend": FinanceIntent.AVERAGE_SPEND,
+        "strongest period": FinanceIntent.STRONGEST_PERIOD,
+        "change versus previous": FinanceIntent.CHANGE_VS_PREVIOUS,
+        "piggy bank contribution": FinanceIntent.PIGGY_BANK_CONTRIBUTION,
+        "piggy bank carryover": FinanceIntent.PIGGY_BANK_CARRYOVER,
+        "piggy bank": FinanceIntent.PIGGY_BANK_BALANCE,
+        "which categories had the highest and lowest spend": FinanceIntent.CATEGORY_SPEND_EXTREMES,
+        "which months did I spend the most and least": FinanceIntent.MONTHLY_SPEND_EXTREMES,
+        "top categories": FinanceIntent.MONTHLY_TOP_CATEGORIES,
+        "bottom categories": FinanceIntent.MONTHLY_BOTTOM_CATEGORIES,
+        "monthly insights": FinanceIntent.MONTHLY_CATEGORY_INSIGHTS,
+        "what is my income": FinanceIntent.MONTHLY_INCOME,
+    }
+    for question, expected in cases.items():
+        assert router.classify(question) is expected

@@ -9,6 +9,7 @@ from typing import Any
 
 from budget_tracker_api.errors import ServiceUnavailableError, ValidationError
 from budget_tracker_api.services.agent_memory_service import AgentMemoryService
+from budget_tracker_api.services.metric_registry import FinanceIntent, FinanceIntentRouter, MetricRegistry
 from budget_tracker_api.services.rag_chunking import RagChunkingService
 
 
@@ -56,6 +57,8 @@ class RagService:
         self._chroma_client_factory = chroma_client_factory or self._default_chroma_client_factory
         self._retrieval_cache: dict[tuple[str, str, int], dict] = {}
         self._answer_cache: dict[tuple[str, str], dict] = {}
+        self._intent_router = FinanceIntentRouter()
+        self._metric_registry = self._build_metric_registry()
 
     def status(self) -> dict:
         manifest = self._load_manifest()
@@ -177,20 +180,20 @@ class RagService:
         return retrieval
 
     def answer_question(self, question: str) -> dict:
-        retrieval = self.retrieve_context(question)
-        signature = str(retrieval.get("signature") or "")
-        cache_key = (signature, str(question or "").strip())
-        cached = self._answer_cache.get(cache_key)
-        if cached is not None:
-            return json.loads(json.dumps(cached))
-
-        structured = self._structured_answer(str(question or "").strip())
+        normalized_question = str(question or "").strip()
+        structured = self._structured_answer(normalized_question)
         if structured is not None:
+            signature = self._current_source_signature()
+            cache_key = (signature, normalized_question)
+            cached = self._answer_cache.get(cache_key)
+            if cached is not None:
+                return json.loads(json.dumps(cached))
+
             answer = {
                 "question": question,
                 "answer": structured["answer"],
                 "confidence": "high",
-                "follow_up_questions": structured["follow_up_questions"],
+                "follow_up_questions": [],
                 "sources": structured["sources"],
                 "generated_at": self._utc_now(),
                 "signature": signature,
@@ -200,10 +203,17 @@ class RagService:
                 task=question,
                 summary=structured["answer"],
                 tools_used=structured["tools_used"],
-                metadata={"confidence": "high", "answer_mode": "structured"},
+                metadata={"confidence": "high", "answer_mode": "deterministic_registry"},
             )
             self._answer_cache[cache_key] = json.loads(json.dumps(answer))
             return answer
+
+        retrieval = self.retrieve_context(question)
+        signature = str(retrieval.get("signature") or "")
+        cache_key = (signature, normalized_question)
+        cached = self._answer_cache.get(cache_key)
+        if cached is not None:
+            return json.loads(json.dumps(cached))
 
         if not retrieval["sources"]:
             raise ValidationError("No indexed finance knowledge is available yet.")
@@ -221,8 +231,13 @@ class RagService:
                     "For recurring bills, use every retrieved recurring occurrence date as evidence. "
                     "For exact totals, dates, transaction IDs, and recurring reminders, prefer structured transaction and recurring source lines over agent memory. "
                     "Do arithmetic internally and show only the final concise calculation. "
-                    "When describing costs, use the exact label format 'Cost: <value>'. "
-                    "Return JSON with keys: answer, confidence, follow_up_questions."
+                    "Use 'Cost: <value>' only for expenses, recurring bills, and payments. Use 'Monthly income: <value>' for income settings. "
+                    "For non-exact analytical questions, write like a helpful finance assistant speaking to the user: natural, calm, specific, and practical. "
+                    "Avoid robotic phrases such as 'based on the provided context' unless the context is genuinely limited. "
+                    "Use short paragraphs, explain what the pattern means, and give one or two grounded next steps when the retrieved data supports them. "
+                    "Do not invent missing figures, dates, categories, or recommendations. "
+                    "Do not say 'planned expenses' unless the retrieved context explicitly names planned, recurring, or upcoming expenses; otherwise call them actual monthly expenses. "
+                    "Return JSON with keys: answer, confidence, follow_up_questions. Always return follow_up_questions as an empty array."
                 ),
             },
             {
@@ -254,13 +269,670 @@ class RagService:
 
     def _structured_answer(self, question: str) -> dict | None:
         normalized = str(question or "").lower()
+        registry_answer = self._metric_registry.execute(self._intent_router.classify(normalized), normalized)
+        if registry_answer is not None:
+            return registry_answer
         if self._is_latest_expense_question(normalized):
             return self._latest_expense_answer()
+        if self._is_next_payment_due_question(normalized):
+            return self._next_payment_due_answer()
+        if self._is_late_reminder_question(normalized):
+            return self._late_reminder_answer()
         if self._is_recurring_reminder_question(normalized):
             return self._recurring_reminder_answer(normalized)
         if self._is_spending_total_question(normalized):
             return self._spending_total_answer(question)
         return None
+
+    def _build_metric_registry(self) -> MetricRegistry:
+        return MetricRegistry(
+            {
+                FinanceIntent.CASH_FLOW: lambda _: self._cash_flow_answer(),
+                FinanceIntent.MONTHLY_EXPENSES: lambda _: self._dashboard_metric_answer("monthly_expenses"),
+                FinanceIntent.MONTHLY_BUDGET: lambda _: self._dashboard_metric_answer("monthly_budget"),
+                FinanceIntent.WEEKLY_SPENDING: lambda _: self._dashboard_metric_answer("weekly_spending"),
+                FinanceIntent.BUDGET_STATUS: lambda _: self._dashboard_metric_answer("budget_status"),
+                FinanceIntent.AVERAGE_DAILY_BURN: lambda _: self._kpi_studio_metric_answer("average daily burn"),
+                FinanceIntent.MONTH_END_FORECAST: lambda _: self._kpi_studio_metric_answer("month end forecast"),
+                FinanceIntent.LARGEST_CATEGORY_SHARE: lambda _: self._kpi_studio_metric_answer("largest category share"),
+                FinanceIntent.CURRENT_MONTH_TRANSACTIONS: lambda _: self._kpi_studio_metric_answer("current month transactions"),
+                FinanceIntent.REMAINING_BUDGET: lambda _: self._remaining_budget_answer(),
+                FinanceIntent.BUDGET_USAGE: lambda _: self._budget_consumption_answer(),
+                FinanceIntent.MONTHLY_INCOME: lambda _: self._monthly_income_answer(),
+                FinanceIntent.FINANCIAL_STATUS: lambda _: self._financial_status_answer(),
+                FinanceIntent.AVERAGE_TRANSACTION: lambda _: self._financial_pulse_metric_answer("average transaction"),
+                FinanceIntent.SPEND_VELOCITY: lambda _: self._financial_pulse_metric_answer("spend velocity"),
+                FinanceIntent.INCOME_COVERAGE: lambda _: self._financial_pulse_metric_answer("income coverage"),
+                FinanceIntent.TOP_CATEGORY_SHARE: lambda _: self._financial_pulse_metric_answer("top category share"),
+                FinanceIntent.BUDGET_RUNWAY: lambda _: self._financial_pulse_metric_answer("budget runway"),
+                FinanceIntent.HEALTH_SCORE: lambda _: self._financial_pulse_metric_answer("health score"),
+                FinanceIntent.CURRENT_PERIOD: lambda _: self._comparison_metric_answer("current period"),
+                FinanceIntent.AVERAGE_SPEND: lambda _: self._comparison_metric_answer("average spend"),
+                FinanceIntent.STRONGEST_PERIOD: lambda _: self._comparison_metric_answer("strongest period"),
+                FinanceIntent.CHANGE_VS_PREVIOUS: lambda _: self._comparison_metric_answer("change vs previous"),
+                FinanceIntent.PIGGY_BANK_BALANCE: lambda _: self._piggy_bank_answer("balance"),
+                FinanceIntent.PIGGY_BANK_CONTRIBUTION: lambda _: self._piggy_bank_answer("contribution"),
+                FinanceIntent.PIGGY_BANK_CARRYOVER: lambda _: self._piggy_bank_answer("carryover"),
+                FinanceIntent.MONTHLY_TOP_CATEGORIES: lambda _: self._monthly_category_insights_answer("top"),
+                FinanceIntent.MONTHLY_BOTTOM_CATEGORIES: lambda _: self._monthly_category_insights_answer("bottom"),
+                FinanceIntent.MONTHLY_CATEGORY_INSIGHTS: lambda _: self._monthly_category_insights_answer("summary"),
+                FinanceIntent.MONTHLY_SPEND_EXTREMES: lambda _: self._monthly_spend_extremes_answer(),
+                FinanceIntent.CATEGORY_SPEND_EXTREMES: lambda question: self._category_spend_extremes_answer(question),
+            }
+        )
+
+    def _current_source_signature(self) -> str:
+        return self._build_signature(self._build_source_documents())
+
+    def _monthly_income_answer(self) -> dict:
+        settings = self._settings_service.get_settings()
+        income = self._format_gbp(settings.get("monthly_income"))
+        month_key = str(settings.get("income_month") or "the current month")
+        answer = f"Your monthly income for {month_key} is {income}."
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Budget settings {month_key}",
+                    "settings",
+                    f"settings::{month_key}",
+                    f"Monthly income: {income}. Income month: {month_key}.",
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["settings_lookup"],
+        }
+
+    def _cash_flow_answer(self) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        pulse = self._analytics_service.financial_pulse()
+        month_key = str(dashboard.get("month_key") or "the current month")
+        month_label = str(dashboard.get("month_label") or month_key)
+        income = self._format_gbp(dashboard.get("monthly_income") or pulse.get("cash_in"))
+        spending = self._format_gbp(dashboard.get("current_month_total") or pulse.get("cash_out"))
+        net_cash_flow = self._format_gbp(dashboard.get("net_cash_flow") or pulse.get("net_cash_flow"))
+        status = str(dashboard.get("status") or "").strip()
+        answer = f"Your cash flow for {month_label} is {net_cash_flow}. Income: {income}. Spending: {spending}."
+        if status:
+            answer += f" Budget status: {status}."
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Dashboard cash flow {month_key}",
+                    "dashboard",
+                    f"dashboard::{month_key}",
+                    f"Net cash flow: {net_cash_flow}. Income: {income}. Spending: {spending}. Budget status: {status or 'unknown'}.",
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["dashboard_cash_flow_lookup"],
+        }
+
+    def _dashboard_metric_answer(self, metric: str) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        month_key = str(dashboard.get("month_key") or "the current month")
+        month_label = str(dashboard.get("month_label") or month_key)
+        monthly_expenses = self._dashboard_monthly_expenses(dashboard)
+        definitions = {
+            "monthly_expenses": {
+                "label": "Monthly expenses",
+                "value": self._format_gbp(monthly_expenses),
+                "meaning": "This is the actual expense total recorded for the current dashboard month.",
+            },
+            "monthly_budget": {
+                "label": "Monthly budget",
+                "value": self._format_gbp(dashboard.get("monthly_budget")),
+                "meaning": "This is your planned living-cost estimate for the month, not your income.",
+            },
+            "weekly_spending": {
+                "label": "Weekly spending",
+                "value": self._format_gbp(dashboard.get("weekly_spending")),
+                "meaning": "This is the expense total recorded in the current week.",
+            },
+            "budget_status": {
+                "label": "Budget status",
+                "value": str(dashboard.get("status") or "unknown"),
+                "meaning": "This compares actual monthly expenses with the monthly budget.",
+            },
+        }
+        selected = definitions[metric]
+        answer = f"{selected['label']} for {month_label}: {selected['value']}. {selected['meaning']}"
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Budget overview {month_key}",
+                    "dashboard",
+                    f"dashboard::{month_key}",
+                    (
+                        f"Monthly budget: {self._format_gbp(dashboard.get('monthly_budget'))}. "
+                        f"Monthly expenses: {self._format_gbp(monthly_expenses)}. "
+                        f"Monthly income: {self._format_gbp(dashboard.get('monthly_income'))}. "
+                        f"Net cash flow: {self._format_gbp(dashboard.get('net_cash_flow'))}. "
+                        f"Remaining budget: {self._format_gbp(dashboard.get('remaining_budget'))}. "
+                        f"Weekly spending: {self._format_gbp(dashboard.get('weekly_spending'))}. "
+                        f"Budget status: {dashboard.get('status') or 'unknown'}."
+                    ),
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["dashboard_metric_lookup"],
+        }
+
+    def _piggy_bank_answer(self, metric: str) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        month_key = str(dashboard.get("month_key") or datetime.now().strftime("%Y-%m"))
+        month_label = str(dashboard.get("month_label") or month_key)
+        monthly_income = self._as_float(dashboard.get("monthly_income"))
+        monthly_expenses = self._dashboard_monthly_expenses(dashboard)
+        monthly_budget = self._as_float(dashboard.get("monthly_budget"))
+        current_cash_flow = monthly_income - monthly_expenses
+        previous_carryover = self._previous_piggy_bank_carryover(month_key)
+        piggy_bank_balance = max(previous_carryover + current_cash_flow, 0.0)
+        positive_current_flow = max(current_cash_flow, 0.0)
+        contribution_percent = (positive_current_flow / monthly_income * 100) if monthly_income > 0 else 0.0
+        definitions = {
+            "balance": (
+                "Total piggy-bank balance",
+                self._format_gbp(piggy_bank_balance),
+                (
+                    f"Calculation: {self._format_gbp(previous_carryover)} previous carryover + "
+                    f"{self._format_gbp(current_cash_flow)} current-month cash flow, floored at GBP 0.00."
+                ),
+            ),
+            "contribution": (
+                "This month's piggy-bank impact",
+                self._format_gbp(current_cash_flow),
+                (
+                    f"Calculation: {self._format_gbp(monthly_income)} monthly income - "
+                    f"{self._format_gbp(monthly_expenses)} monthly expenses = {self._format_gbp(current_cash_flow)} cash flow. "
+                    "Positive cash flow increases the piggy bank; negative cash flow reduces the existing buffer."
+                ),
+            ),
+            "carryover": (
+                "Previous carryover",
+                self._format_gbp(previous_carryover),
+                "This is the accumulated positive cash flow from months before the current dashboard month.",
+            ),
+        }
+        label, value, meaning = definitions[metric]
+        answer = (
+            f"{label} for {month_label}: {value}. {meaning} "
+            f"The monthly budget is {self._format_gbp(monthly_budget)} and is treated as a living-cost estimate, not the piggy-bank calculation."
+        )
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Piggy bank {month_key}",
+                    "piggy_bank",
+                    f"piggy-bank::{month_key}",
+                    (
+                        f"Piggy bank balance: {self._format_gbp(piggy_bank_balance)}. "
+                        f"Previous carryover: {self._format_gbp(previous_carryover)}. "
+                        f"Monthly income: {self._format_gbp(monthly_income)}. "
+                        f"Monthly expenses: {self._format_gbp(monthly_expenses)}. "
+                        f"Current cash flow: {self._format_gbp(current_cash_flow)}. "
+                        f"This month's impact: {self._format_gbp(current_cash_flow)}. "
+                        f"Income flowing into piggy bank: {contribution_percent:.1f}%."
+                    ),
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["piggy_bank_metric_lookup"],
+        }
+
+    def _monthly_category_insights_answer(self, mode: str) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        categories = self._analytics_service.category_insights()
+        month_key = str(dashboard.get("month_key") or "the current month")
+        month_label = str(dashboard.get("month_label") or month_key)
+        top_categories = categories.get("top_categories") or []
+        bottom_categories = categories.get("bottom_categories") or []
+
+        def describe(items: list[dict]) -> str:
+            if not items:
+                return "No category data for this month."
+            return ", ".join(f"{item.get('category')}: {self._format_gbp(item.get('amount'))}" for item in items)
+
+        if mode == "top":
+            answer = f"Top categories for {month_label}: {describe(top_categories)}"
+        elif mode == "bottom":
+            answer = f"Bottom categories for {month_label}: {describe(bottom_categories)}"
+        else:
+            answer = (
+                f"Monthly insights for {month_label}: top categories are {describe(top_categories)}. "
+                f"Bottom categories are {describe(bottom_categories)}. "
+                f"Total spending in the category analysis is {self._format_gbp(categories.get('total_spending'))}."
+            )
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Monthly category insights {month_key}",
+                    "category_insights",
+                    f"category-insights::{month_key}",
+                    (
+                        f"Top categories: {describe(top_categories)}. "
+                        f"Bottom categories: {describe(bottom_categories)}. "
+                        f"Total spending: {self._format_gbp(categories.get('total_spending'))}."
+                    ),
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["category_insights_lookup"],
+        }
+
+    def _monthly_spend_extremes_answer(self) -> dict:
+        monthly_totals: dict[str, float] = {}
+        for expense in self._expense_service.list_expenses(sort_direction="desc"):
+            if str(expense.get("entry_type") or "expense") != "expense":
+                continue
+            expense_date = self._parse_date(expense.get("date"))
+            if expense_date is None:
+                continue
+            month_key = expense_date.isoformat()[:7]
+            monthly_totals[month_key] = monthly_totals.get(month_key, 0.0) + self._as_float(expense.get("amount"))
+
+        if not monthly_totals:
+            return {
+                "answer": "I could not find any expense transactions to compare monthly spending.",
+                "follow_up_questions": [],
+                "sources": [self._structured_source("Monthly spend extremes", "monthly_spend_extremes", "monthly-spend-extremes::empty", "No expense transactions were found.")],
+                "tools_used": ["monthly_spend_extremes_lookup"],
+            }
+
+        rounded_totals = {month: round(total, 2) for month, total in monthly_totals.items()}
+        highest_month, highest_total = max(rounded_totals.items(), key=lambda item: (item[1], item[0]))
+        lowest_month, lowest_total = min(rounded_totals.items(), key=lambda item: (item[1], item[0]))
+        answer = (
+            f"Your highest-spend month is {self._month_label(highest_month)} at {self._format_gbp(highest_total)}. "
+            f"Your lowest-spend month is {self._month_label(lowest_month)} at {self._format_gbp(lowest_total)}. "
+            "This uses expense transactions only; income records are excluded."
+        )
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    "Monthly spending totals",
+                    "monthly_spend_extremes",
+                    "monthly-spend-extremes::all",
+                    "; ".join(f"{self._month_label(month)}: {self._format_gbp(total)}" for month, total in sorted(rounded_totals.items())),
+                )
+            ],
+            "tools_used": ["monthly_spend_extremes_lookup"],
+        }
+
+    def _category_spend_extremes_answer(self, normalized_question: str) -> dict:
+        scope = self._extract_requested_month_scope(normalized_question)
+        dashboard = self._analytics_service.dashboard()
+        if scope is None and not self._contains_any(normalized_question, "overall", "all time", "across all", "historical"):
+            month_key = str(dashboard.get("month_key") or datetime.now().strftime("%Y-%m"))
+            scope = {"start_month": month_key, "end_month": month_key}
+
+        category_totals: dict[str, float] = {}
+        for expense in self._expense_service.list_expenses(sort_direction="desc"):
+            if str(expense.get("entry_type") or "expense") != "expense":
+                continue
+            expense_date = self._parse_date(expense.get("date"))
+            if expense_date is None:
+                continue
+            month_key = expense_date.isoformat()[:7]
+            if scope and month_key not in self._month_keys_between(scope["start_month"], scope["end_month"]):
+                continue
+            category = str(expense.get("category") or "Uncategorised")
+            category_totals[category] = category_totals.get(category, 0.0) + self._as_float(expense.get("amount"))
+
+        scope_text = "overall" if scope is None else self._scope_label(scope)
+        if not category_totals:
+            return {
+                "answer": f"I could not find any expense categories to compare for {scope_text}.",
+                "follow_up_questions": [],
+                "sources": [self._structured_source("Category spend extremes", "category_spend_extremes", "category-spend-extremes::empty", f"No expense category totals were found for {scope_text}.")],
+                "tools_used": ["category_spend_extremes_lookup"],
+            }
+
+        rounded_totals = {category: round(total, 2) for category, total in category_totals.items()}
+        highest_category, highest_total = max(rounded_totals.items(), key=lambda item: (item[1], item[0]))
+        lowest_category, lowest_total = min(rounded_totals.items(), key=lambda item: (item[1], item[0]))
+        answer = (
+            f"For {scope_text}, your highest-spend category is {highest_category} at {self._format_gbp(highest_total)}. "
+            f"Your lowest-spend category is {lowest_category} at {self._format_gbp(lowest_total)}. "
+            "This uses expense transactions only; income records are excluded."
+        )
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Category spending totals {scope_text}",
+                    "category_spend_extremes",
+                    f"category-spend-extremes::{scope_text}",
+                    "; ".join(f"{category}: {self._format_gbp(total)}" for category, total in sorted(rounded_totals.items())),
+                    {"scope": scope_text},
+                )
+            ],
+            "tools_used": ["category_spend_extremes_lookup"],
+        }
+
+    def _financial_pulse_metric_answer(self, normalized_question: str) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        pulse = self._analytics_service.financial_pulse()
+        metric = self._financial_pulse_metric(normalized_question) or "financial_pulse"
+        month_key = str(dashboard.get("month_key") or "the current month")
+        month_label = str(dashboard.get("month_label") or month_key)
+        definitions = {
+            "average_transaction": {
+                "label": "Average transaction",
+                "value": self._format_gbp(pulse.get("average_transaction")),
+                "meaning": "This is the average size of recorded income and expense transactions counted this month.",
+            },
+            "spend_velocity": {
+                "label": "Spend velocity",
+                "value": f"{self._format_gbp(pulse.get('spend_velocity'))}/day",
+                "meaning": "This is the current daily expense rate for the month so far.",
+            },
+            "income_coverage": {
+                "label": "Income coverage",
+                "value": f"{self._as_float(pulse.get('income_coverage')):.1f}%",
+                "meaning": "This is monthly income divided by monthly expenses. A very high percentage usually means expenses are still low compared with income.",
+            },
+            "top_category_share": {
+                "label": "Top category share",
+                "value": f"{self._as_float(pulse.get('top_category_share')):.1f}%",
+                "meaning": "This is the share of monthly expenses coming from the largest spending category.",
+            },
+            "budget_runway": {
+                "label": "Budget runway",
+                "value": f"{pulse.get('runway_days')} days" if pulse.get("runway_days") is not None else "Stable",
+                "meaning": "This estimates how many days the remaining budget would last at the current daily spend rate.",
+            },
+            "health_score": {
+                "label": "Health score",
+                "value": f"{int(self._as_float(pulse.get('health_score')))} out of 100",
+                "meaning": "This combines budget utilisation, spending concentration, cash flow, and transaction activity into one score.",
+            },
+        }
+        selected = definitions[metric]
+        answer = f"{selected['label']} for {month_label}: {selected['value']}. {selected['meaning']}"
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Financial pulse {month_key}",
+                    "financial_pulse",
+                    f"financial-pulse::{month_key}",
+                    (
+                        f"Average transaction: {self._format_gbp(pulse.get('average_transaction'))}. "
+                        f"Spend velocity: {self._format_gbp(pulse.get('spend_velocity'))}/day. "
+                        f"Income coverage: {self._as_float(pulse.get('income_coverage')):.1f}%. "
+                        f"Top category share: {self._as_float(pulse.get('top_category_share')):.1f}%. "
+                        f"Budget runway: {pulse.get('runway_days')} days. "
+                        f"Health score: {int(self._as_float(pulse.get('health_score')))}."
+                    ),
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["financial_pulse_metric_lookup"],
+        }
+
+    def _kpi_studio_metric_answer(self, normalized_question: str) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        month_key = str(dashboard.get("month_key") or datetime.now().strftime("%Y-%m"))
+        month_label = str(dashboard.get("month_label") or month_key)
+        metric = self._kpi_studio_metric(normalized_question) or "kpi_studio"
+        expenses = [
+            expense
+            for expense in self._expense_service.list_expenses(sort_direction="desc")
+            if str(expense.get("entry_type") or "expense") == "expense"
+            and str(expense.get("date") or "").startswith(month_key)
+        ]
+        monthly_total = self._as_float(dashboard.get("current_month_total") or dashboard.get("monthly_expenses"))
+        today = datetime.now()
+        days_elapsed = max(today.day, 1)
+        days_in_month = (date(today.year + int(today.month == 12), 1 if today.month == 12 else today.month + 1, 1) - timedelta(days=1)).day
+        average_daily_burn = monthly_total / days_elapsed if monthly_total else 0.0
+        month_end_forecast = average_daily_burn * days_in_month
+        category_totals: dict[str, float] = {}
+        for expense in expenses:
+            category = str(expense.get("category") or "Uncategorised")
+            category_totals[category] = category_totals.get(category, 0.0) + self._as_float(expense.get("amount"))
+        top_category, top_amount = max(category_totals.items(), key=lambda item: item[1], default=("No category", 0.0))
+        largest_category_share = (top_amount / monthly_total * 100) if monthly_total else 0.0
+        definitions = {
+            "month_end_forecast": (
+                "Month-end forecast",
+                self._format_gbp(month_end_forecast),
+                f"Calculation: {self._format_gbp(monthly_total)} current-month expenses / {days_elapsed} elapsed days * {days_in_month} days in the month.",
+            ),
+            "largest_category_share": (
+                "Largest category share",
+                f"{largest_category_share:.1f}%",
+                f"{top_category} is the largest current-month category. Calculation: {self._format_gbp(top_amount)} / {self._format_gbp(monthly_total)} * 100.",
+            ),
+            "average_daily_burn": (
+                "Average daily burn",
+                f"{self._format_gbp(average_daily_burn)}/day",
+                f"Calculation: {self._format_gbp(monthly_total)} current-month expenses / {days_elapsed} elapsed days.",
+            ),
+            "current_month_transactions": (
+                "Current-month transactions",
+                str(len(expenses)),
+                "This counts expense transactions dated in the current month.",
+            ),
+        }
+        label, value, meaning = definitions[metric]
+        answer = f"{label} for {month_label}: {value}. {meaning}"
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"KPI studio {month_key}",
+                    "kpi_studio",
+                    f"kpi-studio::{month_key}",
+                    (
+                        f"Month-end forecast: {self._format_gbp(month_end_forecast)}. "
+                        f"Largest category share: {largest_category_share:.1f}%. "
+                        f"Average daily burn: {self._format_gbp(average_daily_burn)}/day. "
+                        f"Current-month transactions: {len(expenses)}."
+                    ),
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["kpi_studio_metric_lookup"],
+        }
+
+    def _comparison_metric_answer(self, normalized_question: str) -> dict:
+        metric = self._comparison_metric(normalized_question) or "comparison"
+        expenses = [
+            expense
+            for expense in self._expense_service.list_expenses(sort_direction="desc")
+            if str(expense.get("entry_type") or "expense") == "expense"
+        ]
+        now = datetime.now()
+        current_month_start = date(now.year, now.month, 1)
+        periods = []
+        for index in range(3, -1, -1):
+            month_start = self._add_months(current_month_start, -index)
+            month_key = month_start.isoformat()[:7]
+            total = sum(self._as_float(expense.get("amount")) for expense in expenses if str(expense.get("date") or "").startswith(month_key))
+            periods.append(
+                {
+                    "key": month_key,
+                    "label": month_start.strftime("%B %Y"),
+                    "total": round(total, 2),
+                }
+            )
+        current = periods[-1]
+        previous = periods[-2] if len(periods) > 1 else None
+        strongest = max(periods, key=lambda item: item["total"]) if periods else {"label": "No data", "total": 0.0}
+        average_spend = sum(item["total"] for item in periods) / len(periods) if periods else 0.0
+        change = None
+        if previous and previous["total"] > 0:
+            change = ((current["total"] - previous["total"]) / previous["total"]) * 100
+        definitions = {
+            "current_period": (
+                "Current period",
+                current["label"],
+                "This is the latest month in the default monthly Comparison Lab window.",
+            ),
+            "average_spend": (
+                "Average spend",
+                self._format_gbp(average_spend),
+                "This is the average expense spend across the four visible monthly comparison periods.",
+            ),
+            "strongest_period": (
+                "Strongest period",
+                f"{strongest['label']} | {self._format_gbp(strongest['total'])}",
+                "This is the visible comparison period with the highest recorded expense spend.",
+            ),
+            "change_vs_previous": (
+                "Change vs previous",
+                "No baseline" if change is None else f"{change:+.1f}%",
+                "This compares the current month with the immediately previous month.",
+            ),
+        }
+        label, value, meaning = definitions[metric]
+        answer = f"{label}: {value}. {meaning}"
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    "Comparison lab default monthly window",
+                    "comparison_lab",
+                    "comparison-lab::monthly-default",
+                    "; ".join(f"{item['label']}: {self._format_gbp(item['total'])}" for item in periods),
+                )
+            ],
+            "tools_used": ["comparison_lab_metric_lookup"],
+        }
+
+    def _financial_status_answer(self) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        pulse = self._analytics_service.financial_pulse()
+        categories = self._analytics_service.category_insights()
+        month_key = str(dashboard.get("month_key") or "the current month")
+        month_label = str(dashboard.get("month_label") or month_key)
+        income = self._format_gbp(dashboard.get("monthly_income") or pulse.get("cash_in"))
+        expenses = self._format_gbp(dashboard.get("current_month_total") or pulse.get("cash_out"))
+        net_cash_flow = self._format_gbp(dashboard.get("net_cash_flow") or pulse.get("net_cash_flow"))
+        remaining_budget = self._format_gbp(dashboard.get("remaining_budget"))
+        health_score = int(self._as_float(pulse.get("health_score")))
+        status = str(dashboard.get("status") or "unknown").strip()
+        narrative = str(pulse.get("narrative") or "").strip()
+        top_categories = categories.get("top_categories") or []
+        top_category = str((top_categories[0] or {}).get("category") or "").strip() if top_categories else ""
+
+        answer_parts = [
+            f"Your financial status looks {status} for {month_label}, with a health score of {health_score}/100.",
+            f"The key numbers are: income {income}, actual monthly expenses {expenses}, net cash flow {net_cash_flow}, and remaining budget {remaining_budget}.",
+        ]
+        if top_category:
+            answer_parts.append(f"Right now, {top_category} is where spending is most concentrated.")
+        if narrative:
+            answer_parts.append(narrative)
+        answer_parts.append("One thing to note: planned expenses are separate from actual monthly expenses. This status is based on what is currently recorded in your dashboard.")
+        return {
+            "answer": " ".join(answer_parts),
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Dashboard financial status {month_key}",
+                    "dashboard",
+                    f"dashboard::{month_key}",
+                    f"Status: {status}. Income: {income}. Expenses: {expenses}. Net cash flow: {net_cash_flow}. Remaining budget: {remaining_budget}.",
+                    {"month_key": month_key},
+                ),
+                self._structured_source(
+                    f"Financial pulse {month_key}",
+                    "financial_pulse",
+                    f"financial-pulse::{month_key}",
+                    f"Health score: {health_score}/100. Narrative: {narrative or 'none'}.",
+                    {"month_key": month_key},
+                ),
+            ],
+            "tools_used": ["dashboard_financial_status_lookup"],
+        }
+
+    def _remaining_budget_answer(self) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        month_key = str(dashboard.get("month_key") or "the current month")
+        month_label = str(dashboard.get("month_label") or month_key)
+        monthly_budget = self._as_float(dashboard.get("monthly_budget"))
+        expenses = self._as_float(dashboard.get("current_month_total") or dashboard.get("monthly_expenses"))
+        remaining_budget = monthly_budget - expenses
+        status = str(dashboard.get("status") or "").strip()
+        budget_text = self._format_gbp(monthly_budget)
+        expenses_text = self._format_gbp(expenses)
+        remaining_text = self._format_gbp(remaining_budget)
+        answer = (
+            f"Your remaining budget for {month_label} is {remaining_text}. "
+            f"Calculation: {budget_text} monthly budget - {expenses_text} monthly expenses = {remaining_text}. "
+            "This is different from net cash flow, which is monthly income minus monthly expenses."
+        )
+        if status:
+            answer += f" Budget status: {status}."
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Dashboard remaining budget {month_key}",
+                    "dashboard",
+                    f"dashboard::{month_key}",
+                    f"Remaining budget: {remaining_text}. Monthly budget: {budget_text}. Monthly expenses: {expenses_text}.",
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["dashboard_remaining_budget_lookup"],
+        }
+
+    def _budget_consumption_answer(self) -> dict:
+        dashboard = self._analytics_service.dashboard()
+        month_key = str(dashboard.get("month_key") or "the current month")
+        month_label = str(dashboard.get("month_label") or month_key)
+        monthly_budget = self._as_float(dashboard.get("monthly_budget"))
+        expenses = self._as_float(dashboard.get("current_month_total") or dashboard.get("monthly_expenses"))
+        percent_spent = self._as_float(dashboard.get("percent_spent"))
+        if monthly_budget > 0 and "percent_spent" not in dashboard:
+            percent_spent = (expenses / monthly_budget) * 100
+        elif monthly_budget > 0:
+            percent_spent = (expenses / monthly_budget) * 100
+
+        budget_text = self._format_gbp(monthly_budget)
+        expenses_text = self._format_gbp(expenses)
+        percentage_text = f"{percent_spent:.2f}%"
+        if monthly_budget <= 0:
+            answer = "Budget consumption cannot be calculated because the monthly budget is GBP 0.00."
+        else:
+            answer = (
+                f"Your budget consumption for {month_label} is {percentage_text}. "
+                f"Calculation: {expenses_text} expenses / {budget_text} monthly budget * 100 = {percentage_text}."
+            )
+        return {
+            "answer": answer,
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Dashboard budget consumption {month_key}",
+                    "dashboard",
+                    f"dashboard::{month_key}",
+                    f"Budget consumption: {percentage_text}. Expenses: {expenses_text}. Monthly budget: {budget_text}.",
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["dashboard_budget_consumption_lookup"],
+        }
 
     def _latest_expense_answer(self) -> dict | None:
         expenses = [
@@ -295,6 +967,64 @@ class RagService:
             "follow_up_questions": ["Do you want the largest expenses for the same month?"],
             "sources": [self._structured_source(f"Transaction #{latest.get('id')}", "expense", f"expense::{latest.get('id')}", excerpt, {"date": latest.get("date"), "category": latest.get("category"), "entry_type": "expense"})],
             "tools_used": ["find_latest_expense"],
+        }
+
+    def _next_payment_due_answer(self) -> dict:
+        calendar = self._recurring_service.upcoming_calendar(90)
+        reminders = [
+            item
+            for item in calendar.get("occurrences", [])
+            if item.get("entry_type") == "expense" and self._parse_date(item.get("date")) is not None
+        ]
+        if not reminders:
+            return {
+                "answer": "I could not find any upcoming expense payments in the structured recurring calendar.",
+                "follow_up_questions": ["Do you want to add a recurring payment reminder?"],
+                "sources": [self._structured_source("Recurring calendar", "recurring_occurrence_search", "recurring-occurrence-search::next-payment", "No upcoming expense payment occurrences were found.")],
+                "tools_used": ["find_next_payment_due"],
+            }
+
+        next_due_date = min(str(item.get("date") or "") for item in reminders)
+        next_items = sorted(
+            [item for item in reminders if str(item.get("date") or "") == next_due_date],
+            key=lambda item: str(item.get("description") or ""),
+        )
+        first = next_items[0]
+        cost = self._format_gbp(first.get("amount"))
+        answer = (
+            f"The next payment due is on {next_due_date} for {first.get('description')}. "
+            f"Category: {first.get('category')}. Cost: {cost}."
+        )
+        if len(next_items) > 1:
+            other_descriptions = ", ".join(str(item.get("description") or "Unnamed payment") for item in next_items[1:])
+            answer += f" Other payments are also due on that date: {other_descriptions}."
+
+        sources = []
+        for item in next_items:
+            item_cost = self._format_gbp(item.get("amount"))
+            sources.append(
+                self._structured_source(
+                    f"Recurring due {item.get('date')}: {item.get('description')}",
+                    "recurring_occurrence",
+                    f"recurring-occurrence::{item.get('recurring_item_id')}::{item.get('date')}",
+                    (
+                        f"Recurring bill occurrence due on {item.get('date')}. "
+                        f"Description {item.get('description')}. Category {item.get('category')}. "
+                        f"Cost: {item_cost}. Entry type expense. Frequency {item.get('frequency')}."
+                    ),
+                    {
+                        "date": item.get("date"),
+                        "category": item.get("category"),
+                        "entry_type": item.get("entry_type"),
+                        "description": item.get("description"),
+                    },
+                )
+            )
+        return {
+            "answer": answer,
+            "follow_up_questions": ["Do you want to see all payments due today plus the next 7 days?"],
+            "sources": sources,
+            "tools_used": ["find_next_payment_due"],
         }
 
     def _recurring_reminder_answer(self, normalized_question: str) -> dict | None:
@@ -348,6 +1078,65 @@ class RagService:
             "follow_up_questions": ["Which reminders are due next week?"],
             "sources": sources,
             "tools_used": tools_used,
+        }
+
+    def _late_reminder_answer(self) -> dict:
+        calendar = self._recurring_service.upcoming_calendar(35)
+        reminders = [
+            item
+            for item in calendar.get("late_occurrences", [])
+            if item.get("entry_type") == "expense"
+        ]
+        if not reminders:
+            return {
+                "answer": "You do not have any late reminders in the current month.",
+                "follow_up_questions": [],
+                "sources": [
+                    self._structured_source(
+                        "Late reminders",
+                        "recurring_late_search",
+                        "recurring-late-search::none",
+                        "No unpaid expense reminders are past their due date in the current month.",
+                    )
+                ],
+                "tools_used": ["get_late_recurring_reminders"],
+            }
+
+        sorted_reminders = sorted(
+            reminders,
+            key=lambda value: (
+                str(value.get("date") or ""),
+                str(value.get("description") or ""),
+                str(value.get("recurring_item_id") or value.get("id") or ""),
+            ),
+        )
+        plural = "" if len(sorted_reminders) == 1 else "s"
+        lines = [f"You currently have {len(sorted_reminders)} late reminder{plural}:"]
+        sources = []
+        for item in sorted_reminders:
+            due_date = item.get("date")
+            description = item.get("description") or "Recurring reminder"
+            cost = self._format_gbp(item.get("amount"))
+            lines.append(f"- {description}: {cost} due {due_date}.")
+            sources.append(
+                self._structured_source(
+                    str(description),
+                    "recurring_late_occurrence",
+                    f"recurring-late-occurrence::{item.get('recurring_item_id') or item.get('id')}::{due_date}",
+                    f"{description}: late unpaid reminder. Category {item.get('category')}. Due date {due_date}. Cost: {cost}.",
+                    {
+                        "category": item.get("category"),
+                        "date": due_date,
+                        "entry_type": item.get("entry_type"),
+                        "status": "late",
+                    },
+                )
+            )
+        return {
+            "answer": "\n".join(lines),
+            "follow_up_questions": [],
+            "sources": sources,
+            "tools_used": ["get_late_recurring_reminders"],
         }
 
     def _spending_total_answer(self, question: str) -> dict | None:
@@ -405,8 +1194,109 @@ class RagService:
         return any(term in question for term in ("recurring reminder", "recurring reminders", "subscriptions", "subscription", "upcoming reminders"))
 
     @staticmethod
+    def _is_late_reminder_question(question: str) -> bool:
+        return any(
+            term in question
+            for term in (
+                "late reminder",
+                "late reminders",
+                "overdue reminder",
+                "overdue reminders",
+                "past due reminder",
+                "past-due reminder",
+                "unpaid reminders past",
+            )
+        )
+
+    @staticmethod
+    def _is_next_payment_due_question(question: str) -> bool:
+        return (
+            any(term in question for term in ("next payment", "next bill", "next recurring", "next subscription"))
+            or ("payment" in question and "due" in question and "next" in question)
+            or ("bill" in question and "due" in question and "next" in question)
+        )
+
+    @staticmethod
     def _is_spending_total_question(question: str) -> bool:
         return any(term in question for term in ("how much", "total", "spent", "spend")) and not RagService._is_recurring_reminder_question(question)
+
+    @staticmethod
+    def _is_cash_flow_question(question: str) -> bool:
+        return "cashflow" in question or "cash flow" in question or ("cash" in question and "flow" in question)
+
+    @staticmethod
+    def _financial_pulse_metric(question: str) -> str | None:
+        if "average transaction" in question or "avg transaction" in question:
+            return "average_transaction"
+        if "spend velocity" in question or "spending velocity" in question:
+            return "spend_velocity"
+        if "income coverage" in question:
+            return "income_coverage"
+        if "top category share" in question or "category share" in question:
+            return "top_category_share"
+        if "budget runway" in question or "runway" in question:
+            return "budget_runway"
+        if "health score" in question:
+            return "health_score"
+        return None
+
+    @staticmethod
+    def _kpi_studio_metric(question: str) -> str | None:
+        if "month-end forecast" in question or "month end forecast" in question or "forecast" in question:
+            return "month_end_forecast"
+        if "largest category share" in question:
+            return "largest_category_share"
+        if "average daily burn" in question or "daily burn" in question:
+            return "average_daily_burn"
+        if "current-month transactions" in question or "current month transactions" in question:
+            return "current_month_transactions"
+        return None
+
+    @staticmethod
+    def _comparison_metric(question: str) -> str | None:
+        if "current period" in question:
+            return "current_period"
+        if "average spend" in question:
+            return "average_spend"
+        if "strongest period" in question:
+            return "strongest_period"
+        if "change vs previous" in question or "change versus previous" in question:
+            return "change_vs_previous"
+        return None
+
+    @staticmethod
+    def _is_financial_status_question(question: str) -> bool:
+        return (
+            "financial status" in question
+            or "finance status" in question
+            or "financial health" in question
+            or "how am i doing financially" in question
+            or ("how" in question and "financially" in question)
+        )
+
+    @staticmethod
+    def _is_remaining_budget_question(question: str) -> bool:
+        return (
+            "remaining budget" in question
+            or "budget remaining" in question
+            or "left in my budget" in question
+            or "budget left" in question
+        )
+
+    @staticmethod
+    def _is_budget_consumption_question(question: str) -> bool:
+        return (
+            "budget consumption" in question
+            or "budget utilisation" in question
+            or "budget utilization" in question
+            or "percent spent" in question
+            or "percentage spent" in question
+            or ("budget" in question and "percentage" in question)
+        )
+
+    @staticmethod
+    def _is_monthly_income_question(question: str) -> bool:
+        return "income" in question and not any(term in question for term in ("expense", "spend", "spent", "cost", "payment", "bill"))
 
     @staticmethod
     def _matching_category(question: str, expenses: list[dict]) -> str | None:
@@ -424,6 +1314,67 @@ class RagService:
         except (TypeError, ValueError):
             amount = 0.0
         return f"GBP {amount:.2f}"
+
+    @staticmethod
+    def _as_float(value: object) -> float:
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _contains_any(value: str, *needles: str) -> bool:
+        return any(needle in value for needle in needles)
+
+    @staticmethod
+    def _month_label(month_key: str) -> str:
+        try:
+            return datetime.strptime(f"{month_key}-01", "%Y-%m-%d").strftime("%B %Y")
+        except (TypeError, ValueError):
+            return str(month_key)
+
+    @classmethod
+    def _scope_label(cls, scope: dict) -> str:
+        start_month = str(scope.get("start_month") or "")
+        end_month = str(scope.get("end_month") or start_month)
+        if start_month == end_month:
+            return cls._month_label(end_month)
+        return f"{cls._month_label(start_month)} through {cls._month_label(end_month)}"
+
+    def _dashboard_monthly_expenses(self, dashboard: dict) -> float:
+        if dashboard.get("current_month_total") is not None:
+            return self._as_float(dashboard.get("current_month_total"))
+        return self._as_float(dashboard.get("monthly_expenses"))
+
+    def _previous_piggy_bank_carryover(self, current_month_key: str) -> float:
+        monthly_expenses: dict[str, float] = {}
+        for item in self._expense_service.list_expenses(sort_direction="desc"):
+            month_key = str(item.get("date") or "")[:7]
+            if not month_key or month_key >= current_month_key:
+                continue
+            amount = self._as_float(item.get("amount"))
+            if str(item.get("entry_type") or "expense") == "expense":
+                monthly_expenses[month_key] = monthly_expenses.get(month_key, 0.0) + amount
+
+        income_records = self._settings_service.list_monthly_income_records(current_month_key)
+        monthly_income = {
+            str(item.get("month_key")): self._as_float(item.get("monthly_income"))
+            for item in income_records
+            if str(item.get("month_key") or "") < current_month_key
+        }
+
+        carryover = 0.0
+        for month_key in sorted(set(monthly_income) | set(monthly_expenses)):
+            month_cash_flow = monthly_income.get(month_key, 0.0) - monthly_expenses.get(month_key, 0.0)
+            carryover = max(carryover + month_cash_flow, 0.0)
+        return carryover
+
+    @staticmethod
+    def _add_months(value: date, month_count: int) -> date:
+        month_index = value.month - 1 + month_count
+        year = value.year + month_index // 12
+        month = month_index % 12 + 1
+        return date(year, month, 1)
 
     @staticmethod
     def _structured_source(source_label: str, doc_type: str, document_id: str, excerpt: str, metadata: dict | None = None) -> dict:
@@ -1004,15 +1955,10 @@ class RagService:
         confidence = str(parsed.get("confidence") or "medium").strip().lower()
         if confidence not in {"low", "medium", "high"}:
             confidence = "medium"
-        follow_up_questions = [
-            str(item).strip()
-            for item in parsed.get("follow_up_questions", [])
-            if str(item).strip()
-        ]
         return {
             "answer": answer,
             "confidence": confidence,
-            "follow_up_questions": follow_up_questions,
+            "follow_up_questions": [],
         }
 
     @staticmethod
@@ -1063,7 +2009,7 @@ class RagService:
         if not hasattr(chromadb, "PersistentClient"):
             raise ServiceUnavailableError(
                 "The installed Chroma package is the HTTP-only client. "
-                "Set CHROMA_HTTP_HOST and run a Chroma server, or install the full chromadb package for embedded local storage."
+                "Set CHROMA_HTTP_HOST and run a Chroma server, or install the full chromadb package for embedded storage."
             )
         return chromadb.PersistentClient(path=str(path))
 

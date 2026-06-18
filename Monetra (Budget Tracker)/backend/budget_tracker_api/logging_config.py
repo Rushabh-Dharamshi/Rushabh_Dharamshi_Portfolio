@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -7,6 +8,8 @@ from time import perf_counter
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Flask, g, request
+
+from budget_tracker_api.security import current_authenticated_user, current_authenticated_user_id
 
 
 class TimezoneFormatter(logging.Formatter):
@@ -64,8 +67,10 @@ def register_request_logging(app: Flask) -> None:
     @app.before_request
     def start_request_timer():
         g.request_started_at = perf_counter()
+        g.request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         app.logger.info(
-            "Request started | method=%s path=%s remote=%s",
+            "Request started | request_id=%s method=%s path=%s remote=%s",
+            g.request_id,
             request.method,
             request.path,
             request.remote_addr,
@@ -76,8 +81,26 @@ def register_request_logging(app: Flask) -> None:
         started_at = getattr(g, "request_started_at", None)
         duration_seconds = 0.0 if started_at is None else perf_counter() - started_at
         duration_ms = duration_seconds * 1000
+        request_id = getattr(g, "request_id", str(uuid.uuid4()))
+        latency_service = app.extensions.get("services", {}).get("latency_service")
+        if latency_service is not None and request.path != "/api/observability/client-failure":
+            try:
+                latency_service.record(
+                    request_id=request_id,
+                    method=request.method,
+                    path=request.path,
+                    status_code=response.status_code,
+                    duration_ms=duration_ms,
+                    user_id=current_authenticated_user_id(),
+                    username=current_authenticated_user(),
+                )
+            except Exception:
+                app.logger.exception("Latency record persistence failed | request_id=%s", request_id)
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Response-Time-ms"] = f"{duration_ms:.1f}"
         app.logger.info(
-            "Request completed | method=%s path=%s status=%s duration_seconds=%.3f duration_ms=%.1f",
+            "Request completed | request_id=%s method=%s path=%s status=%s duration_seconds=%.3f duration_ms=%.1f",
+            request_id,
             request.method,
             request.path,
             response.status_code,

@@ -8,15 +8,21 @@ from budget_tracker_api.db import recurring_items_table, recurring_occurrence_st
 
 
 class RecurringRepository:
-    def __init__(self, connection_factory: Callable[[], Connection]):
+    def __init__(self, connection_factory: Callable[[], Connection], user_id_provider: Callable[[], int] | None = None):
         self._connection_factory = connection_factory
+        self._user_id_provider = user_id_provider or (lambda: 1)
 
     def _db(self) -> Connection:
         return self._connection_factory()
 
+    def _user_id(self) -> int:
+        return int(self._user_id_provider() or 1)
+
     def list_items(self) -> list[dict]:
         rows = self._db().execute(
-            select(recurring_items_table).order_by(
+            select(recurring_items_table).where(
+                recurring_items_table.c.user_id == self._user_id()
+            ).order_by(
                 recurring_items_table.c.active.desc(),
                 recurring_items_table.c.start_date.asc(),
                 recurring_items_table.c.id.asc(),
@@ -26,14 +32,17 @@ class RecurringRepository:
 
     def get_item(self, item_id: int) -> dict | None:
         row = self._db().execute(
-            select(recurring_items_table).where(recurring_items_table.c.id == item_id)
+            select(recurring_items_table).where(
+                recurring_items_table.c.id == item_id,
+                recurring_items_table.c.user_id == self._user_id(),
+            )
         ).mappings().first()
         return self._row_to_dict(row) if row else None
 
     def create_item(self, payload: dict) -> dict:
         db = self._db()
         result = db.execute(
-            insert(recurring_items_table).values(**self._coerce_payload(payload))
+            insert(recurring_items_table).values(**self._coerce_payload(payload), user_id=self._user_id())
         )
         db.commit()
         return self.get_item(int(result.inserted_primary_key[0]))
@@ -42,7 +51,7 @@ class RecurringRepository:
         db = self._db()
         result = db.execute(
             update(recurring_items_table)
-            .where(recurring_items_table.c.id == item_id)
+            .where(recurring_items_table.c.id == item_id, recurring_items_table.c.user_id == self._user_id())
             .values(**self._coerce_payload(payload))
         )
         db.commit()
@@ -54,11 +63,15 @@ class RecurringRepository:
         db = self._db()
         db.execute(
             delete(recurring_occurrence_status_table).where(
-                recurring_occurrence_status_table.c.recurring_item_id == item_id
+                recurring_occurrence_status_table.c.recurring_item_id == item_id,
+                recurring_occurrence_status_table.c.user_id == self._user_id(),
             )
         )
         result = db.execute(
-            delete(recurring_items_table).where(recurring_items_table.c.id == item_id)
+            delete(recurring_items_table).where(
+                recurring_items_table.c.id == item_id,
+                recurring_items_table.c.user_id == self._user_id(),
+            )
         )
         db.commit()
         return result.rowcount > 0
@@ -69,6 +82,7 @@ class RecurringRepository:
                 recurring_occurrence_status_table.c.recurring_item_id,
                 recurring_occurrence_status_table.c.occurrence_date,
             ).where(
+                recurring_occurrence_status_table.c.user_id == self._user_id(),
                 recurring_occurrence_status_table.c.occurrence_date >= self._parse_date(window_start),
                 recurring_occurrence_status_table.c.occurrence_date <= self._parse_date(window_end),
                 recurring_occurrence_status_table.c.is_paid.is_(True),
@@ -82,6 +96,7 @@ class RecurringRepository:
     def paid_occurrence_entries_for_range(self, window_start: str, window_end: str) -> list[dict]:
         rows = self._db().execute(
             select(recurring_occurrence_status_table).where(
+                recurring_occurrence_status_table.c.user_id == self._user_id(),
                 recurring_occurrence_status_table.c.occurrence_date >= self._parse_date(window_start),
                 recurring_occurrence_status_table.c.occurrence_date <= self._parse_date(window_end),
                 recurring_occurrence_status_table.c.is_paid.is_(True),
@@ -92,6 +107,7 @@ class RecurringRepository:
     def get_paid_occurrence_by_transaction_id(self, transaction_id: int) -> dict | None:
         row = self._db().execute(
             select(recurring_occurrence_status_table).where(
+                recurring_occurrence_status_table.c.user_id == self._user_id(),
                 recurring_occurrence_status_table.c.transaction_id == transaction_id,
                 recurring_occurrence_status_table.c.is_paid.is_(True),
             )
@@ -116,6 +132,7 @@ class RecurringRepository:
         timestamp = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         existing = db.execute(
             select(recurring_occurrence_status_table).where(
+                recurring_occurrence_status_table.c.user_id == self._user_id(),
                 recurring_occurrence_status_table.c.recurring_item_id == item_id,
                 recurring_occurrence_status_table.c.occurrence_date == parsed_date,
             )
@@ -136,6 +153,7 @@ class RecurringRepository:
         else:
             db.execute(
                 insert(recurring_occurrence_status_table).values(
+                    user_id=self._user_id(),
                     recurring_item_id=item_id,
                     occurrence_date=parsed_date,
                     **values,

@@ -31,12 +31,12 @@ test("can select a recurring item and update it", async ({ page }) => {
   await expect(page.getByText("Recurring item #1 updated successfully.")).toBeVisible();
 });
 
-test("can run the local finance agent", async ({ page }) => {
+test("can run the finance agent", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Run local agent" }).click();
+  await page.getByRole("button", { name: "Run agent" }).click();
 
-  await expect(page.getByText("Local finance briefing")).toBeVisible();
+  await expect(page.getByText("Finance briefing")).toBeVisible();
   await expect(page.getByText("Email draft")).toBeVisible();
   await expect(page.getByText(/AI briefing generated with 2 tool calls/)).toBeVisible();
 });

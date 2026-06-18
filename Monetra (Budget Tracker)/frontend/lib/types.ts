@@ -1,6 +1,70 @@
 export interface AuthSessionResponse {
   authenticated: boolean;
+  user_id?: number | null;
   username: string | null;
+  email?: string | null;
+  registered_user_count?: number;
+}
+
+export interface MockEmailMessage {
+  id: number;
+  recipient: string;
+  subject: string;
+  sender: string;
+  body: string;
+  status: "simulated";
+  has_attachment: boolean;
+  attachment_name?: string | null;
+  attachment_url?: string | null;
+  created_at: string;
+}
+
+export interface MockEmailInboxResponse {
+  recipient: string;
+  messages: MockEmailMessage[];
+}
+
+export interface LatencyRecord {
+  request_id: string;
+  timestamp: string;
+  method: string;
+  path: string;
+  status_code: number;
+  duration_ms: number;
+  user_id?: number | null;
+  username?: string | null;
+  ok: boolean;
+}
+
+export interface LatencyEndpointSummary {
+  method: string;
+  path: string;
+  request_count: number;
+  failed_count: number;
+  average_ms: number;
+  maximum_ms: number;
+}
+
+export interface LatencyReportResponse {
+  scope: "current_user" | "anonymous";
+  record_count: number;
+  failed_count: number;
+  summary: {
+    average_ms: number;
+    minimum_ms: number;
+    maximum_ms: number;
+    p95_ms: number;
+  };
+  by_endpoint: LatencyEndpointSummary[];
+  latest_failures?: LatencyRecord[];
+  latest: LatencyRecord[];
+}
+
+export interface ClientFailurePayload {
+  operation: string;
+  error?: string;
+  duration_ms?: number;
+  request_id?: string;
 }
 
 export interface Expense {
@@ -22,6 +86,7 @@ export interface ExpensePayload {
 
 export interface DashboardSummary {
   monthly_budget: number;
+  budget_month?: string;
   current_month_total: number;
   monthly_expenses: number;
   monthly_income: number;
@@ -98,8 +163,32 @@ export interface FormState {
 
 export interface SettingsResponse {
   monthly_budget: number;
+  budget_month?: string;
   monthly_income: number;
   income_month?: string;
+}
+
+export interface MonthlyIncomeRecord {
+  month_key: string;
+  monthly_income: number;
+}
+
+export interface SavingsGoal {
+  id: number;
+  name: string;
+  target_amount: number;
+  current_amount: number;
+  remaining_amount: number;
+  progress_percent: number;
+  target_date: string | null;
+  created_at: string;
+}
+
+export interface SavingsGoalPayload {
+  name: string;
+  target_amount: number | string;
+  current_amount: number | string;
+  target_date?: string | null;
 }
 
 export interface RecurringItem {
@@ -132,6 +221,7 @@ export interface RecurringCalendarResponse {
   window_start: string;
   window_end: string;
   occurrences: RecurringCalendarOccurrence[];
+  late_occurrences?: RecurringCalendarOccurrence[];
   completed_occurrences: RecurringCalendarOccurrence[];
 }
 

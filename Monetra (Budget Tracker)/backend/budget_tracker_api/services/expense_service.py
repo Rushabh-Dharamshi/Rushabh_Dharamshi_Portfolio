@@ -11,11 +11,16 @@ class ExpenseService:
     def __init__(self, repository: ExpenseRepository):
         self._repository = repository
 
-    def list_expenses(self, sort_direction: str = "desc") -> list[dict]:
-        return [
+    def list_expenses(
+        self,
+        sort_direction: str = "desc",
+        filters: dict | None = None,
+    ) -> list[dict]:
+        expenses = [
             expense.to_dict()
             for expense in self._repository.list_expenses(sort_direction, entry_type="expense")
         ]
+        return self._apply_filters(expenses, filters or {})
 
     def get_expense(self, expense_id: int) -> dict:
         expense = self._repository.get_expense(expense_id)
@@ -130,6 +135,34 @@ class ExpenseService:
             "amount": amount,
             "entry_type": "expense",
         }
+
+    def _apply_filters(self, expenses: list[dict], filters: dict) -> list[dict]:
+        category = str(filters.get("category") or "").strip().lower()
+        query = str(filters.get("q") or "").strip().lower()
+        start_date = str(filters.get("start_date") or "").strip()
+        end_date = str(filters.get("end_date") or "").strip()
+
+        for label, raw_date in (("start_date", start_date), ("end_date", end_date)):
+            if raw_date:
+                try:
+                    datetime.strptime(raw_date, "%Y-%m-%d")
+                except ValueError as exc:
+                    raise ValidationError(f"{label} must use YYYY-MM-DD format.") from exc
+
+        filtered = expenses
+        if category:
+            filtered = [expense for expense in filtered if expense["category"].strip().lower() == category]
+        if start_date:
+            filtered = [expense for expense in filtered if expense["date"] >= start_date]
+        if end_date:
+            filtered = [expense for expense in filtered if expense["date"] <= end_date]
+        if query:
+            filtered = [
+                expense
+                for expense in filtered
+                if query in expense["description"].lower() or query in expense["category"].lower()
+            ]
+        return filtered
 
     @staticmethod
     def _normalize_header(header: str | None) -> str:

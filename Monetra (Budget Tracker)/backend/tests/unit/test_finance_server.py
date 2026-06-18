@@ -29,15 +29,15 @@ class StubPredictionService:
 
 class StubSettingsService:
     def update_monthly_budget(self, payload):
-        return {"monthly_budget": float(payload["monthly_budget"])}
+        return {"monthly_budget": float(payload["monthly_budget"]), "budget_month": payload.get("month") or "2026-06"}
 
     def update_monthly_income(self, payload):
         return {"monthly_income": float(payload["monthly_income"]), "income_month": payload.get("month")}
 
-    def get_monthly_income(self):
+    def get_monthly_income(self, month_key=None):
         return 1500.0
 
-    def get_monthly_budget(self):
+    def get_monthly_budget(self, month_key=None):
         return 1050.0
 
 
@@ -296,4 +296,3 @@ def test_finance_server_empty_text_match_and_create_recurring_branch(finance_ser
     assert created["headline"] == "Recurring reminder created"
     assert created["action_result"]["type"] == "recurring_item_created"
     assert created["action_result"]["recurring_item"]["description"] == "Car cover"
-

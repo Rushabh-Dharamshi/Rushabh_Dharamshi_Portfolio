@@ -78,7 +78,7 @@ def test_agent_service_job_entrypoints_and_reuse(app, monkeypatch):
 def test_agent_service_run_finance_briefing_branches(monkeypatch):
     manual_service = build_service(StubOllamaClient())
     monkeypatch.setattr(manual_service, "_looks_like_manual_action_command", lambda task: True)
-    monkeypatch.setattr(manual_service, "_run_manual_action_command", lambda task: {"headline": "manual"})
+    monkeypatch.setattr(manual_service, "_run_manual_action_command", lambda task, recipient=None: {"headline": "manual"})
     assert manual_service.run_finance_briefing({"task": "set my budget"})["headline"] == "manual"
 
     context_service = build_service(StubOllamaClient())

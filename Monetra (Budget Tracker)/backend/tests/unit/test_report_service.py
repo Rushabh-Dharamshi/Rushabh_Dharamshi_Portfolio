@@ -66,7 +66,7 @@ class StubReportRepository:
 
 
 def test_build_context_returns_rich_metrics(tmp_path: Path):
-    service = ReportService(StubReportRepository(), lambda: 1050.0, lambda _month=None: 1500.0, tmp_path)
+    service = ReportService(StubReportRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0, tmp_path)
 
     context = service._build_context(datetime.now())
 
@@ -78,16 +78,29 @@ def test_build_context_returns_rich_metrics(tmp_path: Path):
     assert context.category_rows[0]["category"] == "Food"
     assert context.insights
     assert context.recommendations
+    assert service._resolve_report_date("2026-05", datetime(2026, 6, 18)).strftime("%Y-%m") == "2026-05"
 
 
 def test_generate_monthly_report_creates_detailed_pdf(tmp_path: Path):
-    service = ReportService(StubReportRepository(), lambda: 1050.0, lambda _month=None: 1500.0, tmp_path)
+    service = ReportService(StubReportRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0, tmp_path)
 
     pdf_path = service.generate_monthly_report()
 
     assert pdf_path.exists()
     assert pdf_path.suffix == ".pdf"
     assert pdf_path.stat().st_size > 5000
+
+
+def test_kpi_snapshot_uses_explained_table_layout(tmp_path: Path):
+    service = ReportService(StubReportRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0, tmp_path)
+    context = service._build_context(datetime.now())
+
+    table = service._build_kpi_table(context)
+
+    assert len(table._cellvalues[0]) == 3
+    assert len(table._cellvalues) == 13
+    assert "Previous net cash flow" in table._cellvalues[-1][0].getPlainText()
+    assert "comparison baseline" in table._cellvalues[-1][2].getPlainText()
 
 
 def test_report_helpers_cover_empty_and_over_budget_paths(tmp_path: Path):
@@ -113,12 +126,12 @@ def test_report_helpers_cover_empty_and_over_budget_paths(tmp_path: Path):
         def monthly_cash_flow(self):
             return []
 
-    service = ReportService(EmptyRepository(), lambda: 200.0, lambda _month=None: 500.0, tmp_path)
+    service = ReportService(EmptyRepository(), lambda _month=None: 200.0, lambda _month=None: 500.0, tmp_path)
     context = service._build_context(datetime.now())
 
     assert service._create_category_comparison_chart(context) is None
     assert service._create_daily_spending_chart(context) is None
     assert service._create_monthly_trend_chart(context) is None
     assert service._create_cash_flow_chart(context) is None
-    assert service._build_recommendations(remaining_budget=-20.0, projected_month_end_spend=250.0, net_cash_flow=-15.0, largest_transaction=None, top_category=None, top_category_share=0.0)[0].startswith("Introduce a short-term spending hold")
+    assert service._build_recommendations(remaining_budget=-20.0, projected_month_end_spend=250.0, monthly_budget=200.0, net_cash_flow=-15.0, largest_transaction=None, top_category=None, top_category_share=0.0)[0].startswith("Introduce a short-term spending hold")
 

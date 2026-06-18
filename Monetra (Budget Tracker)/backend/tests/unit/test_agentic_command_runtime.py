@@ -87,3 +87,35 @@ def test_agentic_command_runtime_replans_once_after_tool_error():
     assert result["headline"] == "Monthly income updated"
     assert result["tools_used"] == ["set_monthly_income"]
     assert len(runtime._llm.prompts) == 3
+
+
+def test_agentic_command_runtime_accepts_list_shaped_plan_steps():
+    runtime = AgenticCommandRuntime(
+        model_name="mistral:latest",
+        base_url=None,
+        mcp_server=FinanceMcpServer(
+            {
+                "set_monthly_budget": lambda arguments: {
+                    "headline": "Monthly budget updated",
+                    "summary": "Monthly budget is now GBP 1600.00.",
+                    "action_result": {
+                        "type": "monthly_budget_updated",
+                        "message": "Monthly budget updated successfully.",
+                        "payload": {"monthly_budget": 1600.0},
+                    },
+                }
+            }
+        ),
+        memory_service=AgentMemoryService(None),
+    )
+    runtime._llm = FakePlanningLlm(
+        [
+            '{"intent":"update budget","steps":[["set_monthly_budget",{"monthly_budget":1600},"Apply the requested budget."]],"success_criteria":["Budget updated"]}',
+            '{"headline":"Monthly budget updated","summary":"Monthly budget is now GBP 1600.00.","risk_level":"low","recommended_actions":["Review the dashboard totals."],"email_subject":"Monthly budget updated","email_draft":"Monthly budget updated to GBP 1600.00."}',
+        ]
+    )
+
+    result = runtime.run("Set my monthly budget to 1600 pounds.")
+
+    assert result["headline"] == "Monthly budget updated"
+    assert result["tools_used"] == ["set_monthly_budget"]

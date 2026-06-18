@@ -10,10 +10,12 @@ interface InsightsPanelProps {
 
 function CategoryBars({
   title,
+  subtitle,
   items,
   tone,
 }: {
   title: string;
+  subtitle: string;
   items: { category: string; amount: number }[];
   tone: "positive" | "warning";
 }) {
@@ -22,7 +24,10 @@ function CategoryBars({
   return (
     <div className="insight-card">
       <div className="card-header">
-        <h3>{title}</h3>
+        <div>
+          <h3>{title}</h3>
+          <span className="muted">{subtitle}</span>
+        </div>
       </div>
       <div className="bar-list">
         {items.length === 0 ? <p className="muted">No category data for this month.</p> : null}
@@ -66,11 +71,13 @@ export function InsightsPanel({ categories, wordCloud }: InsightsPanelProps) {
       <div className="insights-grid">
         <CategoryBars
           title="Top categories"
+          subtitle="Highest spend first"
           items={categories?.top_categories ?? []}
           tone="positive"
         />
         <CategoryBars
           title="Bottom categories"
+          subtitle="Lowest spend first"
           items={categories?.bottom_categories ?? []}
           tone="warning"
         />

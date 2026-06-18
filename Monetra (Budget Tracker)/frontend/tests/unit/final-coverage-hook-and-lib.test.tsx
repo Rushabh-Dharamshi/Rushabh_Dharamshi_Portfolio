@@ -12,11 +12,14 @@ const mockApiClient = {
   exportExpenses: jest.fn(),
   downloadMonthlyReport: jest.fn(),
   getSettings: jest.fn(),
+  listMonthlyIncomeRecords: jest.fn(),
   getDashboard: jest.fn(),
   getCategoryInsights: jest.fn(),
   getWordCloud: jest.fn(),
   getFinancialPulse: jest.fn(),
   getPrediction: jest.fn(),
+  getLatencyReport: jest.fn(),
+  recordClientFailure: jest.fn(),
   getRagStatus: jest.fn(),
   reindexRag: jest.fn(),
   queryRag: jest.fn(),
@@ -29,6 +32,7 @@ const mockApiClient = {
   getAgentWorkflowJob: jest.fn(),
   runAutomationRefresh: jest.fn(),
   sendUpcomingBillsEmailNow: jest.fn(),
+  sendAllUpcomingBillsEmailNow: jest.fn(),
   sendMonthEndEmailNow: jest.fn(),
   listRecurringItems: jest.fn(),
   getRecurringCalendar: jest.fn(),
@@ -39,6 +43,9 @@ const mockApiClient = {
   deleteRecurringItem: jest.fn(),
   markRecurringOccurrencePaid: jest.fn(),
   markRecurringOccurrenceUnpaid: jest.fn(),
+  createSavingsGoal: jest.fn(),
+  updateSavingsGoal: jest.fn(),
+  deleteSavingsGoal: jest.fn(),
 };
 
 jest.mock("@/lib/api-client", () => ({ apiClient: mockApiClient }));
@@ -60,6 +67,15 @@ const baseDashboard = {
   income_month: "2026-03",
 };
 
+const emptyLatencyReport = {
+  scope: "current_user",
+  record_count: 0,
+  failed_count: 0,
+  summary: { average_ms: 0, minimum_ms: 0, maximum_ms: 0, p95_ms: 0 },
+  by_endpoint: [],
+  latest: [],
+};
+
 function seedHappyPath() {
   jest.resetAllMocks();
   window.sessionStorage.clear();
@@ -72,11 +88,13 @@ function seedHappyPath() {
   mockApiClient.exportExpenses.mockReturnValue("/export");
   mockApiClient.downloadMonthlyReport.mockReturnValue("/report");
   mockApiClient.getSettings.mockResolvedValue({ monthly_budget: 1050, monthly_income: 1500, income_month: "2026-03" });
+  mockApiClient.listMonthlyIncomeRecords.mockResolvedValue([]);
   mockApiClient.getDashboard.mockResolvedValue(baseDashboard);
   mockApiClient.getCategoryInsights.mockResolvedValue({ top_categories: [], bottom_categories: [], total_spending: 0 });
   mockApiClient.getWordCloud.mockResolvedValue({ top_category: "Food", frequencies: [] });
   mockApiClient.getFinancialPulse.mockResolvedValue({ health_score: 80, average_transaction: 20, transaction_count: 1, spend_velocity: 10, top_category_share: 50, runway_days: 12, narrative: "Stable", cash_in: 1500, cash_out: 420, net_cash_flow: 1080, income_coverage: 300, recent_transactions: [], recent_expenses: [] });
   mockApiClient.getPrediction.mockResolvedValue({ next_month: "April 2026", predicted_spending: 900, is_budget_exceeded: false, monthly_budget: 1050 });
+  mockApiClient.getLatencyReport.mockResolvedValue(emptyLatencyReport);
   mockApiClient.getRagStatus.mockResolvedValue({ available: true, collection_name: "monetra-finance-knowledge", indexed_at: null, document_count: 0, chunk_count: 0, signature: null });
   mockApiClient.startFinanceBriefingAgent.mockResolvedValue({ id: "brief-1", status: "queued", task: "brief", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: null });
   mockApiClient.getFinanceBriefingJob.mockResolvedValue({ id: "brief-1", status: "completed", task: "brief", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: { headline: "Done", summary: "Summary", risk_level: "low", recommended_actions: [], email_subject: "Done", email_draft: "Done", task: "brief", model: "qwen", tools_used: [], report_download_url: null } });
@@ -87,6 +105,7 @@ function seedHappyPath() {
   mockApiClient.getAgentWorkflowJob.mockResolvedValue({ id: "wf-1", status: "completed", workflow_name: "month_end_close", task: "run", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: { id: 5, workflow_name: "month_end_close", workflow_label: "Month-end close", status: "completed", headline: "Close", summary: "Workflow finished", risk_level: "low", recommended_actions: [], automated_actions: [], email_subject: "Close", email_draft: "Close", task: "run", model: "qwen", tools_used: [] } });
   mockApiClient.runAutomationRefresh.mockResolvedValue([]);
   mockApiClient.sendUpcomingBillsEmailNow.mockResolvedValue({ id: 6, workflow_name: "upcoming_bills_email", workflow_label: "Upcoming bills email", status: "completed", headline: "Bills", summary: "Bills sent", risk_level: "low", recommended_actions: [], automated_actions: [], email_subject: "Bills", email_draft: "Bills", task: "run", model: "qwen", tools_used: [] });
+  mockApiClient.sendAllUpcomingBillsEmailNow.mockResolvedValue({ id: 8, workflow_name: "all_upcoming_bills_email", workflow_label: "All upcoming bills email", status: "completed", headline: "All bills", summary: "All bills sent", risk_level: "low", recommended_actions: [], automated_actions: [], email_subject: "All bills", email_draft: "All bills", task: "run", model: "qwen", tools_used: [] });
   mockApiClient.sendMonthEndEmailNow.mockResolvedValue({ id: 7, workflow_name: "month_end_email", workflow_label: "Month-end email", status: "completed", headline: "Month end", summary: "Month end sent", risk_level: "low", recommended_actions: [], automated_actions: [], email_subject: "Month end", email_draft: "Month end", task: "run", model: "qwen", tools_used: [] });
   mockApiClient.listRecurringItems.mockResolvedValue([{ id: 1, category: "Housing", description: "Rent", amount: 700, entry_type: "expense", frequency: "monthly", start_date: "2026-03-01", active: true }]);
   mockApiClient.getRecurringCalendar.mockResolvedValue({ window_start: "2026-03-01", window_end: "2026-04-04", occurrences: [], completed_occurrences: [] });
@@ -97,6 +116,9 @@ function seedHappyPath() {
   mockApiClient.deleteRecurringItem.mockResolvedValue({});
   mockApiClient.markRecurringOccurrencePaid.mockResolvedValue({ message: "Reminder marked as paid for this date." });
   mockApiClient.markRecurringOccurrenceUnpaid.mockResolvedValue({ message: "Reminder restored for this date." });
+  mockApiClient.createSavingsGoal.mockResolvedValue({ id: 11 });
+  mockApiClient.updateSavingsGoal.mockResolvedValue({});
+  mockApiClient.deleteSavingsGoal.mockResolvedValue({});
 }
 
 describe("final hook, api client, and comparison coverage", () => {
@@ -139,7 +161,7 @@ describe("final hook, api client, and comparison coverage", () => {
       await jest.advanceTimersByTimeAsync(2500);
       await promise;
     });
-    expect(result.current.statusMessage).toBe("Automation Center refreshed with the latest finance changes.");
+    expect(result.current.statusMessage).toBe("Background automation refresh completed. Dashboard labels, reports, AI context, and automation history are up to date.");
   });
 
   it("covers month-income fallback, finance briefing fallback error, and import string errors", async () => {
@@ -205,6 +227,112 @@ describe("final hook, api client, and comparison coverage", () => {
 
     mockApiClient.runAutomationRefresh = originalRefresh;
   });
+
+  it("covers operation-lock early returns for savings-goal mutations", async () => {
+    let resolveCreateExpense: (value: { id: number }) => void = () => undefined;
+    mockApiClient.createExpense.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCreateExpense = resolve;
+      }),
+    );
+    const { result } = renderHook(() => useBudgetTracker());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    let createExpensePromise: Promise<void> = Promise.resolve();
+    act(() => {
+      createExpensePromise = result.current.createExpense();
+    });
+
+    await act(async () => {
+      await result.current.createSavingsGoal({ name: "Buffer", target_amount: "100", current_amount: "0", target_date: "" });
+      await result.current.updateSavingsGoal(1, { name: "Buffer", target_amount: "100", current_amount: "10", target_date: "" });
+      await result.current.deleteSavingsGoal(1);
+    });
+
+    expect(mockApiClient.createSavingsGoal).not.toHaveBeenCalled();
+    expect(mockApiClient.updateSavingsGoal).not.toHaveBeenCalled();
+    expect(mockApiClient.deleteSavingsGoal).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveCreateExpense({ id: 2 });
+      await createExpensePromise;
+    });
+  });
+
+  it("covers create-expense lock return and automation-refresh already-running guard", async () => {
+    let resolveCreateExpense: (value: { id: number }) => void = () => undefined;
+    let resolveAutomationRefresh: (value: never[]) => void = () => undefined;
+    mockApiClient.createExpense
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveCreateExpense = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ id: 3 });
+    mockApiClient.runAutomationRefresh.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAutomationRefresh = resolve;
+      }),
+    );
+
+    const { result } = renderHook(() => useBudgetTracker());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const createExpenseBeforeRefreshState = result.current.createExpense;
+
+    let firstCreatePromise: Promise<void> = Promise.resolve();
+    act(() => {
+      firstCreatePromise = result.current.createExpense();
+    });
+
+    await act(async () => {
+      await createExpenseBeforeRefreshState();
+    });
+    expect(mockApiClient.createExpense).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCreateExpense({ id: 2 });
+      await firstCreatePromise;
+    });
+
+    await act(async () => {
+      await createExpenseBeforeRefreshState();
+    });
+    expect(mockApiClient.createExpense).toHaveBeenCalledTimes(2);
+    expect(mockApiClient.runAutomationRefresh).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveAutomationRefresh([]);
+    });
+  });
+
+  it("covers all-upcoming email dispatch status and API branch", async () => {
+    const { result } = renderHook(() => useBudgetTracker());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.sendAllUpcomingBillsEmailNow();
+    });
+
+    expect(mockApiClient.sendAllUpcomingBillsEmailNow).toHaveBeenCalled();
+    expect(result.current.statusMessage).toBe("All bills sent");
+  });
+
+  it("records string-based client operation failures", async () => {
+    mockApiClient.sendMonthEndEmailNow.mockRejectedValueOnce("smtp offline");
+
+    const { result } = renderHook(() => useBudgetTracker());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.sendMonthEndEmailNow();
+    });
+
+    expect(mockApiClient.recordClientFailure).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "month end email dispatch",
+      error: "smtp offline",
+    }));
+  });
+
   it("covers finance-briefing action refreshes and workflow fallback errors on the live hook", async () => {
     mockApiClient.getFinanceBriefingJob.mockResolvedValueOnce({
       id: "brief-1",

@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from hmac import compare_digest
 
 from flask import Flask, Response, jsonify, request, session
 
 
 AUTH_SESSION_KEY = "authenticated_username"
+AUTH_USER_ID_SESSION_KEY = "authenticated_user_id"
+_BACKGROUND_USER_ID: ContextVar[int | None] = ContextVar("background_user_id", default=None)
 PUBLIC_AUTH_PATHS = {
     "/api/auth/login",
+    "/api/auth/register",
     "/api/auth/session",
+    "/api/auth/forgot-password",
+    "/api/auth/mock-inbox",
+    "/api/auth/reset-password",
     "/api/auth/logout",
 }
 
@@ -46,14 +54,36 @@ def current_authenticated_user() -> str | None:
     return username if isinstance(username, str) and username else None
 
 
+def current_authenticated_user_id() -> int | None:
+    user_id = session.get(AUTH_USER_ID_SESSION_KEY)
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def current_background_user_id() -> int | None:
+    return _BACKGROUND_USER_ID.get()
+
+
+@contextmanager
+def background_user_context(user_id: int):
+    token = _BACKGROUND_USER_ID.set(int(user_id))
+    try:
+        yield
+    finally:
+        _BACKGROUND_USER_ID.reset(token)
+
+
 def is_logged_in() -> bool:
-    return current_authenticated_user() is not None
+    return current_authenticated_user() is not None and current_authenticated_user_id() is not None
 
 
-def log_in_user(username: str) -> None:
+def log_in_user(username: str, user_id: int) -> None:
     session.clear()
     session.permanent = True
     session[AUTH_SESSION_KEY] = username
+    session[AUTH_USER_ID_SESSION_KEY] = int(user_id)
 
 
 def log_out_user() -> None:

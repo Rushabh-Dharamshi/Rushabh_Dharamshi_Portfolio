@@ -37,7 +37,7 @@ class AgenticCommandRuntime:
 
     def run(self, task: str) -> dict:
         if self._llm is None:
-            raise ServiceUnavailableError("Local LangChain agent runtime is unavailable because Ollama is not configured.")
+            raise ServiceUnavailableError("LangChain agent runtime is unavailable because Ollama is not configured.")
 
         class ManualAgentState(TypedDict, total=False):
             task: str
@@ -76,8 +76,18 @@ class AgenticCommandRuntime:
 
             try:
                 for step in steps:
+                    if isinstance(step, list):
+                        step = {
+                            "tool": step[0] if len(step) > 0 else "",
+                            "arguments": step[1] if len(step) > 1 and isinstance(step[1], dict) else {},
+                            "reason": step[2] if len(step) > 2 else "",
+                        }
+                    if not isinstance(step, dict):
+                        raise ValidationError("The agent planner returned an invalid step format.")
                     tool_name = str(step.get("tool") or "").strip()
                     arguments = step.get("arguments") or {}
+                    if not isinstance(arguments, dict):
+                        arguments = {}
                     if not tool_name:
                         raise ValidationError("The agent planner returned a step without a tool name.")
                     result = self._mcp_server.call_tool(tool_name, arguments)
@@ -133,7 +143,9 @@ class AgenticCommandRuntime:
                     "Confirm the change in the relevant table or planner view.",
                 ],
                 "email_subject": str(verification.get("email_subject") or "Finance command completed"),
-                "email_draft": str(verification.get("email_draft") or "Your finance command has been completed."),
+                "email_draft": self._with_standard_email_signoff(
+                    str(verification.get("email_draft") or "Your finance command has been completed.")
+                ),
                 "task": state["task"],
                 "model": self._model_name,
                 "tools_used": state.get("tools_used", []),
@@ -214,7 +226,7 @@ class AgenticCommandRuntime:
         prior_plan: dict | None,
     ) -> str:
         return (
-            "You are a local finance operations planner running inside a budgeting app. "
+            "You are a finance operations planner running inside a budgeting app. "
             "You must create a short multi-step tool plan using the available MCP tools. "
             "Return JSON only with keys: intent, steps, success_criteria. "
             "Each step must contain tool, arguments, reason. "
@@ -238,7 +250,8 @@ class AgenticCommandRuntime:
         return (
             "You are a finance operations verifier. The tool steps have already been executed. "
             "Return JSON only with keys: headline, summary, risk_level, recommended_actions, email_subject, email_draft. "
-            "Summarise the completed action clearly for the end user in pounds. Keep risk_level low unless the tool output explicitly shows a problem.\n\n"
+            "Summarise the completed action clearly for the end user in pounds. Keep risk_level low unless the tool output explicitly shows a problem. "
+            "Every email_draft must end exactly with: Kind Regards, followed by Monetra Organisation on the next line.\n\n"
             f"User task: {task}\n"
             f"Plan executed: {json.dumps(plan)}\n"
             f"Tool results: {json.dumps(execution_results)}\n"
@@ -247,7 +260,7 @@ class AgenticCommandRuntime:
 
     def _invoke(self, prompt: str) -> str:
         if self._llm is None:
-            raise ServiceUnavailableError("Local LangChain agent runtime is unavailable because Ollama is not configured.")
+            raise ServiceUnavailableError("LangChain agent runtime is unavailable because Ollama is not configured.")
         response = self._llm.invoke(prompt)
         content = response.content
         if isinstance(content, list):
@@ -271,6 +284,24 @@ class AgenticCommandRuntime:
         if not isinstance(parsed, dict):
             raise ValidationError(f"The agent returned a non-object payload for {label}.")
         return parsed
+
+    @staticmethod
+    def _with_standard_email_signoff(email_draft: str) -> str:
+        cleaned = str(email_draft or "").strip()
+        cleaned = re.sub(
+            r"(?is)\n*\s*(best regards|kind regards|regards),?\s*\n+.*$",
+            "",
+            cleaned,
+        ).strip()
+        cleaned = re.sub(
+            r"(?is)\s*(best regards|kind regards|regards),?\s*(?:\n|\r|\s)*(?:monetra organisation|rushabh dharamshi|the finance operations team|the finance team)?\s*$",
+            "",
+            cleaned,
+        ).strip()
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        if not cleaned:
+            return "Kind Regards,\nMonetra Organisation"
+        return f"{cleaned}\n\nKind Regards,\nMonetra Organisation"
 
     @staticmethod
     def _extract_report_url(execution_results: list[dict]) -> str | None:

@@ -70,7 +70,7 @@ class ReportService:
     def __init__(
         self,
         repository: ExpenseRepository,
-        budget_provider: Callable[[], float],
+        budget_provider: Callable[[str | None], float],
         income_provider: Callable[[str | None], float],
         output_dir: Path,
     ):
@@ -79,11 +79,12 @@ class ReportService:
         self._income_provider = income_provider
         self._output_dir = output_dir
 
-    def generate_monthly_report(self) -> Path:
+    def generate_monthly_report(self, month_key: str | None = None) -> Path:
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
         now = datetime.now()
-        context = self._build_context(now)
+        report_date = self._resolve_report_date(month_key, now)
+        context = self._build_context(report_date, generated_at=now)
         chart_paths = [
             self._create_category_comparison_chart(context),
             self._create_daily_spending_chart(context),
@@ -91,7 +92,7 @@ class ReportService:
             self._create_cash_flow_chart(context),
         ]
 
-        pdf_path = self._output_dir / f"Monthly_Budget_Report_{now.strftime('%B_%Y')}.pdf"
+        pdf_path = self._output_dir / f"Monthly_Budget_Report_{report_date.strftime('%B_%Y')}.pdf"
         document = SimpleDocTemplate(
             str(pdf_path),
             pagesize=letter,
@@ -115,11 +116,18 @@ class ReportService:
 
         return pdf_path
 
-    def _build_context(self, now: datetime) -> ReportContext:
+    @staticmethod
+    def _resolve_report_date(month_key: str | None, now: datetime) -> datetime:
+        if not month_key:
+            return now
+        return datetime.strptime(str(month_key), "%Y-%m")
+
+    def _build_context(self, now: datetime, generated_at: datetime | None = None) -> ReportContext:
+        generated_at = generated_at or datetime.now()
         report_month_key = now.strftime("%Y-%m")
         previous_month_date = now.replace(day=1) - timedelta(days=1)
         previous_month_key = previous_month_date.strftime("%Y-%m")
-        monthly_budget = self._budget_provider()
+        monthly_budget = self._budget_provider(report_month_key)
 
         report_expenses = self._repository.expenses_for_month(report_month_key, "expense")
         previous_expenses = self._repository.expenses_for_month(previous_month_key, "expense")
@@ -134,8 +142,8 @@ class ReportService:
         current_net_cash_flow = round(current_income_total - current_total, 2)
         previous_net_cash_flow = round(previous_income_total - previous_total, 2)
         transaction_count = len(report_expenses)
-        days_elapsed = max(now.day, 1)
         days_in_month = calendar.monthrange(now.year, now.month)[1]
+        days_elapsed = max(now.day, 1) if now.strftime("%Y-%m") == generated_at.strftime("%Y-%m") else days_in_month
         average_transaction = round(current_total / transaction_count, 2) if transaction_count else 0.0
         average_daily_spend = round(current_total / days_elapsed, 2) if current_total else 0.0
         projected_month_end_spend = round(average_daily_spend * days_in_month, 2)
@@ -170,6 +178,7 @@ class ReportService:
         recommendations = self._build_recommendations(
             remaining_budget=remaining_budget,
             projected_month_end_spend=projected_month_end_spend,
+            monthly_budget=monthly_budget,
             net_cash_flow=current_net_cash_flow,
             largest_transaction=largest_transaction,
             top_category=top_category,
@@ -229,6 +238,11 @@ class ReportService:
             ),
             Spacer(1, 0.22 * inch),
             Paragraph("Executive KPI Snapshot", styles["section"]),
+            Spacer(1, 0.08 * inch),
+            Paragraph(
+                "The snapshot below separates each KPI from its interpretation so values remain readable and the report explains what each number means.",
+                styles["body"],
+            ),
             Spacer(1, 0.08 * inch),
             self._build_kpi_table(context),
             Spacer(1, 0.18 * inch),
@@ -339,13 +353,14 @@ class ReportService:
         self,
         remaining_budget: float,
         projected_month_end_spend: float,
+        monthly_budget: float,
         net_cash_flow: float,
         largest_transaction: Expense | None,
         top_category: str | None,
         top_category_share: float,
     ) -> list[str]:
         recommendations = []
-        if projected_month_end_spend > self._budget_provider():
+        if projected_month_end_spend > monthly_budget:
             recommendations.append(
                 "Introduce a short-term spending hold on discretionary categories until projected month-end spend falls below budget."
             )
@@ -375,53 +390,119 @@ class ReportService:
         return recommendations
 
     def _build_kpi_table(self, context: ReportContext) -> Table:
+        styles = self._styles()
         rows = [
-            ["Monthly budget", f"GBP {context.monthly_budget:.2f}", "Current spend", f"GBP {context.current_total:.2f}"],
-            ["Cash in", f"GBP {context.current_income_total:.2f}", "Net cash flow", f"GBP {context.current_net_cash_flow:.2f}"],
-            ["Remaining budget", f"GBP {context.remaining_budget:.2f}", "Budget utilisation", f"{context.budget_utilization:.1f}%"],
-            ["Income coverage", f"{context.income_coverage_ratio:.1f}%", "Projected month-end", f"GBP {context.projected_month_end_spend:.2f}"],
-            ["MoM change", f"GBP {context.month_over_month_change:.2f}", "Average transaction", f"GBP {context.average_transaction:.2f}"],
-            ["Transactions", str(context.transaction_count), "Previous net cash flow", f"GBP {context.previous_net_cash_flow:.2f}"],
+            [
+                self._table_cell("KPI", styles["table_header"]),
+                self._table_cell("Value", styles["table_header"]),
+                self._table_cell("What it means", styles["table_header"]),
+            ],
+            [
+                self._table_cell("Monthly budget", styles["table_label"]),
+                self._table_cell(f"GBP {context.monthly_budget:.2f}", styles["table_value"]),
+                self._table_cell("Your planned spending limit for the current reporting month.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Current spend", styles["table_label"]),
+                self._table_cell(f"GBP {context.current_total:.2f}", styles["table_value"]),
+                self._table_cell("Actual expense transactions recorded so far in the current month.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Cash in", styles["table_label"]),
+                self._table_cell(f"GBP {context.current_income_total:.2f}", styles["table_value"]),
+                self._table_cell("Income recorded for this month from income transactions and monthly income settings.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Net cash flow", styles["table_label"]),
+                self._table_cell(f"GBP {context.current_net_cash_flow:.2f}", styles["table_value"]),
+                self._table_cell("Income minus expenses. Positive cash flow means more came in than went out.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Remaining budget", styles["table_label"]),
+                self._table_cell(f"GBP {context.remaining_budget:.2f}", styles["table_value"]),
+                self._table_cell("Monthly budget minus current spend. This is the spend control amount for the rest of the month.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Budget utilisation", styles["table_label"]),
+                self._table_cell(f"{context.budget_utilization:.1f}%", styles["table_value"]),
+                self._table_cell("Current spend as a percentage of the monthly budget.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Income coverage", styles["table_label"]),
+                self._table_cell(f"{context.income_coverage_ratio:.1f}%", styles["table_value"]),
+                self._table_cell("Income divided by current spend. Very high values usually mean spending is still low compared with income.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Projected month-end", styles["table_label"]),
+                self._table_cell(f"GBP {context.projected_month_end_spend:.2f}", styles["table_value"]),
+                self._table_cell("Estimated month-end spend if the current daily spending pace continues.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("MoM change", styles["table_label"]),
+                self._table_cell(f"GBP {context.month_over_month_change:.2f}", styles["table_value"]),
+                self._table_cell("Current month spend minus previous month spend. Negative means spending has reduced.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Average transaction", styles["table_label"]),
+                self._table_cell(f"GBP {context.average_transaction:.2f}", styles["table_value"]),
+                self._table_cell("Average value of current-month expense transactions.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Transactions", styles["table_label"]),
+                self._table_cell(str(context.transaction_count), styles["table_value"]),
+                self._table_cell("Number of expense transactions included in this monthly report.", styles["table_body"]),
+            ],
+            [
+                self._table_cell("Previous net cash flow", styles["table_label"]),
+                self._table_cell(f"GBP {context.previous_net_cash_flow:.2f}", styles["table_value"]),
+                self._table_cell("Previous month income minus previous month expenses, used as the comparison baseline.", styles["table_body"]),
+            ],
         ]
-        table = Table(rows, colWidths=[1.5 * inch, 1.4 * inch, 1.5 * inch, 1.6 * inch])
+        table = Table(rows, repeatRows=1, colWidths=[1.65 * inch, 1.35 * inch, 3.55 * inch])
         table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.whitesmoke),
-                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c9d1d9")),
-                    ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#17202a")),
-                    ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
-                    ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                    ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#10203d")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("BACKGROUND", (0, 1), (0, -1), colors.HexColor("#e8f1ef")),
+                    ("ROWBACKGROUNDS", (1, 1), (-1, -1), [colors.white, colors.HexColor("#f7fafc")]),
+                    ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#c9d6df")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 7),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+                    ("TOPPADDING", (0, 0), (-1, -1), 7),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
                 ]
             )
         )
         return table
 
     def _build_cash_flow_table(self, context: ReportContext) -> Table:
+        styles = self._styles()
         rows = [
-            ["Metric", context.previous_month_label, context.report_month_label, "Variance"],
             [
-                "Income",
-                f"GBP {context.previous_income_total:.2f}",
-                f"GBP {context.current_income_total:.2f}",
-                f"GBP {context.current_income_total - context.previous_income_total:.2f}",
+                self._table_cell("Metric", styles["table_header"]),
+                self._table_cell(context.previous_month_label, styles["table_header"]),
+                self._table_cell(context.report_month_label, styles["table_header"]),
+                self._table_cell("Variance", styles["table_header"]),
             ],
             [
-                "Expenses",
-                f"GBP {context.previous_total:.2f}",
-                f"GBP {context.current_total:.2f}",
-                f"GBP {context.current_total - context.previous_total:.2f}",
+                self._table_cell("Income", styles["table_label"]),
+                self._table_cell(f"GBP {context.previous_income_total:.2f}", styles["table_value"]),
+                self._table_cell(f"GBP {context.current_income_total:.2f}", styles["table_value"]),
+                self._table_cell(f"GBP {context.current_income_total - context.previous_income_total:.2f}", styles["table_value"]),
             ],
             [
-                "Net cash flow",
-                f"GBP {context.previous_net_cash_flow:.2f}",
-                f"GBP {context.current_net_cash_flow:.2f}",
-                f"GBP {context.current_net_cash_flow - context.previous_net_cash_flow:.2f}",
+                self._table_cell("Expenses", styles["table_label"]),
+                self._table_cell(f"GBP {context.previous_total:.2f}", styles["table_value"]),
+                self._table_cell(f"GBP {context.current_total:.2f}", styles["table_value"]),
+                self._table_cell(f"GBP {context.current_total - context.previous_total:.2f}", styles["table_value"]),
+            ],
+            [
+                self._table_cell("Net cash flow", styles["table_label"]),
+                self._table_cell(f"GBP {context.previous_net_cash_flow:.2f}", styles["table_value"]),
+                self._table_cell(f"GBP {context.current_net_cash_flow:.2f}", styles["table_value"]),
+                self._table_cell(f"GBP {context.current_net_cash_flow - context.previous_net_cash_flow:.2f}", styles["table_value"]),
             ],
         ]
         table = Table(rows, repeatRows=1, colWidths=[1.6 * inch, 1.35 * inch, 1.35 * inch, 1.2 * inch])
@@ -432,7 +513,7 @@ class ReportService:
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d2d8de")),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor("#f7fafc")]),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 7),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 7),
                     ("TOPPADDING", (0, 0), (-1, -1), 7),
@@ -443,16 +524,24 @@ class ReportService:
         return table
 
     def _build_category_table(self, context: ReportContext) -> Table:
-        rows = [["Category", "Current", "Previous", "Variance", "Share", "Transactions"]]
+        styles = self._styles()
+        rows = [[
+            self._table_cell("Category", styles["table_header"]),
+            self._table_cell("Current", styles["table_header"]),
+            self._table_cell("Previous", styles["table_header"]),
+            self._table_cell("Variance", styles["table_header"]),
+            self._table_cell("Share", styles["table_header"]),
+            self._table_cell("Transactions", styles["table_header"]),
+        ]]
         rows.extend(
             [
                 [
-                    row["category"],
-                    f"GBP {row['current_amount']:.2f}",
-                    f"GBP {row['previous_amount']:.2f}",
-                    f"GBP {row['variance']:.2f}",
-                    f"{row['share_percent']:.1f}%",
-                    str(row["transaction_count"]),
+                    self._table_cell(row["category"], styles["table_label"]),
+                    self._table_cell(f"GBP {row['current_amount']:.2f}", styles["table_value"]),
+                    self._table_cell(f"GBP {row['previous_amount']:.2f}", styles["table_value"]),
+                    self._table_cell(f"GBP {row['variance']:.2f}", styles["table_value"]),
+                    self._table_cell(f"{row['share_percent']:.1f}%", styles["table_value"]),
+                    self._table_cell(str(row["transaction_count"]), styles["table_value"]),
                 ]
                 for row in context.category_rows[:8]
             ]
@@ -466,7 +555,7 @@ class ReportService:
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d2d8de")),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.HexColor("#f7fafc")]),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 7),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 7),
                     ("TOPPADDING", (0, 0), (-1, -1), 7),
@@ -477,11 +566,30 @@ class ReportService:
         return table
 
     def _build_expense_table(self, expenses: list[Expense]) -> Table:
-        rows = [["Date", "Category", "Description", "Amount"]]
+        styles = self._styles()
+        rows = [[
+            self._table_cell("Date", styles["table_header"]),
+            self._table_cell("Category", styles["table_header"]),
+            self._table_cell("Description", styles["table_header"]),
+            self._table_cell("Amount", styles["table_header"]),
+        ]]
         rows.extend(
-            [[expense.date, expense.category, expense.description, f"GBP {expense.amount:.2f}"] for expense in expenses]
+            [
+                [
+                    self._table_cell(expense.date, styles["table_body"]),
+                    self._table_cell(expense.category, styles["table_label"]),
+                    self._table_cell(expense.description, styles["table_body"]),
+                    self._table_cell(f"GBP {expense.amount:.2f}", styles["table_value"]),
+                ]
+                for expense in expenses
+            ]
             if expenses
-            else [["-", "-", "No transactions available for the current month.", "GBP 0.00"]]
+            else [[
+                self._table_cell("-", styles["table_body"]),
+                self._table_cell("-", styles["table_body"]),
+                self._table_cell("No transactions available for the current month.", styles["table_body"]),
+                self._table_cell("GBP 0.00", styles["table_value"]),
+            ]]
         )
         table = Table(rows, repeatRows=1, colWidths=[1.0 * inch, 1.15 * inch, 3.4 * inch, 0.95 * inch])
         table.setStyle(
@@ -491,7 +599,7 @@ class ReportService:
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
                     ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d2d8de")),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#fbf7f2"), colors.white]),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 7),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 7),
                     ("TOPPADDING", (0, 0), (-1, -1), 7),
@@ -641,7 +749,53 @@ class ReportService:
                 textColor=colors.HexColor("#52606d"),
                 alignment=TA_CENTER,
             ),
+            "table_header": ParagraphStyle(
+                "ReportTableHeader",
+                parent=base["BodyText"],
+                fontName="Helvetica-Bold",
+                fontSize=8.5,
+                leading=10.5,
+                textColor=colors.white,
+            ),
+            "table_label": ParagraphStyle(
+                "ReportTableLabel",
+                parent=base["BodyText"],
+                fontName="Helvetica-Bold",
+                fontSize=8.5,
+                leading=10.5,
+                textColor=colors.HexColor("#10203d"),
+                wordWrap="CJK",
+            ),
+            "table_value": ParagraphStyle(
+                "ReportTableValue",
+                parent=base["BodyText"],
+                fontName="Helvetica-Bold",
+                fontSize=8.5,
+                leading=10.5,
+                textColor=colors.HexColor("#0f4f49"),
+                wordWrap="CJK",
+            ),
+            "table_body": ParagraphStyle(
+                "ReportTableBody",
+                parent=base["BodyText"],
+                fontName="Helvetica",
+                fontSize=8,
+                leading=10.5,
+                textColor=colors.HexColor("#243b53"),
+                wordWrap="CJK",
+            ),
         }
+
+    @staticmethod
+    def _table_cell(value: object, style: ParagraphStyle) -> Paragraph:
+        text = str(value if value is not None else "")
+        escaped = (
+            text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\n", "<br/>")
+        )
+        return Paragraph(escaped, style)
 
     def _decorate_page(self, canvas, document) -> None:
         canvas.saveState()

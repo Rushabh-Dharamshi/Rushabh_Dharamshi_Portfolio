@@ -10,6 +10,7 @@ describe("apiClient partitions", () => {
 
     expect(apiClient.exportExpenses()).toBe("http://127.0.0.1:5000/api/expenses/export");
     expect(apiClient.downloadMonthlyReport()).toBe("http://127.0.0.1:5000/api/reports/monthly");
+    expect(apiClient.downloadMonthlyReport("2026-05")).toBe("http://127.0.0.1:5000/api/reports/monthly?month=2026-05");
   });
 
   it("builds recurring calendar requests for different day partitions", async () => {

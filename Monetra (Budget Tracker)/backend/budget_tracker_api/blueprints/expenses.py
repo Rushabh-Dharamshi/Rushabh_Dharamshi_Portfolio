@@ -13,7 +13,13 @@ def _service():
 @expenses_bp.get("")
 def list_expenses():
     sort_direction = request.args.get("sort", "desc")
-    return jsonify({"data": _service().list_expenses(sort_direction)})
+    filters = {
+        "category": request.args.get("category", ""),
+        "q": request.args.get("q", ""),
+        "start_date": request.args.get("start_date", ""),
+        "end_date": request.args.get("end_date", ""),
+    }
+    return jsonify({"data": _service().list_expenses(sort_direction, filters)})
 
 
 @expenses_bp.get("/<int:expense_id>")

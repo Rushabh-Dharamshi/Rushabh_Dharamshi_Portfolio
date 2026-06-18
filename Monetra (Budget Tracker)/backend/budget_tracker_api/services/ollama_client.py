@@ -70,12 +70,12 @@ class OllamaClient:
         except error.URLError as exc:
             logger.exception("Ollama connection error.")
             raise ServiceUnavailableError(
-                "Could not reach Ollama. Make sure Ollama is running locally."
+                "Could not reach Ollama. Make sure Ollama is running."
             ) from exc
         except (TimeoutError, socket.timeout) as exc:
             logger.exception("Ollama timeout.")
             raise ServiceUnavailableError(
-                "Ollama timed out. Try a smaller local model or increase OLLAMA_TIMEOUT_SECONDS."
+                "Ollama timed out. Try a smaller model or increase OLLAMA_TIMEOUT_SECONDS."
             ) from exc
 
         try:
@@ -83,3 +83,26 @@ class OllamaClient:
         except json.JSONDecodeError as exc:
             logger.exception("Ollama returned invalid JSON.")
             raise ServiceUnavailableError("Ollama returned an invalid response.") from exc
+
+    def classify_finance_intent(self, user_question: str) -> str:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are the intent routing engine for Monetra Finance. "
+                    "Output exactly one allowed token and nothing else. "
+                    "Allowed tokens: METRIC_CASH_FLOW, METRIC_AVERAGE_DAILY_BURN, "
+                    "METRIC_MONTH_END_FORECAST, METRIC_LARGEST_CATEGORY_SHARE, "
+                    "METRIC_CURRENT_MONTH_TRANSACTIONS, METRIC_REMAINING_BUDGET, "
+                    "METRIC_BUDGET_USAGE, METRIC_MONTHLY_INCOME, METRIC_FINANCIAL_STATUS, "
+                    "METRIC_AVERAGE_TRANSACTION, METRIC_SPEND_VELOCITY, METRIC_INCOME_COVERAGE, "
+                    "METRIC_TOP_CATEGORY_SHARE, METRIC_BUDGET_RUNWAY, METRIC_HEALTH_SCORE, "
+                    "METRIC_CURRENT_PERIOD, METRIC_AVERAGE_SPEND, METRIC_STRONGEST_PERIOD, "
+                    "METRIC_CHANGE_VS_PREVIOUS, OPEN_ENDED."
+                ),
+            },
+            {"role": "user", "content": f"User Query: {user_question}\nToken:"},
+        ]
+        response = self.chat(messages)
+        content = ((response or {}).get("message") or {}).get("content", "")
+        return str(content or "OPEN_ENDED").strip().split()[0]

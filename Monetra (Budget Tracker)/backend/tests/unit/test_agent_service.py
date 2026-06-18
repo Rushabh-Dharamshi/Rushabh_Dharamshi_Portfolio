@@ -60,15 +60,15 @@ class FakeSettingsService:
         self.monthly_budget = 1200.0
         self.monthly_income = 1500.0
 
-    def get_monthly_budget(self):
+    def get_monthly_budget(self, month_key=None):
         return self.monthly_budget
 
-    def get_monthly_income(self):
+    def get_monthly_income(self, month_key=None):
         return self.monthly_income
 
     def update_monthly_budget(self, payload):
         self.monthly_budget = round(float(payload["monthly_budget"]), 2)
-        return {"monthly_budget": self.monthly_budget}
+        return {"monthly_budget": self.monthly_budget, "budget_month": payload.get("month") or "2026-06"}
 
     def update_monthly_income(self, payload):
         self.monthly_income = round(float(payload["monthly_income"]), 2)
@@ -123,6 +123,162 @@ def test_agent_service_runs_tool_loop_and_returns_structured_briefing():
     assert result["report_download_url"] == "/api/reports/monthly"
 
 
+def test_agent_service_generates_report_from_prompt_chip_without_model_round_trip():
+    ollama_client = FakeOllamaClient()
+
+    class RecordingReportService(FakeReportService):
+        def __init__(self):
+            self.calls = 0
+
+        def generate_monthly_report(self):
+            self.calls += 1
+            return "report.pdf"
+
+    report_service = RecordingReportService()
+    service = AgentService(
+        ollama_client,
+        FakeAnalyticsService(),
+        FakePredictionService(),
+        FakeRecurringService(),
+        report_service,
+        FakeExpenseService(),
+        FakeSettingsService(),
+        FakeAgentRunRepository(),
+    )
+
+    result = service.run_finance_briefing(
+        {"task": "Generate the current monthly report and summarise the main budget pressure points."}
+    )
+
+    assert result["headline"] == "Monthly report generated"
+    assert result["action_result"]["type"] == "monthly_report_generated"
+    assert result["report_download_url"] == "/api/reports/monthly"
+    assert report_service.calls == 1
+    assert ollama_client.calls == 0
+
+
+def test_agent_service_formats_python_style_briefing_payload():
+    result = AgentService._parse_final_payload(
+        "{'cash_flow': 'Cash flow is currently strong with a net cash flow of £2388.35.', "
+        "'recurring_bills': 'Test Late Deposit is due on July 10th for £12.50.', "
+        "'recommended_actions': ['Monitor Food and Travel.', 'Review the July forecast.']}"
+    )
+
+    assert result["headline"] == "Finance briefing generated"
+    assert "Cash flow: Cash flow is currently strong" in result["summary"]
+    assert "Recurring bill pressure: Test Late Deposit" in result["summary"]
+    assert result["recommended_actions"] == ["Monitor Food and Travel.", "Review the July forecast."]
+    assert "Monthly finance briefing" in result["email_draft"]
+    assert "Kind Regards,\nMonetra Organisation" in result["email_draft"]
+    assert "{'cash_flow'" not in result["summary"]
+
+
+def test_agent_service_formats_relaxed_json_payload_without_raw_braces():
+    result = AgentService._parse_final_payload(
+        '{ "headline": "Upcoming Bills and Late Payments for June 2026", '
+        '"summary": "This month cash flow remains within budget.", '
+        '"risk_level": "Low", '
+        '"recommended_actions": "Please settle late payments and review due dates.", '
+        '"email_subject": "Reminder: Upcoming Bills", '
+        '"email_draft": "Hello Team,\n\nIncluded reminders:\n- late unpaid reminders\n\nBills included:\n- Monthly Test Late Deposit Reminder\n\nKind Regards,\nMonetra Organisation" }'
+    )
+
+    assert result["headline"] == "Upcoming Bills and Late Payments for June 2026"
+    assert result["summary"] == "This month cash flow remains within budget."
+    assert result["recommended_actions"] == ["Please settle late payments and review due dates."]
+    assert "Hello Team" in result["email_draft"]
+    assert "{ \"headline\"" not in result["summary"]
+    assert "{ \"headline\"" not in result["email_draft"]
+    assert result["email_draft"].count("Kind Regards") == 1
+
+
+def test_agent_service_enriches_sparse_cfo_briefing_from_tool_context():
+    sparse_payload = AgentService._parse_final_payload(
+        "{'cash_flow': 2388.35, 'recommended_actions': ['Review and categorize recent expenses.']}"
+    )
+    context = {
+        "dashboard": {
+            "month_label": "June 2026",
+            "monthly_budget": 600.0,
+            "monthly_income": 2400.0,
+            "monthly_expenses": 11.65,
+            "net_cash_flow": 2388.35,
+            "remaining_budget": 588.35,
+            "status": "within",
+        },
+        "category_insights": {
+            "top_categories": [
+                {"category": "Food", "amount": 13.0},
+                {"category": "Travel", "amount": 6.4},
+            ]
+        },
+        "prediction": {"predicted_spending": 207.62},
+        "upcoming_recurring_items": {
+            "next_occurrences": [
+                {"description": "Test Late Deposit", "amount": 12.5, "due_date": "2026-07-10"}
+            ]
+        },
+    }
+
+    result = AgentService._enrich_sparse_cfo_briefing(
+        sparse_payload,
+        context,
+        "Prepare a CFO-style monthly finance briefing with cash-flow risk and an email-ready summary.",
+    )
+
+    assert result["headline"] == "June 2026 CFO-style finance briefing"
+    assert "Cash-flow risk:" in result["summary"]
+    assert "Budget pressure:" in result["summary"]
+    assert "Recurring bill pressure:" in result["summary"]
+    assert "Spending pressure:" in result["summary"]
+    assert "Forecast:" in result["summary"]
+    assert "Subject: [Monetra] June 2026 Monthly Finance Briefing" in result["email_draft"]
+    assert "Cash-flow and budget position:" in result["email_draft"]
+    assert "Spending and forecast:" in result["email_draft"]
+    assert "Test Late Deposit" in result["email_draft"]
+    assert "Recommended actions:" in result["email_draft"]
+    assert "Review and categorize recent expenses." in result["recommended_actions"]
+    assert "Kind Regards,\nMonetra Organisation" in result["email_draft"]
+
+
+def test_agent_service_completes_exact_cfo_prompt_when_model_response_is_incomplete():
+    incomplete_payload = AgentService._parse_final_payload(
+        '{"headline":"Finance briefing","summary":"Cash flow remains positive.",'
+        '"risk_level":"low","recommended_actions":["Monitor spend."],'
+        '"email_subject":"Briefing","email_draft":"Monthly briefing attached."}'
+    )
+    context = {
+        "dashboard": {
+            "month_label": "June 2026",
+            "monthly_budget": 600.0,
+            "monthly_income": 2400.0,
+            "monthly_expenses": 11.65,
+            "net_cash_flow": 2388.35,
+            "remaining_budget": 588.35,
+            "status": "within",
+        },
+        "category_insights": {"top_categories": [{"category": "Travel", "amount": 6.4}]},
+        "prediction": {"predicted_spending": 207.62},
+        "upcoming_recurring_items": {
+            "next_occurrences": [
+                {"description": "Test Late Deposit", "amount": 12.5, "due_date": "2026-07-10"}
+            ]
+        },
+    }
+
+    result = AgentService._enrich_sparse_cfo_briefing(
+        incomplete_payload,
+        context,
+        "Prepare a CFO-style monthly finance briefing with cash-flow risk, recurring bill pressure, recommended actions, and an email-ready summary.",
+    )
+
+    assert "Cash-flow risk:" in result["summary"]
+    assert "Recurring bill pressure:" in result["summary"]
+    assert result["recommended_actions"]
+    assert "Subject: [Monetra] June 2026 Monthly Finance Briefing" in result["email_draft"]
+    assert "Recommended actions:" in result["email_draft"]
+
+
 def test_agent_service_handles_prediction_validation_gracefully():
     class PredictionFirstOllamaClient(FakeOllamaClient):
         def chat(self, messages, tools=None):
@@ -157,8 +313,9 @@ def test_agent_service_handles_prediction_validation_gracefully():
 
     result = service.run_finance_briefing({})
 
-    assert result["headline"] == "Finance briefing generated"
-    assert result["risk_level"] == "medium"
+    assert result["headline"] == "Current Month CFO-style finance briefing"
+    assert "Cash-flow risk:" in result["summary"]
+    assert "Forecast: Prediction was unavailable" in result["summary"]
 
 
 def test_agent_service_email_ready_briefing_is_not_direct_email_dispatch():
@@ -654,7 +811,7 @@ def test_agent_service_can_create_bounded_monthly_reminder_from_inclusive_month_
 
     result = service.run_finance_briefing(
         {
-            "task": "Set a monthly reminder for university house rent due on the 23rd of every month from April 2026 to June 2026 inclusive at 452.74 pounds."
+            "task": "Set a monthly reminder for university house rent on the 23rd of every month from April 2026 to June 2026 inclusive at 452.74 pounds."
         }
     )
 

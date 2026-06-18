@@ -120,6 +120,77 @@ describe("final component coverage branches", () => {
     expect(screen.getByText("The agent did not propose any actions.")).toBeInTheDocument();
   });
 
+  it("fills the agent task draft from a known-safe prompt", () => {
+    const onTaskDraftChange = jest.fn();
+
+    render(
+      <AiAgentPanel
+        taskDraft=""
+        isRunning={false}
+        onTaskDraftChange={onTaskDraftChange}
+        onRun={jest.fn()}
+        result={null}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Set my monthly budget to 1600 pounds/i }));
+
+    expect(onTaskDraftChange).toHaveBeenCalledWith("Set my monthly budget to 1600 pounds.");
+  });
+
+  it("deduplicates repeated AI errors and renders fallback summary values", () => {
+    const { rerender, unmount } = render(
+      <AiAgentPanel
+        taskDraft="Send the month-end email now."
+        isRunning={false}
+        onTaskDraftChange={jest.fn()}
+        onRun={jest.fn()}
+        result={null}
+        errorMessage="Request failed."
+      />,
+    );
+
+    expect(screen.getAllByText("Request failed.")).toHaveLength(1);
+
+    rerender(
+      <AiAgentPanel
+        taskDraft="Send the month-end email now."
+        isRunning={false}
+        onTaskDraftChange={jest.fn()}
+        onRun={jest.fn()}
+        result={null}
+        errorMessage="Request failed."
+      />,
+    );
+    expect(screen.getAllByText("Request failed.")).toHaveLength(1);
+
+    unmount();
+
+    render(
+      <AiAgentPanel
+        taskDraft="Review"
+        isRunning={false}
+        onTaskDraftChange={jest.fn()}
+        onRun={jest.fn()}
+        result={{
+          headline: "fallback",
+          summary: 0 as unknown as string,
+          risk_level: "high",
+          recommended_actions: [],
+          email_subject: "",
+          email_draft: "",
+          task: "Review",
+          model: "qwen",
+          tools_used: [],
+          report_download_url: null,
+          generated_at: "2026-04-03T20:00:00Z",
+        }}
+      />,
+    );
+
+    expect(screen.getByText(/high risk/i)).toHaveClass("status-pill", "status-over");
+  });
+
   it("covers low-risk email runs and richer insight rendering", () => {
     render(
       <>

@@ -62,12 +62,12 @@ class OllamaEmbeddingClient:
         except error.URLError as exc:
             logger.exception("Ollama embedding connection error.")
             raise ServiceUnavailableError(
-                "Could not reach Ollama embeddings. Make sure Ollama is running locally."
+                "Could not reach Ollama embeddings. Make sure Ollama is running."
             ) from exc
         except (TimeoutError, socket.timeout) as exc:
             logger.exception("Ollama embedding timeout.")
             raise ServiceUnavailableError(
-                "Ollama embeddings timed out. Try a smaller local model or reduce the indexed corpus."
+                "Ollama embeddings timed out. Try a smaller model or reduce the indexed corpus."
             ) from exc
 
         logger.info(

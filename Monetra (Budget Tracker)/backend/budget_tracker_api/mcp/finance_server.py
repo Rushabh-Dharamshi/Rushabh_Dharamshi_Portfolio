@@ -83,18 +83,20 @@ def get_upcoming_recurring_items(days: int = 21) -> dict:
 
 
 @mcp.tool
-def set_monthly_budget(monthly_budget: float) -> dict:
+def set_monthly_budget(monthly_budget: float, month: str | None = None) -> dict:
     def _handler(services):
-        result = services["settings_service"].update_monthly_budget({"monthly_budget": monthly_budget})
+        result = services["settings_service"].update_monthly_budget({"monthly_budget": monthly_budget, "month": month})
+        budget_month = result.get("budget_month")
         return {
             "headline": "Monthly budget updated",
-            "summary": f"Monthly budget is now GBP {float(result['monthly_budget']):.2f}.",
+            "summary": f"Monthly budget for {budget_month} is now GBP {float(result['monthly_budget']):.2f}.",
             "action_result": {
                 "type": "monthly_budget_updated",
                 "message": "Monthly budget updated successfully.",
                 "payload": {
                     "monthly_budget": float(result["monthly_budget"]),
-                    "monthly_income": services["settings_service"].get_monthly_income(),
+                    "budget_month": budget_month,
+                    "monthly_income": services["settings_service"].get_monthly_income(budget_month),
                 },
             },
         }
@@ -115,7 +117,7 @@ def set_monthly_income(monthly_income: float, month: str | None = None) -> dict:
                 "payload": {
                     "monthly_income": float(result["monthly_income"]),
                     "income_month": result.get("income_month"),
-                    "monthly_budget": services["settings_service"].get_monthly_budget(),
+                    "monthly_budget": services["settings_service"].get_monthly_budget(result.get("income_month")),
                 },
             },
         }
@@ -420,6 +422,11 @@ def generate_monthly_report() -> dict:
 @mcp.tool
 def send_upcoming_bills_email_now() -> dict:
     return _with_app_context(lambda services: services["automation_service"].run_upcoming_bills_email_now())
+
+
+@mcp.tool
+def send_all_upcoming_bills_email_now() -> dict:
+    return _with_app_context(lambda services: services["automation_service"].run_all_upcoming_bills_email_now())
 
 
 @mcp.tool

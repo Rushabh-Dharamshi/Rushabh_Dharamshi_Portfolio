@@ -168,7 +168,7 @@ async function fulfillBudgetTrackerRoute(
       contentType: "application/json",
       body: JSON.stringify({
         data: {
-          headline: "Local finance briefing",
+          headline: "Finance briefing",
           summary: "Cash flow remains positive and recurring costs are covered.",
           risk_level: "low",
           recommended_actions: ["Keep monitoring travel costs."],

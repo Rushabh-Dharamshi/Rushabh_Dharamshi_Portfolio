@@ -4,6 +4,8 @@ import logging
 from datetime import datetime, timedelta
 from threading import Event, Thread
 
+from budget_tracker_api.security import background_user_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -33,13 +35,24 @@ class AutomationScheduler:
             now = datetime.now()
             try:
                 with self._app.app_context():
-                    automation_service = self._app.extensions["services"].get("automation_service")
+                    services = self._app.extensions["services"]
+                    automation_service = services.get("automation_service")
                     if automation_service is not None:
                         if self._should_run_realtime(now):
-                            automation_service.run_upcoming_bills_email_if_due()
+                            self._run_scheduled_email_check(
+                                services,
+                                lambda recipient: automation_service.run_upcoming_bills_email_if_due(
+                                    recipient=recipient
+                                ),
+                            )
                             self._next_realtime_run_at = now + timedelta(seconds=self._poll_seconds)
                         if self._should_run_month_end_minute(now):
-                            automation_service.run_month_end_email_if_due()
+                            self._run_scheduled_email_check(
+                                services,
+                                lambda recipient: automation_service.run_month_end_email_if_due(
+                                    recipient=recipient
+                                ),
+                            )
             except Exception:
                 logger.exception("Automation scheduler loop failed.")
 
@@ -64,3 +77,30 @@ class AutomationScheduler:
             return max(1.0, next_minute)
         realtime_wait = max(0.0, (self._next_realtime_run_at - now).total_seconds())
         return max(1.0, min(next_minute, realtime_wait))
+
+    def _run_scheduled_email_check(self, services: dict, check) -> None:
+        users = self._list_scheduled_users(services)
+        if not users:
+            check(None)
+            return
+
+        for user in users:
+            user_id = int(user["id"])
+            recipient = str(user.get("email") or "").strip() or None
+            if recipient is None:
+                continue
+            try:
+                with background_user_context(user_id):
+                    check(recipient)
+            except Exception:
+                logger.exception(
+                    "Scheduled email automation failed for user_id=%s.",
+                    user_id,
+                )
+
+    @staticmethod
+    def _list_scheduled_users(services: dict) -> list[dict]:
+        user_service = services.get("user_service")
+        if user_service is None or not hasattr(user_service, "list_users"):
+            return []
+        return list(user_service.list_users())

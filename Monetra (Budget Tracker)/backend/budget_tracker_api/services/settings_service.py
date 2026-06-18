@@ -20,11 +20,14 @@ class SettingsService:
     def get_settings(self, month_key: str | None = None) -> dict:
         return self._repository.get_settings(self._parse_month_key(month_key))
 
-    def get_monthly_budget(self) -> float:
-        return self._repository.get_monthly_budget()
+    def get_monthly_budget(self, month_key: str | None = None) -> float:
+        return self._repository.get_monthly_budget(self._parse_month_key(month_key))
 
     def get_monthly_income(self, month_key: str | None = None) -> float:
         return self._repository.get_monthly_income(self._parse_month_key(month_key))
+
+    def list_monthly_income_records(self, before_month: str | None = None) -> list[dict]:
+        return self._repository.list_monthly_income_records(self._parse_month_key(before_month))
 
     def update_monthly_budget(self, payload: dict) -> dict:
         value = payload.get("monthly_budget")
@@ -36,9 +39,8 @@ class SettingsService:
         if monthly_budget <= 0:
             raise ValidationError("monthly_budget must be greater than zero.")
 
-        return {
-            "monthly_budget": self._repository.update_monthly_budget(monthly_budget)
-        }
+        month_key = self._parse_month_key(payload.get("month"))
+        return self._repository.update_monthly_budget(monthly_budget, month_key)
 
     def update_monthly_income(self, payload: dict) -> dict:
         value = payload.get("monthly_income")

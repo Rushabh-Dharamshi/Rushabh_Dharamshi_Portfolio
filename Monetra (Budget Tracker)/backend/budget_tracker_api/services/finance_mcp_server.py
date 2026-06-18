@@ -62,10 +62,13 @@ class FinanceMcpServer:
             },
             {
                 "name": "set_monthly_budget",
-                "description": "Update the monthly budget in pounds.",
+                "description": "Update the monthly budget in pounds sterling, optionally for a specific month in YYYY-MM.",
                 "input_schema": {
                     "type": "object",
-                    "properties": {"monthly_budget": {"type": "number"}},
+                    "properties": {
+                        "monthly_budget": {"type": "number"},
+                        "month": {"type": "string"},
+                    },
                     "required": ["monthly_budget"],
                 },
             },
@@ -175,7 +178,12 @@ class FinanceMcpServer:
             },
             {
                 "name": "send_upcoming_bills_email_now",
-                "description": "Send the current 7-day upcoming bills email immediately.",
+                "description": "Send the due-soon bills email immediately. This includes late unpaid reminders and bills due today plus the next 7 days, covering 8 calendar dates total.",
+                "input_schema": {"type": "object", "properties": {}},
+            },
+            {
+                "name": "send_all_upcoming_bills_email_now",
+                "description": "Send an all-upcoming-bills email for late unpaid reminders and all projected upcoming bills.",
                 "input_schema": {"type": "object", "properties": {}},
             },
             {

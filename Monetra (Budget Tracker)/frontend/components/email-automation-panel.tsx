@@ -2,11 +2,13 @@
 
 import { AgentWorkflowRun } from "@/lib/types";
 import { formatBackendTimestamp } from "@/lib/date-time";
+import { formatAgentOutput } from "@/lib/agent-output-format";
 
 interface EmailAutomationPanelProps {
   runs: AgentWorkflowRun[];
   activeDispatchId: string | null;
   onSendUpcomingBillsEmail: () => void;
+  onSendAllUpcomingBillsEmail?: () => void;
   onSendMonthEndEmail: () => void;
 }
 
@@ -14,6 +16,7 @@ export function EmailAutomationPanel({
   runs,
   activeDispatchId,
   onSendUpcomingBillsEmail,
+  onSendAllUpcomingBillsEmail,
   onSendMonthEndEmail,
 }: EmailAutomationPanelProps) {
   const emailRuns = runs.filter((run) => run.workflow_name.includes("email")).slice(0, 4);
@@ -34,9 +37,9 @@ export function EmailAutomationPanel({
         <article className="email-action-card email-action-card-warning">
           <div className="email-action-copy">
             <p className="eyebrow">Due Soon</p>
-            <h3>Send upcoming bills email now</h3>
+            <h3>Send due-soon bills</h3>
             <p>
-              Push a fresh 7-day bills update straight to your inbox. If the due list changed after payments or cancellations, this sends the latest state.
+              Emails late unpaid reminders plus bills due today and the next 7 days. This covers 8 calendar dates total.
             </p>
           </div>
           <button
@@ -45,7 +48,25 @@ export function EmailAutomationPanel({
             onClick={onSendUpcomingBillsEmail}
             disabled={activeDispatchId === "upcoming_bills_email"}
           >
-            {activeDispatchId === "upcoming_bills_email" ? "Sending upcoming bills email..." : "Send upcoming bills email"}
+            {activeDispatchId === "upcoming_bills_email" ? "Sending due-soon bills..." : "Send due-soon bills"}
+          </button>
+        </article>
+
+        <article className="email-action-card email-action-card-warning">
+          <div className="email-action-copy">
+            <p className="eyebrow">All Upcoming</p>
+            <h3>Send all upcoming bills</h3>
+            <p>
+              Emails late unpaid reminders and all projected active recurring bills, so you can review the full upcoming schedule.
+            </p>
+          </div>
+          <button
+            className="button email-action-button"
+            type="button"
+            onClick={onSendAllUpcomingBillsEmail}
+            disabled={!onSendAllUpcomingBillsEmail || activeDispatchId === "all_upcoming_bills_email"}
+          >
+            {activeDispatchId === "all_upcoming_bills_email" ? "Sending all upcoming bills..." : "Send all upcoming bills"}
           </button>
         </article>
 
@@ -81,7 +102,9 @@ export function EmailAutomationPanel({
           <span className="muted">{emailRuns.length} logged</span>
         </div>
         {emailRuns.length ? (
-          emailRuns.map((run) => (
+          emailRuns.map((run) => {
+            const output = formatAgentOutput(run);
+            return (
             <article key={run.id} className="email-run-card">
               <div className="card-header">
                 <div>
@@ -90,7 +113,20 @@ export function EmailAutomationPanel({
                 </div>
                 <span className={`status-pill status-${mapRiskStatus(run.risk_level)}`}>{run.risk_level} risk</span>
               </div>
-              <p>{run.summary}</p>
+              {output.headline && output.headline !== run.workflow_label ? <p><strong>{output.headline}</strong></p> : null}
+              {emailRunSummary(output.summary, run.summary).map((paragraph) => (
+                <p key={paragraph}>{paragraph}</p>
+              ))}
+              {output.recommendedActions.length ? (
+                <div className="automation-actions-list">
+                  <span>Recommended actions</span>
+                  <ol>
+                    {output.recommendedActions.slice(0, 3).map((action) => (
+                      <li key={action}>{action}</li>
+                    ))}
+                  </ol>
+                </div>
+              ) : null}
               <div className="workflow-meta">
                 <span>{run.email_subject}</span>
                 <span>{run.model}</span>
@@ -101,7 +137,8 @@ export function EmailAutomationPanel({
                 ) : null}
               </div>
             </article>
-          ))
+            );
+          })
         ) : (
           <p className="muted">Manual and scheduled email dispatches will appear here once they run.</p>
         )}
@@ -110,7 +147,7 @@ export function EmailAutomationPanel({
   );
 }
 
-function mapRiskStatus(riskLevel: string) {
+export function mapRiskStatus(riskLevel: string) {
   if (riskLevel === "high") {
     return "over";
   }
@@ -120,3 +157,6 @@ function mapRiskStatus(riskLevel: string) {
   return "within";
 }
 
+export function emailRunSummary(outputSummary: string[], runSummary: string): string[] {
+  return outputSummary.length ? outputSummary : [runSummary];
+}

@@ -43,14 +43,26 @@ export function OperationsPanel({
           <p className="eyebrow">Operations</p>
           <h2>Import, reporting, budget and income planning</h2>
           <p className="section-copy">
-            Update the monthly budget and record income for a specific month, move data in and out, generate detailed reports, and forecast next month&apos;s spend from one control surface.
+            Choose a planning month, then save the planned budget and expected income for that same month. Imports, exports, reports, forecasts, and budget checks stay in one control surface.
           </p>
         </div>
       </div>
 
+      <div className="budget-editor income-editor">
+        <label className="control-stack">
+          <span className="control-label">Planning month</span>
+          <input
+            type="month"
+            value={incomeMonthDraft}
+            onChange={(event) => onIncomeMonthChange(event.target.value)}
+          />
+          <small>The month these budget and income values belong to.</small>
+        </label>
+      </div>
+
       <div className="budget-editor">
         <label className="control-stack">
-          <span className="control-label">Monthly budget (GBP)</span>
+          <span className="control-label">Monthly budget for selected month (GBP)</span>
           <input
             type="number"
             min="1"
@@ -58,23 +70,16 @@ export function OperationsPanel({
             value={budgetDraft}
             onChange={(event) => onBudgetDraftChange(event.target.value)}
           />
+          <small>Your planned living-cost limit for the selected month. This is not income.</small>
         </label>
         <button className="button button-primary" type="button" onClick={onSaveBudget}>
-          Save budget
+          Save budget for month
         </button>
       </div>
 
       <div className="budget-editor income-editor">
         <label className="control-stack">
-          <span className="control-label">Income month</span>
-          <input
-            type="month"
-            value={incomeMonthDraft}
-            onChange={(event) => onIncomeMonthChange(event.target.value)}
-          />
-        </label>
-        <label className="control-stack">
-          <span className="control-label">Monthly income (GBP)</span>
+          <span className="control-label">Monthly income for selected month (GBP)</span>
           <input
             type="number"
             min="1"
@@ -82,6 +87,7 @@ export function OperationsPanel({
             value={incomeDraft}
             onChange={(event) => onIncomeDraftChange(event.target.value)}
           />
+          <small>Money expected or recorded as income for the selected month.</small>
         </label>
         <button className="button button-secondary" type="button" onClick={onSaveIncome}>
           Save income for month
@@ -114,7 +120,7 @@ export function OperationsPanel({
           Export CSV
         </a>
         <a className="button button-secondary" href={reportUrl} download>
-          Generate PDF report
+          Generate selected-month PDF
         </a>
         <button className="button button-primary" type="button" onClick={onPredict}>
           Predict next month
@@ -126,7 +132,7 @@ export function OperationsPanel({
 
       {summary ? (
         <p className="muted">
-          Budget status: {summary.status} at {summary.percent_spent.toFixed(1)}% of monthly budget. Cash flow this month: {formatCurrency(summary.net_cash_flow)}. Monthly income recorded for {summary.month_label}: {formatCurrency(summary.monthly_income)}.
+          Budget status for {summary.month_label}: {summary.status} at {summary.percent_spent.toFixed(1)}% of the {formatCurrency(summary.monthly_budget)} monthly budget. Cash flow this month: {formatCurrency(summary.net_cash_flow)}. Monthly income recorded for {summary.month_label}: {formatCurrency(summary.monthly_income)}.
         </p>
       ) : null}
 

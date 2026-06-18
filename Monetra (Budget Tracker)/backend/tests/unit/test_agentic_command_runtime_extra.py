@@ -89,3 +89,43 @@ def test_agentic_runtime_runs_full_graph_and_handles_list_content():
     assert result["action_result"]["type"] == "monthly_budget_updated"
     assert result["report_download_url"] == "/api/reports/monthly"
     assert memory.entries[0]["kind"] == "manual_action"
+
+
+def test_agentic_runtime_planner_list_steps_and_email_signoff_edges():
+    runtime = RuntimeWithStubLlm(
+        FakeLlm(
+            [
+                '{"intent":"update budget","steps":[["set_monthly_budget", "bad arguments", "apply budget"]],"success_criteria":["budget saved"]}',
+                '{"headline":"Budget updated","summary":"Budget saved.","risk_level":"low","recommended_actions":[],"email_subject":"Budget updated","email_draft":"Kind Regards,\\nMonetra Organisation"}',
+            ]
+        )
+    )
+
+    result = runtime.run("set my budget")
+
+    assert result["headline"] == "Budget updated"
+    assert runtime._with_standard_email_signoff("Kind Regards,\nMonetra Organisation") == "Kind Regards,\nMonetra Organisation"
+
+    dict_runtime = RuntimeWithStubLlm(
+        FakeLlm(
+            [
+                '{"intent":"update budget","steps":[{"tool":"set_monthly_budget","arguments":"bad","reason":"apply budget"}],"success_criteria":["budget saved"]}',
+                '{"headline":"Budget updated","summary":"Budget saved.","risk_level":"low","recommended_actions":[],"email_subject":"Budget updated","email_draft":"Done."}',
+            ]
+        )
+    )
+    assert dict_runtime.run("set my budget")["headline"] == "Budget updated"
+
+
+def test_agentic_runtime_repairs_invalid_planner_step():
+    runtime = RuntimeWithStubLlm(
+        FakeLlm(
+            [
+                '{"intent":"bad","steps":["not a dict"],"success_criteria":["done"]}',
+                '{"intent":"fixed","steps":[{"tool":"set_monthly_budget","arguments":{"monthly_budget":1200},"reason":"apply"}],"success_criteria":["done"]}',
+                '{"headline":"Fixed","summary":"Done.","risk_level":"low","recommended_actions":[],"email_subject":"Fixed","email_draft":"Done."}',
+            ]
+        )
+    )
+
+    assert runtime.run("set my budget")["headline"] == "Fixed"

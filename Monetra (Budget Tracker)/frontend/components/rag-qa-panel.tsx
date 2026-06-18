@@ -32,6 +32,7 @@ export function RagQaPanel({
           <h2>Semantic finance Q&amp;A</h2>
           <p className="section-copy">
             Ask questions about historical spending, recurring commitments, reports, and prior agent outputs.
+            Reindex once before first use, then reindex again after data, imports, reports, or workflow outputs change.
             This panel is retrieval-first. Use the action agent separately for CRUD, workflows, and email dispatch.
           </p>
         </div>
@@ -42,97 +43,109 @@ export function RagQaPanel({
         </div>
       </div>
 
-      <div className="agent-prompt">
-        <label className="control-stack full-span">
-          <span className="control-label">Finance question</span>
-          <textarea
-            value={questionDraft}
-            onChange={(event) => onQuestionDraftChange(event.target.value)}
-            rows={4}
-            placeholder="Example: Which categories and recurring reminders are putting the most pressure on cash flow this month?"
-          />
-        </label>
-        <div className="hero-pill-row">
-          <button className="button button-primary" type="button" onClick={() => onAsk()} disabled={isQuerying}>
-            {isQuerying ? "Querying..." : "Ask knowledge base"}
-          </button>
-          <button className="button button-secondary" type="button" onClick={() => onReindex()} disabled={isReindexing}>
-            {isReindexing ? "Reindexing..." : "Reindex knowledge"}
-          </button>
+      <div className="rag-chat-window" aria-live="polite">
+        <div className="rag-chat-topbar">
+          <div className="rag-chat-identity">
+            <div className="rag-avatar rag-avatar-assistant">MA</div>
+            <div>
+              <strong>Monetra RAG Assistant</strong>
+              <span><span className="rag-status-dot" />Knowledge-grounded finance chat</span>
+            </div>
+          </div>
+          <span className="rag-topbar-pill">RAG</span>
+        </div>
+
+        <div className="rag-conversation">
+          {answer ? (
+            <article className="rag-message rag-message-user">
+              <div className="rag-avatar rag-avatar-user">You</div>
+              <div className="rag-message-body">
+                <div className="rag-message-header">
+                  <strong>Your question</strong>
+                  <span>{formatIndexedAt(answer.generated_at)}</span>
+                </div>
+                <div className="rag-bubble rag-bubble-user">
+                  <p>{normalizeSentence(answer.question || questionDraft)}</p>
+                </div>
+              </div>
+            </article>
+          ) : null}
+
+          {answer ? (
+            <article className="rag-message rag-message-assistant">
+              <div className="rag-avatar rag-avatar-assistant">MA</div>
+              <div className="rag-message-body">
+                <div className="rag-message-header">
+                  <strong>Monetra RAG Assistant</strong>
+                  <span>@knowledge-base</span>
+                </div>
+                <div className="rag-bubble rag-bubble-assistant">
+                  <div className="rag-answer-toolbar">
+                    <span className={`rag-chip rag-confidence-${normalizeLabel(answer.confidence).toLowerCase()}`}>
+                      Confidence: {normalizeLabel(answer.confidence)}
+                    </span>
+                    <span className="rag-chip">Grounded answer</span>
+                    <span className="rag-chip">{formatIndexedAt(answer.generated_at)}</span>
+                  </div>
+                  <div className="agent-prose rag-answer-copy">
+                    {normalizeParagraphs(answer.answer).map((paragraph) => (
+                      <p key={paragraph}>{paragraph}</p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </article>
+          ) : (
+            <article className="rag-message rag-message-assistant">
+              <div className="rag-avatar rag-avatar-assistant">MA</div>
+              <div className="rag-message-body">
+                <div className="rag-message-header">
+                  <strong>Monetra RAG Assistant</strong>
+                  <span>@knowledge-base</span>
+                </div>
+                <div className="rag-bubble rag-bubble-assistant">
+                  <div className="agent-prose rag-answer-copy">
+                    <p>Ask me about your spending, income, recurring commitments, budgets, reports, or previous finance workflows.</p>
+                  </div>
+                </div>
+              </div>
+            </article>
+          )}
+        </div>
+
+        <div className="rag-chat-composer">
+          <label className="rag-composer-input">
+            <span className="rag-composer-eyebrow">Ask Monetra</span>
+            <textarea
+              aria-label="Finance question"
+              value={questionDraft}
+              onChange={(event) => onQuestionDraftChange(event.target.value)}
+              rows={2}
+              placeholder="Ask a finance question..."
+            />
+          </label>
+          <div className="rag-composer-actions">
+            <button className="button button-primary" type="button" onClick={() => onAsk()} disabled={isQuerying}>
+              {isQuerying ? "Asking..." : "Send"}
+            </button>
+            <button className="button button-secondary" type="button" onClick={() => onReindex()} disabled={isReindexing}>
+              {isReindexing ? "Reindexing..." : "Reindex"}
+            </button>
+          </div>
         </div>
       </div>
-
-      {answer ? (
-        <div className="agent-output-grid">
-          <article className="insight-card agent-hero-card">
-            <div className="card-header">
-              <h3>Answer</h3>
-              <span className="muted">Confidence: {normalizeLabel(answer.confidence)}</span>
-            </div>
-            <div className="agent-prose">
-              {normalizeParagraphs(answer.answer).map((paragraph) => (
-                <p key={paragraph}>{paragraph}</p>
-              ))}
-            </div>
-            <div className="agent-meta">
-              <span>{answer.sources.length} sources cited</span>
-              <span>{formatIndexedAt(answer.generated_at)}</span>
-            </div>
-          </article>
-
-          <article className="insight-card agent-action-card">
-            <div className="card-header">
-              <h3>Follow-up questions</h3>
-            </div>
-            <div className="bar-list agent-action-list">
-              {answer.follow_up_questions.length ? (
-                answer.follow_up_questions.map((item, index) => (
-                  <div key={`${item}-${index}`} className="agent-action sentence-action">
-                    <span className="agent-action-index">{index + 1}</span>
-                    <p>{normalizeSentence(item)}</p>
-                  </div>
-                ))
-              ) : (
-                <p className="muted">No follow-up questions were suggested.</p>
-              )}
-            </div>
-          </article>
-
-          <article className="insight-card trace-card full-span-card">
-            <div className="card-header">
-              <h3>Retrieved sources</h3>
-              <span className="muted">Semantic context used for the answer</span>
-            </div>
-            <div className="trace-list rag-source-list">
-              {answer.sources.map((source, index) => (
-                <div key={`${source.document_id}-${index}`} className="trace-step-card">
-                  <strong>{source.source_label}</strong>
-                  <p>{normalizeSentence(source.doc_type.replace(/_/g, " "))}</p>
-                  <p>{source.excerpt}</p>
-                  <code>score={source.score.toFixed(4)}</code>
-                </div>
-              ))}
-            </div>
-          </article>
-        </div>
-      ) : (
-        <p className="muted">
-          Ask natural-language finance questions here. The response is grounded in semantically retrieved budget,
-          transaction, recurring, settings, prediction, and workflow data stored in the local Chroma collection.
-        </p>
-      )}
     </section>
   );
 }
 
-function formatIndexedAt(value: string | null | undefined) {
+export function formatIndexedAt(value: string | null | undefined) {
   if (!value) {
     return "Not indexed yet";
   }
   return formatBackendTimestamp(value);
 }
 
-function normalizeLabel(value: string) {
+export function normalizeLabel(value: string) {
   const normalized = value.trim();
   if (!normalized) {
     return "unknown";
@@ -140,7 +153,7 @@ function normalizeLabel(value: string) {
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
 }
 
-function normalizeParagraphs(value: string) {
+export function normalizeParagraphs(value: string) {
   return value
     .replace(/\r/g, "")
     .split(/\n+/)
@@ -149,7 +162,7 @@ function normalizeParagraphs(value: string) {
     .map(normalizeSentence);
 }
 
-function normalizeSentence(value: string) {
+export function normalizeSentence(value: string) {
   const cleaned = value.replace(/\s+/g, " ").trim();
   if (!cleaned) {
     return "";

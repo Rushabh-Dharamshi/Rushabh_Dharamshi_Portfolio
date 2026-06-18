@@ -42,7 +42,6 @@ export function RecurringCalendarPanel({
   const [form, setForm] = useState<RecurringItemPayload>(emptyForm);
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, string>>({});
-  const calendarModel = useMemo(() => buildCalendarModel(calendar), [calendar]);
   const monthBreakdown = useMemo(() => buildReminderMonthBreakdown(items, calendar?.window_start), [items, calendar?.window_start]);
   const nextWeekOccurrences = useMemo(
     () =>
@@ -99,44 +98,33 @@ export function RecurringCalendarPanel({
 
       <div className="recurring-layout">
         <div className="recurring-calendar-shell">
-          <div className="card-header">
-            <h3>{calendarModel.monthLabel}</h3>
-            <span className="muted">{calendar?.occurrences.length ?? 0} due occurrences in this 35-day window</span>
+          <div className="recurring-summary-strip">
+            <article className="metric-card">
+              <span>Open reminders</span>
+              <strong>{calendar?.occurrences.length ?? 0}</strong>
+              <small>Upcoming reminder dates still waiting for you to link a matching paid transaction ID.</small>
+            </article>
+            <article className="metric-card">
+              <span>Completed reminders</span>
+              <strong>{calendar?.completed_occurrences.length ?? 0}</strong>
+              <small>Reminder occurrences already matched to a verified transaction ID.</small>
+            </article>
           </div>
 
-          <div className="calendar-grid">
-            {calendarModel.weekdayLabels.map((label) => (
-              <div key={label} className="calendar-weekday">
-                {label}
-              </div>
-            ))}
-            {calendarModel.days.map((day) => (
-              <article
-                key={day.key}
-                className={day.inMonth ? "calendar-day" : "calendar-day is-muted"}
-              >
-                <div className="calendar-day-header">
-                  <strong>{day.label}</strong>
-                </div>
-                <div className="calendar-day-items">
-                  {day.occurrences.slice(0, 3).map((occurrence) => (
-                    <div
-                      key={`${occurrence.recurring_item_id}-${occurrence.date}-${occurrence.description}`}
-                      className={`calendar-pill ${occurrence.entry_type === "income" ? "income-pill" : "expense-pill"}`}
-                    >
-                      {occurrence.description}
-                    </div>
-                  ))}
-                </div>
-              </article>
-            ))}
+          <div className="message info verification-note">
+            <strong>How transaction ID verification works.</strong>
+            {" "}
+            <span>
+              Monetra checks that the transaction ID exists in your account, has the same type, amount, and category as the reminder, and is not already linked to another paid reminder occurrence.
+            </span>
           </div>
 
           <div className="upcoming-list reminder-list-section">
             <div className="card-header">
-              <h3>Upcoming reminders due next week</h3>
-              <span className="muted">{nextWeekOccurrences.length} due in 7 days</span>
+              <h3>Upcoming reminders due soon</h3>
+              <span className="muted">{nextWeekOccurrences.length} due today + next 7 days</span>
             </div>
+            <p className="muted">This list includes today and the next 7 days, so it covers 8 calendar dates total.</p>
             <div className="bounded-reminder-list next-week-reminder-list">
               {nextWeekOccurrences.map((occurrence) => {
               const draftKey = occurrenceKey(occurrence.recurring_item_id, occurrence.date);
@@ -189,7 +177,7 @@ export function RecurringCalendarPanel({
             })}
             </div>
             {!nextWeekOccurrences.length ? (
-              <p className="muted">No recurring reminders are due in the next 7 days.</p>
+              <p className="muted">No recurring reminders are due today or in the next 7 days.</p>
             ) : null}
           </div>
 
@@ -202,23 +190,55 @@ export function RecurringCalendarPanel({
               Bounded reminders are shown through their saved end date. Open-ended reminders are projected for the next 12 months.
             </p>
             <div className="bounded-reminder-list all-reminder-list">
-              {allReminderOccurrences.map((occurrence) => (
-                <article
-                  key={`${occurrence.monthLabel}-${occurrence.recurring_item_id}-${occurrence.date}`}
-                  className="month-breakdown-row"
-                >
-                  <div>
-                    <strong>{occurrence.description}</strong>
-                    <p>
-                      {occurrence.monthLabel} | {occurrence.category} | {occurrence.frequency} | due {occurrence.date}
-                    </p>
-                  </div>
-                  <span className={occurrence.entry_type === "income" ? "amount-positive" : ""}>
-                    {occurrence.entry_type === "income" ? "+" : "-"}
-                    {formatCurrency(occurrence.amount)}
-                  </span>
-                </article>
-              ))}
+              {allReminderOccurrences.map((occurrence) => {
+                const draftKey = occurrenceKey(occurrence.recurring_item_id, occurrence.date);
+                return (
+                  <article
+                    key={`${occurrence.monthLabel}-${occurrence.recurring_item_id}-${occurrence.date}`}
+                    className="month-breakdown-row month-breakdown-row-with-actions"
+                  >
+                    <div>
+                      <strong>{occurrence.description}</strong>
+                      <p>
+                        {occurrence.monthLabel} | {occurrence.category} | {occurrence.frequency} | due {occurrence.date}
+                      </p>
+                    </div>
+                    <div className="activity-item-actions recurring-payment-actions">
+                      <span className={occurrence.entry_type === "income" ? "amount-positive" : ""}>
+                        {occurrence.entry_type === "income" ? "+" : "-"}
+                        {formatCurrency(occurrence.amount)}
+                      </span>
+                      <input
+                        className="transaction-link-input"
+                        type="number"
+                        min="1"
+                        inputMode="numeric"
+                        placeholder="Paid transaction id"
+                        value={transactionDrafts[draftKey] ?? ""}
+                        onChange={(event) =>
+                          setTransactionDrafts((current) => ({
+                            ...current,
+                            [draftKey]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        onClick={() => {
+                          const transactionId = Number(transactionDrafts[draftKey]);
+                          if (!Number.isFinite(transactionId) || transactionId <= 0) {
+                            return;
+                          }
+                          onMarkPaid(occurrence.recurring_item_id, occurrence.date, transactionId);
+                        }}
+                      >
+                        Verify and mark paid
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
             </div>
             {!allReminderOccurrences.length ? (
               <p className="muted">No saved recurring reminders are scheduled ahead.</p>
@@ -341,9 +361,15 @@ export function RecurringCalendarPanel({
               />
             </label>
             <label className="toggle-field">
-              <span>Active</span>
+              <span>
+                Active
+                <small id="recurring-active-help">
+                  Ticked means this reminder appears in upcoming schedules and upcoming-bills email checks. Unticked pauses it: the reminder stays saved, but Monetra stops showing it as due or using it in upcoming-bills emails until you turn it back on.
+                </small>
+              </span>
               <input
                 type="checkbox"
+                aria-describedby="recurring-active-help"
                 checked={form.active}
                 onChange={(event) => setForm({ ...form, active: event.target.checked })}
               />
@@ -533,38 +559,6 @@ function endOfMonth(value: Date) {
 
 function stripTime(value: Date) {
   return new Date(value.getFullYear(), value.getMonth(), value.getDate());
-}
-
-function buildCalendarModel(calendar: RecurringCalendarResponse | null) {
-  const today = calendar ? parseLocalDate(calendar.window_start) : new Date();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const firstVisibleDay = new Date(monthStart);
-  firstVisibleDay.setDate(monthStart.getDate() - ((monthStart.getDay() + 6) % 7));
-
-  const occurrencesByDate = new Map<string, RecurringCalendarResponse["occurrences"]>();
-  calendar?.occurrences.forEach((occurrence) => {
-    const bucket = occurrencesByDate.get(occurrence.date) ?? [];
-    bucket.push(occurrence);
-    occurrencesByDate.set(occurrence.date, bucket);
-  });
-
-  const days = Array.from({ length: 42 }, (_, index) => {
-    const date = new Date(firstVisibleDay);
-    date.setDate(firstVisibleDay.getDate() + index);
-    const key = formatLocalKey(date);
-    return {
-      key,
-      label: date.getDate(),
-      inMonth: date.getMonth() === today.getMonth(),
-      occurrences: occurrencesByDate.get(key) ?? [],
-    };
-  });
-
-  return {
-    monthLabel: monthStart.toLocaleString("en-GB", { month: "long", year: "numeric" }),
-    weekdayLabels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-    days,
-  };
 }
 
 function parseLocalDate(rawDate: string) {

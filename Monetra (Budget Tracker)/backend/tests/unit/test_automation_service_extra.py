@@ -105,6 +105,8 @@ def test_automation_service_bootstrap_refresh_and_helpers(monkeypatch):
     refresh_jobs = service.queue_realtime_refresh(fake_app, "expense_created")
     assert len(refresh_jobs) == 3
     assert all(job["reuse_active"] is True for job in refresh_jobs)
+    user_refresh_jobs = service.queue_realtime_refresh(fake_app, "expense_created", user_id=42)
+    assert all(job["payload"]["user_id"] == 42 for job in user_refresh_jobs)
     assert service.queue_realtime_refresh(fake_app, "month_end_email_sent") == []
     assert service.queue_realtime_refresh(fake_app, "upcoming_bills_email_sent") == []
     assert "expense created changed" in agent_service.jobs[0]["payload"]["task"]
@@ -159,6 +161,8 @@ def test_automation_service_bootstrap_thread_and_dispatch_variants(monkeypatch):
     assert due_expenses == []
     upcoming = service.run_upcoming_bills_email_now()
     assert upcoming["headline"] == "No upcoming bills email sent"
+    all_upcoming = service.run_all_upcoming_bills_email_now()
+    assert all_upcoming["headline"] == "No upcoming bills email sent"
     assert email_service.sent_messages == []
     assert service._upcoming_bills_signature(
         [{"recurring_item_id": 2, "date": "2026-04-02", "description": "B"}, {"recurring_item_id": 1, "date": "2026-04-01", "description": "A"}]
@@ -166,3 +170,32 @@ def test_automation_service_bootstrap_thread_and_dispatch_variants(monkeypatch):
     assert service._normalize_email_paragraph(["hello", "world"]) == "hello world"
     assert service._normalize_email_list("single") == ["single"]
     assert service._normalize_email_list([" one ", None, "two"]) == ["one", "two"]
+    assert service._format_due_expense_line({"description": "Bad", "amount": object(), "date": "2026-03-25"}) == "Bad: GBP 0.00, due 2026-03-25, recurring"
+    assert service._format_due_expense_line({"description": "Tomorrow", "amount": 1, "date": "2026-03-26", "days_until_due": 1}) == "Tomorrow: GBP 1.00, due 2026-03-26 (due tomorrow), recurring"
+    assert service._format_due_expense_line({"description": "Bad days", "amount": 1, "date": "2026-03-26", "days_until_due": object()}) == "Bad days: GBP 1.00, due 2026-03-26, recurring"
+    assert service._extract_embedded_email_text('{"summary":"x"}') == '{"summary":"x"}'
+    assert service._extract_embedded_email_text('{"email_draft": 123}') == '{"email_draft": 123}'
+    assert service._extract_embedded_email_text('{"email_draft":"Line one\\nLine two","other":"x"}') == "Line one\nLine two"
+
+
+def test_automation_service_due_expense_normalization_deduplicates_and_filters():
+    service, _, _ = make_service()
+    normalized = service._normalize_due_expenses(
+        [
+            {"recurring_item_id": 1, "date": "2026-06-01", "description": "Income", "amount": 1000, "entry_type": "income"},
+            {"recurring_item_id": 2, "date": "2026-06-02", "description": "Rent", "amount": 700, "entry_type": "expense", "frequency": "monthly"},
+            {"recurring_item_id": 2, "date": "2026-06-02", "description": "Rent", "amount": 700, "entry_type": "expense", "frequency": "monthly"},
+        ]
+    )
+
+    assert normalized == [
+        {
+            "recurring_item_id": 2,
+            "date": "2026-06-02",
+            "description": "Rent",
+            "amount": 700,
+            "entry_type": "expense",
+            "frequency": "monthly",
+            "days_until_due": None,
+        }
+    ]

@@ -28,6 +28,16 @@ def _build_database_url() -> str:
     )
 
 
+def _email_mode() -> str:
+    raw_mode = os.getenv("EMAIL_MODE") or os.getenv("EMAIL_DELIVERY_MODE", "smtp")
+    normalized = raw_mode.strip().lower()
+    if normalized == "real":
+        return "smtp"
+    if normalized == "mock":
+        return "dry_run"
+    return normalized
+
+
 class Config:
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
     SECRET_KEY = os.getenv("SECRET_KEY", "local-dev-secret-change-me")
@@ -56,6 +66,7 @@ class Config:
     DEMO_ACCESS_PASSWORD = os.getenv("DEMO_ACCESS_PASSWORD", "")
     LOGIN_REQUIRED = os.getenv("LOGIN_REQUIRED", "true").lower() == "true"
     AUTH_USERNAME = os.getenv("AUTH_USERNAME", "Rushabh")
+    AUTH_EMAIL = os.getenv("AUTH_EMAIL") or os.getenv("REPORT_EMAIL_TO") or "owner@monetra.local"
     AUTH_PASSWORD_HASH = os.getenv("AUTH_PASSWORD_HASH", "")
     READ_ONLY_MODE = os.getenv("READ_ONLY_MODE", "false").lower() == "true"
     PUBLIC_HEALTHCHECK_ENABLED = os.getenv("PUBLIC_HEALTHCHECK_ENABLED", "true").lower() == "true"
@@ -97,11 +108,17 @@ class Config:
     FASTMCP_PYTHON_EXECUTABLE = os.getenv("FASTMCP_PYTHON_EXECUTABLE", sys.executable)
     REPORT_EMAIL_TO = os.getenv("REPORT_EMAIL_TO", "")
     REPORT_EMAIL_RECIPIENT_NAME = os.getenv("REPORT_EMAIL_RECIPIENT_NAME", "Rushabh Dharamshi")
+    EMAIL_DELIVERY_MODE = _email_mode()
     SMTP_HOST = os.getenv("SMTP_HOST", "")
     SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-    SMTP_USERNAME = os.getenv("SMTP_USERNAME", "")
+    SMTP_USERNAME = os.getenv("SMTP_USERNAME") or os.getenv("SMTP_USER", "")
     SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
     SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+    SMTP_REQUIRE_AUTH = os.getenv("SMTP_REQUIRE_AUTH", "true").lower() == "true"
+    EMAIL_FROM = os.getenv("EMAIL_FROM", "")
+    EMAIL_ALLOWED_RECIPIENTS = os.getenv("EMAIL_ALLOWED_RECIPIENTS") or os.getenv("ALLOWED_TEST_EMAILS", "")
+    EMAIL_MOCK_DOMAINS = os.getenv("EMAIL_MOCK_DOMAINS", "monetra.test,example.test")
+    MOCK_EMAIL_FROM = os.getenv("MOCK_EMAIL_FROM", "demo@monetra.test")
     AUTOMATION_SCHEDULER_ENABLED = os.getenv("AUTOMATION_SCHEDULER_ENABLED", "false").lower() == "true"
     AUTOMATION_POLL_SECONDS = int(os.getenv("AUTOMATION_POLL_SECONDS", "900"))
     MONTH_END_EMAIL_HOUR = int(os.getenv("MONTH_END_EMAIL_HOUR", "22"))

@@ -45,6 +45,14 @@ describe("frontend strict branch fill", () => {
       recurringItems: [],
       recurringCalendar: { window_start: "2026-03-01", window_end: "2026-04-04", occurrences: [], completed_occurrences: [] },
       prediction: null,
+      latencyReport: {
+        scope: "current_user",
+        record_count: 0,
+        failed_count: 0,
+        summary: { average_ms: 0, minimum_ms: 0, maximum_ms: 0, p95_ms: 0 },
+        by_endpoint: [],
+        latest: [],
+      },
       agentTaskDraft: "task",
       agentBriefing: null,
       agentWorkflows: [],
@@ -88,8 +96,10 @@ describe("frontend strict branch fill", () => {
       runFinanceBriefingAgent: jest.fn(),
       runAutomationWorkflow: jest.fn(),
       sendUpcomingBillsEmailNow: jest.fn(),
+      sendAllUpcomingBillsEmailNow: jest.fn(),
       sendMonthEndEmailNow: jest.fn(),
       refresh: jest.fn(),
+      refreshLatencyReport: jest.fn(),
     });
 
     render(<BudgetTrackerShell />);

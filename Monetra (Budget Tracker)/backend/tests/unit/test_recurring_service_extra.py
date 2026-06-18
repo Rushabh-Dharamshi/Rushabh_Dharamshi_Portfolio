@@ -176,6 +176,7 @@ def test_recurring_service_paid_and_calendar_branches(monkeypatch):
     calendar = service.upcoming_calendar(10)
     assert calendar["window_start"] == "2026-03-29"
     assert any(item["description"] == "Salary" for item in calendar["occurrences"])
+    assert any(item["description"] == "Bus pass" and item["date"] == "2026-03-27" for item in calendar["late_occurrences"])
     assert any(item["description"] == "Bus pass" and item["transaction_id"] == 8 for item in calendar["completed_occurrences"])
     assert all(item["description"] != "Dormant" for item in calendar["occurrences"])
     assert all(item["description"] != "Expired" for item in calendar["occurrences"])

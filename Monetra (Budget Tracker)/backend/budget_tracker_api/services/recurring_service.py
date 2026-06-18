@@ -63,26 +63,46 @@ class RecurringService:
     def upcoming_calendar(self, days_ahead: int = 35) -> dict:
         horizon = max(1, min(int(days_ahead), 90))
         today = date.today()
+        current_month_start = today.replace(day=1)
         window_end_date = today + timedelta(days=horizon - 1)
         items = self._repository.list_items()
         paid_occurrences = self._repository.paid_occurrences_for_range(
-            today.isoformat(),
+            current_month_start.isoformat(),
             window_end_date.isoformat(),
         )
         paid_entries = {
             (entry["recurring_item_id"], entry["occurrence_date"]): entry
             for entry in self._repository.paid_occurrence_entries_for_range(
-                today.isoformat(),
+                current_month_start.isoformat(),
                 window_end_date.isoformat(),
             )
         }
 
         occurrences: list[dict] = []
+        late_occurrences: list[dict] = []
         completed_occurrences: list[dict] = []
         for item in items:
             if not item["active"]:
                 continue
             item_end_date = self._parse_optional_date(item.get("end_date"))
+            overdue_date = self._first_due_on_or_after(item["start_date"], item["frequency"], current_month_start)
+            while overdue_date < today and (item_end_date is None or overdue_date <= item_end_date):
+                occurrence_key = (item["id"], overdue_date.isoformat())
+                if occurrence_key not in paid_occurrences:
+                    late_occurrences.append(
+                        {
+                            "recurring_item_id": item["id"],
+                            "date": overdue_date.isoformat(),
+                            "category": item["category"],
+                            "description": item["description"],
+                            "amount": item["amount"],
+                            "entry_type": item["entry_type"],
+                            "frequency": item["frequency"],
+                            "days_until_due": (overdue_date - today).days,
+                        }
+                    )
+                overdue_date = self._next_due_date(overdue_date, item["frequency"])
+
             due_date = self._first_due_on_or_after(item["start_date"], item["frequency"], today)
             if item_end_date and due_date > item_end_date:
                 continue
@@ -114,6 +134,7 @@ class RecurringService:
                 due_date = self._next_due_date(due_date, item["frequency"])
 
         occurrences.sort(key=lambda item: (item["date"], item["description"], item["recurring_item_id"]))
+        late_occurrences.sort(key=lambda item: (item["date"], item["description"], item["recurring_item_id"]))
         completed_occurrences.sort(
             key=lambda item: (item["date"], item["description"], item["recurring_item_id"])
         )
@@ -121,6 +142,7 @@ class RecurringService:
             "window_start": today.isoformat(),
             "window_end": window_end_date.isoformat(),
             "occurrences": occurrences,
+            "late_occurrences": late_occurrences,
             "completed_occurrences": completed_occurrences,
         }
 

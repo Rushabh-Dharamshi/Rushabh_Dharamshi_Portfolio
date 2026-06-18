@@ -186,7 +186,7 @@ When(
   },
 );
 
-When("I run a local finance briefing for {string}", async function (task) {
+When("I run a finance briefing for {string}", async function (task) {
   const job = await client.startFinanceBriefingAgent(task);
   this.latestResult = await client.getFinanceBriefingJob(job.id);
 });

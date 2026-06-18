@@ -8,7 +8,7 @@ class AnalyticsService:
     def __init__(
         self,
         repository: ExpenseRepository,
-        budget_provider: Callable[[], float],
+        budget_provider: Callable[[str | None], float],
         income_provider: Callable[[str | None], float],
     ):
         self._repository = repository
@@ -18,7 +18,7 @@ class AnalyticsService:
     def dashboard(self) -> dict:
         now = datetime.now()
         month_key = now.strftime("%Y-%m")
-        monthly_budget = self._budget_provider()
+        monthly_budget = self._budget_provider(month_key)
         monthly_income = self._income_provider(month_key)
         expense_total = self._repository.monthly_total(month_key, "expense")
         remaining_budget = monthly_budget - expense_total
@@ -39,6 +39,7 @@ class AnalyticsService:
 
         return {
             "monthly_budget": round(monthly_budget, 2),
+            "budget_month": month_key,
             "current_month_total": round(expense_total, 2),
             "monthly_expenses": round(expense_total, 2),
             "monthly_income": round(monthly_income, 2),
@@ -56,7 +57,7 @@ class AnalyticsService:
         month_key = datetime.now().strftime("%Y-%m")
         categories = self._repository.category_totals(month_key, "expense")
         top_categories = categories[:3]
-        bottom_categories = categories[-3:] if len(categories) >= 3 else categories
+        bottom_categories = list(reversed(categories[-3:])) if len(categories) >= 3 else list(reversed(categories))
 
         return {
             "top_categories": [
@@ -109,7 +110,7 @@ class AnalyticsService:
     def financial_pulse(self) -> dict:
         now = datetime.now()
         month_key = now.strftime("%Y-%m")
-        monthly_budget = self._budget_provider()
+        monthly_budget = self._budget_provider(month_key)
         income_total = self._income_provider(month_key)
         recorded_income = self._repository.monthly_total(month_key, "income")
         expense_total = self._repository.monthly_total(month_key, "expense")

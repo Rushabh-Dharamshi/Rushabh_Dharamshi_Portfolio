@@ -3,7 +3,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { RagQaPanel } from "@/components/rag-qa-panel";
 
 describe("RagQaPanel", () => {
-  it("renders status, answer, and retrieved sources", () => {
+  it("renders status and the chat-style answer without retrieved source cards", () => {
     const onQuestionDraftChange = jest.fn();
     const onAsk = jest.fn();
     const onReindex = jest.fn();
@@ -64,12 +64,19 @@ describe("RagQaPanel", () => {
     expect(screen.getByText("Documents: 12")).toBeInTheDocument();
     expect(screen.getByText("Chunks: 36")).toBeInTheDocument();
     expect(screen.getByText("Confidence: High")).toBeInTheDocument();
-    expect(screen.getByText("Dashboard March 2026")).toBeInTheDocument();
-    expect(screen.getByText("Recurring #1").closest(".rag-source-list")).toHaveClass("rag-source-list");
+    expect(screen.getAllByText("Monetra RAG Assistant").length).toBeGreaterThan(1);
+    expect(screen.getByText("Knowledge-grounded finance chat")).toBeInTheDocument();
+    expect(screen.getByText("Your question")).toBeInTheDocument();
+    expect(screen.getByText("Grounded answer")).toBeInTheDocument();
+    expect(screen.queryByText("Retrieved sources")).not.toBeInTheDocument();
+    expect(screen.queryByText("Dashboard March 2026")).not.toBeInTheDocument();
+    expect(screen.queryByText("Recurring #1")).not.toBeInTheDocument();
+    expect(screen.queryByText("Follow-up questions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Which recurring bills are due next?")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Finance question"), { target: { value: "How is cash flow?" } });
-    fireEvent.click(screen.getByText("Ask knowledge base"));
-    fireEvent.click(screen.getByText("Reindex knowledge"));
+    fireEvent.click(screen.getByText("Send"));
+    fireEvent.click(screen.getByText("Reindex"));
 
     expect(onQuestionDraftChange).toHaveBeenCalledWith("How is cash flow?");
     expect(onAsk).toHaveBeenCalled();
@@ -90,13 +97,13 @@ describe("RagQaPanel", () => {
       />,
     );
 
-    expect(screen.getByText("Querying...")).toBeDisabled();
+    expect(screen.getByText("Asking...")).toBeDisabled();
     expect(screen.getByText("Reindexing...")).toBeDisabled();
-    expect(screen.getByText(/Ask natural-language finance questions here/i)).toBeInTheDocument();
+    expect(screen.getByText(/Ask me about your spending/i)).toBeInTheDocument();
     expect(screen.getByText("Documents: 0")).toBeInTheDocument();
   });
 
-  it("normalizes blank confidence and blank follow-up content", () => {
+  it("normalizes blank confidence and hides blank follow-up content", () => {
     render(
       <RagQaPanel
         questionDraft="What next?"
@@ -134,10 +141,11 @@ describe("RagQaPanel", () => {
     );
 
     expect(screen.getByText("Confidence: unknown")).toBeInTheDocument();
-    expect(screen.getByText("not-a-date")).toBeInTheDocument();
+    expect(screen.getAllByText("not-a-date").length).toBeGreaterThan(1);
+    expect(screen.queryByText("Follow-up questions")).not.toBeInTheDocument();
   });
 
-  it("renders the no-follow-up placeholder when the answer has no follow-up questions", () => {
+  it("hides the follow-up section when the answer has no follow-up questions", () => {
     render(
       <RagQaPanel
         questionDraft="What next?"
@@ -167,6 +175,7 @@ describe("RagQaPanel", () => {
       />,
     );
 
-    expect(screen.getByText("No follow-up questions were suggested.")).toBeInTheDocument();
+    expect(screen.queryByText("Follow-up questions")).not.toBeInTheDocument();
+    expect(screen.queryByText("No follow-up questions were suggested.")).not.toBeInTheDocument();
   });
 });

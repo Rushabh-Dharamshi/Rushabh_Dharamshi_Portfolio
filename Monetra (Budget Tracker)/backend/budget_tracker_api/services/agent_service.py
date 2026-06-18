@@ -11,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 
 from budget_tracker_api.errors import ServiceUnavailableError, ValidationError
 from budget_tracker_api.repositories.agent_run_repository import AgentRunRepository
+from budget_tracker_api.security import background_user_context
 from budget_tracker_api.services.analytics_service import AnalyticsService
 from budget_tracker_api.services.agent_memory_service import AgentMemoryService
 from budget_tracker_api.services.agentic_command_runtime import AgenticCommandRuntime
@@ -192,9 +193,10 @@ class AgentService:
             "Prepare a CFO-style monthly briefing, include cash-flow risk, upcoming recurring costs, "
             "and draft an email summary for the user."
         )
+        recipient = self._recipient_from_payload(request_payload)
 
         if self._looks_like_manual_action_command(task):
-            return self._run_manual_action_command(task)
+            return self._run_manual_action_command(task, recipient=recipient)
 
         if self._should_use_context_prompt():
             fallback_result = self._run_context_prompt(task)
@@ -215,13 +217,15 @@ class AgentService:
                     "Use tools to inspect the user's finances before answering. "
                     "All money is in pounds sterling (GBP). Never use dollars or the $ symbol. "
                     "Return your final answer strictly as JSON with keys: "
-                    "headline, summary, risk_level, recommended_actions, email_subject, email_draft."
+                    "headline, summary, risk_level, recommended_actions, email_subject, email_draft. "
+                    "Every email_draft must end exactly with: Kind Regards, followed by Monetra Organisation on the next line."
                 ),
             },
             {"role": "user", "content": task},
         ]
         tools = self._tool_definitions()
         tools_used: list[str] = []
+        tool_context: dict[str, dict] = {}
         report_download_url: str | None = None
         used_tool_calling = False
 
@@ -249,6 +253,7 @@ class AgentService:
                         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
                     }
                 final_payload = self._parse_final_payload(message.get("content", ""))
+                final_payload = self._enrich_sparse_cfo_briefing(final_payload, tool_context, task)
                 return {
                     **final_payload,
                     "task": task,
@@ -260,12 +265,17 @@ class AgentService:
 
             used_tool_calling = True
             for tool_call in tool_calls:
+                if not isinstance(tool_call, dict):
+                    raise ValidationError("The Ollama agent returned an invalid tool call.")
                 function = tool_call.get("function", {})
+                if not isinstance(function, dict):
+                    raise ValidationError("The Ollama agent returned an invalid tool function.")
                 tool_name = function.get("name", "")
                 raw_arguments = function.get("arguments", {})
                 arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
                 tools_used.append(tool_name)
                 tool_result = self._execute_tool(tool_name, arguments)
+                tool_context[tool_name] = tool_result
                 if tool_name == "generate_monthly_report" and tool_result.get("available"):
                     report_download_url = tool_result.get("download_url")
                 messages.append(
@@ -289,7 +299,10 @@ class AgentService:
 
         try:
             with app.app_context():
-                result = self.run_finance_briefing(payload)
+                result = self._run_with_payload_user_context(
+                    payload,
+                    lambda: self.run_finance_briefing(payload),
+                )
         except Exception as exc:
             logger.exception("Finance briefing background job failed | job_id=%s", job_id)
             completed_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -318,7 +331,10 @@ class AgentService:
 
         try:
             with app.app_context():
-                result = self.run_workflow(workflow_name, payload)
+                result = self._run_with_payload_user_context(
+                    payload,
+                    lambda: self.run_workflow(workflow_name, payload),
+                )
         except Exception as exc:
             logger.exception("Workflow background job failed | job_id=%s workflow_name=%s", job_id, workflow_name)
             completed_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -403,7 +419,8 @@ class AgentService:
                         "You are a finance analyst. Use the supplied finance context and return JSON only "
                         "with keys: headline, summary, risk_level, recommended_actions, email_subject, email_draft. "
                         "All money is in pounds sterling (GBP). Never use dollars or the $ symbol. "
-                        "Keep the summary concise and action-oriented."
+                        "Keep the summary concise and action-oriented. "
+                        "Every email_draft must end exactly with: Kind Regards, followed by Monetra Organisation on the next line."
                     ),
                 },
                 {
@@ -415,6 +432,7 @@ class AgentService:
         final_payload = self._parse_final_payload(
             (response.get("message") or {}).get("content", "")
         )
+        final_payload = self._enrich_sparse_cfo_briefing(final_payload, compact_payload, task)
         return {
             **final_payload,
             "tools_used": tools_used,
@@ -515,7 +533,8 @@ class AgentService:
                     "content": (
                         "You are a finance operations automation agent. You receive workflow context that has already "
                         "been gathered by backend tools. Return JSON only with keys: headline, summary, risk_level, "
-                        "recommended_actions, email_subject, email_draft. All money is in pounds sterling (GBP). Never use dollars or the $ symbol."
+                        "recommended_actions, email_subject, email_draft. All money is in pounds sterling (GBP). Never use dollars or the $ symbol. "
+                        "Every email_draft must end exactly with: Kind Regards, followed by Monetra Organisation on the next line."
                     ),
                 },
                 {
@@ -564,10 +583,37 @@ class AgentService:
 
         return workflow_context, automated_actions, tools_used, report_download_url
 
-    def _run_manual_action_command(self, task: str) -> dict:
-        direct_email_result = self._run_direct_email_dispatch_if_requested(task)
+    @staticmethod
+    def _recipient_from_payload(payload: dict) -> str | None:
+        recipient = str(payload.get("recipient") or payload.get("recipient_email") or "").strip()
+        return recipient or None
+
+    @staticmethod
+    def _user_id_from_payload(payload: dict) -> int | None:
+        try:
+            return int(payload.get("user_id"))
+        except (TypeError, ValueError):
+            return None
+
+    def _run_with_payload_user_context(self, payload: dict, callback):
+        user_id = self._user_id_from_payload(payload)
+        if user_id is None:
+            return callback()
+        with background_user_context(user_id):
+            return callback()
+
+    def _run_manual_action_command(self, task: str, recipient: str | None = None) -> dict:
+        direct_email_result = self._run_direct_email_dispatch_if_requested(task, recipient=recipient)
         if direct_email_result is not None:
             return direct_email_result
+
+        direct_report_result = self._run_direct_report_generation_if_requested(task)
+        if direct_report_result is not None:
+            return direct_report_result
+
+        direct_prompt_result = self._run_direct_prompt_command_if_requested(task)
+        if direct_prompt_result is not None:
+            return direct_prompt_result
 
         if self._agentic_command_runtime.is_available():
             try:
@@ -581,18 +627,328 @@ class AgentService:
 
         return self._run_manual_action_command_legacy(task)
 
-    def _run_direct_email_dispatch_if_requested(self, task: str) -> dict | None:
+    def _run_direct_prompt_command_if_requested(self, task: str) -> dict | None:
+        parsed = self._parse_direct_prompt_command(task)
+        if parsed is None:
+            return None
+
+        domain = parsed["domain"]
+        if domain == "settings":
+            return self._run_settings_command(task, parsed)
+        if domain == "expense":
+            return self._run_expense_command(task, parsed)
+        if domain == "recurring":
+            return self._run_reminder_command(task, parsed)
+        return None
+
+    def _parse_direct_prompt_command(self, task: str) -> dict | None:
+        normalized = re.sub(r"\s+", " ", str(task or "").strip().lower())
+        if not normalized:
+            return None
+
+        settings_match = re.search(
+            r"\bset\s+my\s+monthly\s+(?P<setting>budget|income)(?:\s+for\s+(?P<month>20\d{2}-\d{2}))?\s+to\s+(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|£)?",
+            normalized,
+        )
+        if settings_match:
+            return {
+                "domain": "settings",
+                "operation": "update",
+                "setting_key": f"monthly_{settings_match.group('setting')}",
+                "value": round(float(settings_match.group("amount")), 2),
+                "month": settings_match.group("month"),
+                "target": {},
+                "entity": {},
+                "reminder": None,
+            }
+
+        if re.search(r"\badd\s+an?\s+income\s+transaction\b", normalized):
+            created = self._parse_direct_transaction_create(task, entry_type="income")
+            return created
+
+        if re.search(r"\badd\s+an?\s+expense\b", normalized):
+            created = self._parse_direct_transaction_create(task, entry_type="expense")
+            return created
+
+        transaction_update = self._parse_direct_transaction_update(task)
+        if transaction_update:
+            return transaction_update
+
+        transaction_delete = self._parse_direct_transaction_delete(task)
+        if transaction_delete:
+            return transaction_delete
+
+        recurring_command = self._parse_direct_recurring_command(task)
+        if recurring_command:
+            return recurring_command
+
+        return None
+
+    def _parse_direct_transaction_create(self, task: str, entry_type: str) -> dict | None:
+        normalized = str(task or "").strip()
+        amount_match = re.search(r"\bof\s+(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|£)?", normalized, flags=re.IGNORECASE)
+        category_match = re.search(r"\bunder\s+(?P<category>[A-Za-z][A-Za-z\s&-]+?)\.?$", normalized, flags=re.IGNORECASE)
+        date_match = re.search(r"\bon\s+(?P<date>20\d{2}-\d{2}-\d{2})\b", normalized, flags=re.IGNORECASE)
+        if not amount_match:
+            return None
+
+        description = re.sub(
+            r"^add\s+an?\s+(?:income\s+transaction|expense)\s+for\s+",
+            "",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        description = re.split(r"\s+of\s+\d+(?:\.\d{1,2})?\s*(?:pounds|gbp|£)?", description, maxsplit=1, flags=re.IGNORECASE)[0]
+        description = description.strip(" .") or "Transaction"
+        date_value = date_match.group("date") if date_match else datetime.now().strftime("%Y-%m-%d")
+        category = (category_match.group("category") if category_match else ("Income" if entry_type == "income" else "General")).strip(" .")
+        return {
+            "domain": "expense",
+            "operation": "create",
+            "target": {},
+            "entity": {
+                "date": date_value,
+                "category": category.title() if category.lower() != "income" else "Income",
+                "description": description[:1].upper() + description[1:],
+                "amount": round(float(amount_match.group("amount")), 2),
+                "entry_type": entry_type,
+            },
+            "reminder": None,
+        }
+
+    def _parse_direct_transaction_update(self, task: str) -> dict | None:
+        match = re.search(
+            r"\bupdate\s+the\s+(?P<category>[A-Za-z][A-Za-z\s&-]+?)\s+expense\s+called\s+(?P<description>.+?)\s+to\s+(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|£)?(?:\s+on\s+(?P<date>20\d{2}-\d{2}-\d{2}))?",
+            str(task or "").strip(),
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        date_value = match.group("date")
+        entity = {
+            "category": match.group("category").strip().title(),
+            "description": match.group("description").strip(" ."),
+            "amount": round(float(match.group("amount")), 2),
+            "entry_type": "expense",
+        }
+        if date_value:
+            entity["date"] = date_value
+        return {
+            "domain": "expense",
+            "operation": "update",
+            "target": {
+                "description": match.group("description").strip(" ."),
+                "category": match.group("category").strip().title(),
+                "entry_type": "expense",
+            },
+            "entity": entity,
+            "reminder": None,
+        }
+
+    def _parse_direct_transaction_delete(self, task: str) -> dict | None:
+        normalized = str(task or "").strip()
+        if re.search(r"\bremove\s+all\s+expenses\b", normalized, flags=re.IGNORECASE):
+            return {"domain": "expense", "operation": "delete", "target": {}, "entity": {}, "reminder": None}
+
+        match = re.search(
+            r"\bdelete\s+the\s+expense\s+matching\s+(?P<description>.+?)(?:\s+under\s+(?P<category>[A-Za-z][A-Za-z\s&-]+?))?\.?$",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            return None
+        target = {"description": match.group("description").strip(" ."), "entry_type": "expense"}
+        if match.group("category"):
+            target["category"] = match.group("category").strip(" .").title()
+        return {"domain": "expense", "operation": "delete", "target": target, "entity": {}, "reminder": None}
+
+    def _parse_direct_recurring_command(self, task: str) -> dict | None:
+        normalized = str(task or "").strip()
+        lowered = normalized.lower()
+        if "reminder" not in lowered and "utility bills" not in lowered and "rent" not in lowered:
+            return None
+
+        if lowered.startswith("set a monthly reminder for university house rent"):
+            amount = self._extract_money_amount(normalized, preferred_prefixes=("at", "for", "of", "to"))
+            if amount is None:
+                return None
+            return {
+                "domain": "recurring",
+                "operation": "create",
+                "target": {},
+                "entity": {},
+                "reminder": self._parse_reminder_payload(
+                    {
+                        "category": "Housing",
+                        "description": "University House Rent",
+                        "amount": amount,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "active": True,
+                    },
+                    datetime.now().strftime("%Y-%m-%d"),
+                ),
+            }
+
+        weekly_rent_match = re.search(
+            r"\badd\s+a\s+weekly\s+reminder\s+for\s+rent\s+of\s+(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|£)?\s+starting\s+(?P<date>20\d{2}-\d{2}-\d{2})",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if weekly_rent_match:
+            return {
+                "domain": "recurring",
+                "operation": "create",
+                "target": {},
+                "entity": {},
+                "reminder": self._parse_reminder_payload(
+                    {
+                        "category": "Housing",
+                        "description": "Rent",
+                        "amount": weekly_rent_match.group("amount"),
+                        "entry_type": "expense",
+                        "frequency": "weekly",
+                        "start_date": weekly_rent_match.group("date"),
+                        "active": True,
+                    },
+                    datetime.now().strftime("%Y-%m-%d"),
+                ),
+            }
+
+        if "replace weekly utility bills with monthly utility bills" in lowered:
+            amount = self._extract_money_amount(normalized, preferred_prefixes=("of", "to", "at", "for"))
+            if amount is None:
+                return None
+            return {
+                "domain": "recurring",
+                "operation": "replace",
+                "target": {"description": "Utility Bills", "category": "Utilities", "entry_type": "expense", "frequency": "weekly"},
+                "entity": {},
+                "reminder": self._parse_reminder_payload(
+                    {
+                        "category": "Utilities",
+                        "description": "Utility Bills",
+                        "amount": amount,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "active": True,
+                    },
+                    datetime.now().strftime("%Y-%m-%d"),
+                ),
+            }
+
+        if "remove the weekly utility bills reminder" in lowered:
+            return {
+                "domain": "recurring",
+                "operation": "delete",
+                "target": {"description": "Utility Bills", "category": "Utilities", "entry_type": "expense", "frequency": "weekly"},
+                "entity": {},
+                "reminder": None,
+            }
+
+        if "update the utility bills reminder" in lowered:
+            amount = self._extract_money_amount(normalized, preferred_prefixes=("to", "of", "at", "for"))
+            date_match = re.search(r"\bfrom\s+(20\d{2}-\d{2}-\d{2})\b", normalized, flags=re.IGNORECASE)
+            if amount is None:
+                return None
+            return {
+                "domain": "recurring",
+                "operation": "update",
+                "target": {"description": "Utility Bills", "category": "Utilities", "entry_type": "expense"},
+                "entity": {},
+                "reminder": self._parse_reminder_payload(
+                    {
+                        "category": "Utilities",
+                        "description": "Utility Bills",
+                        "amount": amount,
+                        "entry_type": "expense",
+                        "frequency": "monthly",
+                        "start_date": date_match.group(1) if date_match else datetime.now().strftime("%Y-%m-%d"),
+                        "active": True,
+                    },
+                    datetime.now().strftime("%Y-%m-%d"),
+                ),
+            }
+
+        return None
+
+    @staticmethod
+    def _extract_money_amount(task: str, preferred_prefixes: tuple[str, ...] = ("of", "to", "at", "for")) -> float | None:
+        for prefix in preferred_prefixes:
+            match = re.search(
+                rf"\b{re.escape(prefix)}\s+(?P<amount>\d+(?:\.\d{{1,2}})?)\s*(?:pounds|gbp|£)?\b",
+                task,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                return round(float(match.group("amount")), 2)
+        fallback_match = re.search(r"\b(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|£)\b", task, flags=re.IGNORECASE)
+        if fallback_match:
+            return round(float(fallback_match.group("amount")), 2)
+        return None
+
+    def _run_direct_email_dispatch_if_requested(self, task: str, recipient: str | None = None) -> dict | None:
         normalized = str(task or "").lower()
         if not self._looks_like_email_dispatch_command(normalized):
             return None
 
+        if self._looks_like_all_upcoming_bills_email_command(normalized):
+            return self._mcp_send_all_upcoming_bills_email_now({"recipient": recipient})
+
         if self._looks_like_upcoming_bills_email_command(normalized):
-            return self._mcp_send_upcoming_bills_email_now({})
+            return self._mcp_send_upcoming_bills_email_now({"recipient": recipient})
 
         if self._looks_like_financial_report_email_command(normalized):
-            return self._mcp_send_month_end_email_now({})
+            return self._mcp_send_month_end_email_now({"recipient": recipient})
 
         return None
+
+    def _run_direct_report_generation_if_requested(self, task: str) -> dict | None:
+        normalized = str(task or "").lower()
+        if self._looks_like_email_dispatch_command(normalized) or not self._looks_like_report_generation_command(normalized):
+            return None
+
+        report_result = self._execute_tool("generate_monthly_report", {})
+        dashboard = self._analytics_service.dashboard()
+        category_insights = self._analytics_service.category_insights()
+        top_categories = category_insights.get("top_categories") or []
+        top_category = top_categories[0] if top_categories else {}
+        net_cash_flow = dashboard.get("net_cash_flow")
+
+        pressure_parts = []
+        if net_cash_flow is not None:
+            pressure_parts.append(f"net cash flow is GBP {float(net_cash_flow):.2f}")
+        if top_category.get("category") and top_category.get("amount") is not None:
+            pressure_parts.append(
+                f"top spending pressure is {top_category['category']} at GBP {float(top_category['amount']):.2f}"
+            )
+        pressure_summary = "; ".join(pressure_parts) if pressure_parts else "budget pressure points were refreshed from the current dashboard"
+
+        result = self._build_action_response(
+            headline="Monthly report generated",
+            summary=f"Generated the current monthly PDF report and refreshed the main budget pressure context: {pressure_summary}.",
+            email_subject="Monthly report generated",
+            email_draft=(
+                "The current monthly finance report has been generated. "
+                f"Main pressure context: {pressure_summary}."
+            ),
+            task=task,
+            action_type="monthly_report_generated",
+            action_message="Monthly report generated successfully.",
+            payload={
+                "available": bool(report_result.get("available")),
+                "download_url": report_result.get("download_url"),
+                "net_cash_flow": net_cash_flow,
+                "top_categories": top_categories[:3],
+            },
+        )
+        result["tools_used"] = ["generate_monthly_report", "get_dashboard_summary", "get_category_insights"]
+        result["report_download_url"] = report_result.get("download_url")
+        result["recommended_actions"] = [
+            "Open the generated report from the report link.",
+            "Review the top spending categories before sending or sharing the summary.",
+        ]
+        return result
 
     def _run_manual_action_command_legacy(self, task: str) -> dict:
         parsed = self._parse_manual_action_command(task)
@@ -628,6 +984,7 @@ class AgentService:
             "replace_recurring_reminder": self._mcp_replace_recurring_reminder,
             "generate_monthly_report": lambda arguments: self._execute_tool("generate_monthly_report", arguments),
             "send_upcoming_bills_email_now": self._mcp_send_upcoming_bills_email_now,
+            "send_all_upcoming_bills_email_now": self._mcp_send_all_upcoming_bills_email_now,
             "send_month_end_email_now": self._mcp_send_month_end_email_now,
         }
 
@@ -646,7 +1003,7 @@ class AgentService:
     def _mcp_set_monthly_budget(self, arguments: dict) -> dict:
         return self._run_settings_command(
             "MCP tool: update monthly budget",
-            {"setting_key": "monthly_budget", "value": arguments.get("monthly_budget")},
+            {"setting_key": "monthly_budget", "value": arguments.get("monthly_budget"), "month": arguments.get("month")},
         )
 
     def _mcp_set_monthly_income(self, arguments: dict) -> dict:
@@ -708,7 +1065,23 @@ class AgentService:
     def _mcp_send_upcoming_bills_email_now(self, arguments: dict) -> dict:
         if self._automation_service is None:
             raise ValidationError("Automation service is not attached to the agent runtime.")
-        result = self._automation_service.run_upcoming_bills_email_now()
+        recipient = str(arguments.get("recipient") or arguments.get("recipient_email") or "").strip() or None
+        result = self._automation_service.run_upcoming_bills_email_now(recipient=recipient)
+        result["report_download_url"] = result.get("report_download_url")
+        action_type = "upcoming_bills_email_skipped" if "no upcoming bills email sent" in str(result.get("headline") or "").lower() else "upcoming_bills_email_sent"
+        action_payload = dict(result)
+        result["action_result"] = {
+            "type": action_type,
+            "message": result["summary"],
+            "payload": action_payload,
+        }
+        return result
+
+    def _mcp_send_all_upcoming_bills_email_now(self, arguments: dict) -> dict:
+        if self._automation_service is None:
+            raise ValidationError("Automation service is not attached to the agent runtime.")
+        recipient = str(arguments.get("recipient") or arguments.get("recipient_email") or "").strip() or None
+        result = self._automation_service.run_all_upcoming_bills_email_now(recipient=recipient)
         result["report_download_url"] = result.get("report_download_url")
         action_type = "upcoming_bills_email_skipped" if "no upcoming bills email sent" in str(result.get("headline") or "").lower() else "upcoming_bills_email_sent"
         action_payload = dict(result)
@@ -722,7 +1095,8 @@ class AgentService:
     def _mcp_send_month_end_email_now(self, arguments: dict) -> dict:
         if self._automation_service is None:
             raise ValidationError("Automation service is not attached to the agent runtime.")
-        result = self._automation_service.run_month_end_email_now()
+        recipient = str(arguments.get("recipient") or arguments.get("recipient_email") or "").strip() or None
+        result = self._automation_service.run_month_end_email_now(recipient=recipient)
         result["report_download_url"] = result.get("report_download_url")
         action_payload = dict(result)
         result["action_result"] = {
@@ -736,16 +1110,22 @@ class AgentService:
         setting_key = parsed.get("setting_key")
         value = parsed.get("value")
         if setting_key == "monthly_budget":
-            result = self._settings_service.update_monthly_budget({"monthly_budget": value})
+            month = parsed.get("month")
+            result = self._settings_service.update_monthly_budget({"monthly_budget": value, "month": month})
+            budget_month = result.get("budget_month")
             return self._build_action_response(
                 headline="Monthly budget updated",
-                summary=f"Monthly budget is now GBP {float(result['monthly_budget']):.2f}.",
+                summary=f"Monthly budget for {budget_month} is now GBP {float(result['monthly_budget']):.2f}.",
                 email_subject="Monthly budget updated",
-                email_draft=f"Monthly budget updated to GBP {float(result['monthly_budget']):.2f}.",
+                email_draft=f"Monthly budget for {budget_month} was updated to GBP {float(result['monthly_budget']):.2f}.",
                 task=task,
                 action_type="monthly_budget_updated",
                 action_message="Monthly budget updated successfully.",
-                payload={"monthly_budget": float(result["monthly_budget"]), "monthly_income": self._settings_service.get_monthly_income()},
+                payload={
+                    "monthly_budget": float(result["monthly_budget"]),
+                    "budget_month": budget_month,
+                    "monthly_income": self._settings_service.get_monthly_income(budget_month),
+                },
             )
         if setting_key == "monthly_income":
             month = parsed.get("month")
@@ -759,7 +1139,7 @@ class AgentService:
                 task=task,
                 action_type="monthly_income_updated",
                 action_message="Monthly income updated successfully.",
-                payload={"monthly_income": float(result["monthly_income"]), "income_month": income_month, "monthly_budget": self._settings_service.get_monthly_budget()},
+                payload={"monthly_income": float(result["monthly_income"]), "income_month": income_month, "monthly_budget": self._settings_service.get_monthly_budget(income_month)},
             )
         raise ValidationError("The settings command must target monthly budget or monthly income.")
 
@@ -782,12 +1162,14 @@ class AgentService:
             )
 
         if operation == "delete":
+            target = self._normalize_expense_delete_target(task, target)
             deleted_count, deleted_item = self._delete_matching_expenses(target)
+            deleted_description = deleted_item.get("criteria_label") or deleted_item.get("description") or "the requested criteria"
             return self._build_action_response(
                 headline="Transaction deleted",
-                summary=f"Deleted {deleted_count} transaction(s) matching {deleted_item['description']}.",
+                summary=f"Deleted {deleted_count} transaction(s) matching {deleted_description}.",
                 email_subject="Transaction deleted",
-                email_draft=f"Deleted transaction {deleted_item['description']}.",
+                email_draft=f"Deleted {deleted_count} transaction(s) matching {deleted_description}.",
                 task=task,
                 action_type="expense_deleted",
                 action_message=f"Deleted {deleted_count} matching transaction(s).",
@@ -826,7 +1208,7 @@ class AgentService:
                 "Confirm the change in the relevant table or planner view.",
             ],
             "email_subject": email_subject,
-            "email_draft": email_draft,
+            "email_draft": self._with_standard_email_signoff(email_draft),
             "task": task,
             "model": self._ollama_client.model,
             "tools_used": [action_type],
@@ -865,6 +1247,15 @@ class AgentService:
             parsed = json.loads((response.get("message") or {}).get("content", ""))
         except json.JSONDecodeError as exc:
             raise ValidationError("The AI agent could not understand the requested action.") from exc
+        if isinstance(parsed, list):
+            if len(parsed) == 1 and isinstance(parsed[0], dict):
+                parsed = parsed[0]
+            elif all(isinstance(item, dict) for item in parsed):
+                parsed = {"domain": "expense", "operation": "delete", "target": parsed}
+            else:
+                raise ValidationError("The AI agent returned an invalid command object.")
+        if not isinstance(parsed, dict):
+            raise ValidationError("The AI agent returned an invalid command object.")
 
         normalized_task = task.lower()
         domain = str(parsed.get("domain") or "").strip().lower()
@@ -1071,7 +1462,7 @@ class AgentService:
                 "Mark each occurrence as paid once the bill is cleared.",
             ],
             "email_subject": email_subject,
-            "email_draft": email_draft,
+            "email_draft": self._with_standard_email_signoff(email_draft),
             "task": task,
             "model": self._ollama_client.model,
             "tools_used": [action_type],
@@ -1218,36 +1609,196 @@ class AgentService:
             self._recurring_service.delete_item(duplicate["id"])
         return updated
 
-    def _find_matching_expenses(self, criteria: dict) -> list[dict]:
+    def _find_matching_expenses(self, criteria: dict | list) -> list[dict]:
         expenses = self._expense_service.list_expenses("desc")
+        criteria_items = self._normalize_expense_criteria_items(criteria)
+        matched_by_id: dict[int, dict] = {}
+        for item in criteria_items:
+            for expense in expenses:
+                if self._expense_matches_criteria(expense, item):
+                    matched_by_id[int(expense["id"])] = expense
+        return list(matched_by_id.values())
+
+    @staticmethod
+    def _normalize_expense_criteria_items(criteria: dict | list | None) -> list[dict]:
+        if isinstance(criteria, list):
+            items = [item for item in criteria if isinstance(item, dict)]
+            if len(items) != len(criteria):
+                raise ValidationError("Expense match criteria must be an object or a list of objects.")
+            return items or [{}]
+        if criteria is None:
+            return [{}]
+        if not isinstance(criteria, dict):
+            raise ValidationError("Expense match criteria must be an object.")
+        return [criteria]
+
+    def _expense_matches_criteria(self, expense: dict, criteria: dict) -> bool:
         normalized_description = str(criteria.get("description") or "").strip().lower()
         normalized_category = str(criteria.get("category") or "").strip().lower()
         normalized_entry_type = str(criteria.get("entry_type") or "").strip().lower()
         normalized_date = str(criteria.get("date") or "").strip()
         normalized_amount = criteria.get("amount")
+        normalized_month = str(criteria.get("month") or "").strip()
+        date_from = str(criteria.get("date_from") or criteria.get("start_date") or "").strip()
+        date_to = str(criteria.get("date_to") or criteria.get("end_date") or "").strip()
+        date_after = str(criteria.get("date_after") or "").strip()
+        date_before = str(criteria.get("date_before") or "").strip()
+        expense_date = str(expense.get("date") or "").strip()
 
+        if normalized_description and normalized_description not in expense["description"].strip().lower():
+            return False
+        if normalized_category and normalized_category not in expense["category"].strip().lower():
+            return False
+        if normalized_entry_type and normalized_entry_type != expense["entry_type"]:
+            return False
+        if normalized_date and normalized_date != expense_date:
+            return False
+        if normalized_month and not expense_date.startswith(normalized_month):
+            return False
+        if date_from and expense_date < date_from:
+            return False
+        if date_to and expense_date > date_to:
+            return False
+        if date_after and expense_date <= date_after:
+            return False
+        if date_before and expense_date >= date_before:
+            return False
+        if normalized_amount not in (None, "") and abs(float(expense["amount"]) - float(normalized_amount)) >= 0.01:
+            return False
+        return True
+
+    def _normalize_expense_delete_target(self, task: str, target: dict | list | None) -> dict | list:
+        criteria_items = self._normalize_expense_criteria_items(target)
+        normalized_task = task.lower()
+        inferred_items: list[dict] = []
+
+        for year, month in self._extract_named_months(normalized_task):
+            inferred_items.append({"month": f"{year:04d}-{month:02d}"})
+
+        relative_date = self._extract_relative_expense_date(normalized_task)
+        if relative_date:
+            date_key, date_value = relative_date
+            inferred_items.append({date_key: date_value})
+
+        if inferred_items:
+            criteria_items = [
+                item for item in criteria_items if self._has_expense_match_fields(item)
+            ] + inferred_items
+
+        if "expense" in normalized_task:
+            for item in criteria_items:
+                item.setdefault("entry_type", "expense")
+
+        return criteria_items[0] if len(criteria_items) == 1 else criteria_items
+
+    @staticmethod
+    def _has_expense_match_fields(criteria: dict) -> bool:
+        return any(
+            criteria.get(key) not in (None, "")
+            for key in (
+                "description",
+                "category",
+                "entry_type",
+                "date",
+                "amount",
+                "month",
+                "date_from",
+                "date_to",
+                "date_after",
+                "date_before",
+                "start_date",
+                "end_date",
+            )
+        )
+
+    @staticmethod
+    def _extract_named_months(task: str) -> list[tuple[int, int]]:
+        month_names = {
+            "january": 1,
+            "february": 2,
+            "march": 3,
+            "april": 4,
+            "may": 5,
+            "june": 6,
+            "july": 7,
+            "august": 8,
+            "september": 9,
+            "october": 10,
+            "november": 11,
+            "december": 12,
+        }
+        current_year = datetime.now().year
         matches = []
-        for expense in expenses:
-            if normalized_description and normalized_description not in expense["description"].strip().lower():
+        for match in re.finditer(
+            r"\b(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(20\d{2}))?\b",
+            task,
+        ):
+            prefix = task[max(0, match.start() - 12):match.start()]
+            if re.search(r"\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?$", prefix):
                 continue
-            if normalized_category and normalized_category not in expense["category"].strip().lower():
-                continue
-            if normalized_entry_type and normalized_entry_type != expense["entry_type"]:
-                continue
-            if normalized_date and normalized_date != expense["date"]:
-                continue
-            if normalized_amount not in (None, "") and abs(float(expense["amount"]) - float(normalized_amount)) >= 0.01:
-                continue
-            matches.append(expense)
+            month = month_names[match.group(1)]
+            year = int(match.group(2) or current_year)
+            matches.append((year, month))
         return matches
 
-    def _delete_matching_expenses(self, criteria: dict) -> tuple[int, dict]:
+    @staticmethod
+    def _extract_relative_expense_date(task: str) -> tuple[str, str] | None:
+        month_names = {
+            "january": 1,
+            "february": 2,
+            "march": 3,
+            "april": 4,
+            "may": 5,
+            "june": 6,
+            "july": 7,
+            "august": 8,
+            "september": 9,
+            "october": 10,
+            "november": 11,
+            "december": 12,
+        }
+        match = re.search(
+            r"\b(after|beyond|past|before)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(20\d{2}))?\b",
+            task,
+        )
+        if not match:
+            return None
+        operator = match.group(1)
+        day = max(1, min(int(match.group(2)), 31))
+        month = month_names[match.group(3)]
+        year = int(match.group(4) or datetime.now().year)
+        try:
+            resolved = datetime(year, month, day).date().isoformat()
+        except ValueError as exc:
+            raise ValidationError("The expense date range could not be resolved.") from exc
+        if operator == "before":
+            return "date_before", resolved
+        return "date_after", resolved
+
+    def _delete_matching_expenses(self, criteria: dict | list) -> tuple[int, dict]:
         matches = self._find_matching_expenses(criteria)
         if not matches:
             raise ValidationError("No matching transaction was found to delete.")
         for expense in matches:
             self._expense_service.delete_expense(int(expense["id"]))
-        return len(matches), matches[0]
+        return len(matches), {**matches[0], "criteria_label": self._expense_criteria_label(criteria)}
+
+    @staticmethod
+    def _expense_criteria_label(criteria: dict | list) -> str:
+        if isinstance(criteria, list):
+            labels = [AgentService._expense_criteria_label(item) for item in criteria if isinstance(item, dict)]
+            return " or ".join(label for label in labels if label) or "the requested criteria"
+        if not isinstance(criteria, dict):
+            return "the requested criteria"
+        if criteria.get("month"):
+            return f"month {criteria['month']}"
+        if criteria.get("date_after"):
+            return f"dates after {criteria['date_after']}"
+        if criteria.get("date_before"):
+            return f"dates before {criteria['date_before']}"
+        if criteria.get("date_from") or criteria.get("date_to"):
+            return f"date range {criteria.get('date_from', '')} to {criteria.get('date_to', '')}".strip()
+        return str(criteria.get("description") or criteria.get("category") or "the requested criteria")
 
     def _update_matching_expense(self, criteria: dict, payload: dict) -> dict:
         matches = self._find_matching_expenses(criteria)
@@ -1279,7 +1830,13 @@ class AgentService:
                 return {"error": "RAG service is not available."}
             return self._rag_service.retrieve_context(str(arguments.get("question") or "").strip(), top_k=arguments.get("top_k"))
         if tool_name == "get_upcoming_recurring_items":
-            days = max(1, min(int(arguments.get("days", 21)), 60))
+            if arguments.get("current_month_only"):
+                today = datetime.now(UTC).date()
+                next_month = today.replace(day=28) + timedelta(days=4)
+                month_end = next_month.replace(day=1) - timedelta(days=1)
+                days = max(1, (month_end - today).days + 1)
+            else:
+                days = max(1, min(int(arguments.get("days", 21)), 60))
             return self._recurring_service.upcoming_calendar(days)
         if tool_name == "generate_monthly_report":
             self._report_service.generate_monthly_report()
@@ -1313,15 +1870,15 @@ class AgentService:
             "upcoming_bills_check": {
                 "id": "upcoming_bills_check",
                 "label": "Upcoming bills check",
-                "description": "Review near-term recurring spend, cash coverage, and reminder pressure before due dates arrive.",
-                "automation_focus": "Automates recurring bill review and prepares reminder-ready finance summaries.",
+                "description": "Review late unpaid reminders plus recurring bills due from today through the end of the current month. Today is included.",
+                "automation_focus": "Automates the current-month recurring bill review. This is not the all-bills email and not only the 7-day email window.",
                 "default_task": (
-                    "Run the upcoming bills workflow. Highlight due-soon recurring items, explain cash-flow impact, "
-                    "and draft a concise reminder email."
+                    "Run the current-month upcoming bills workflow. Highlight late unpaid reminders and bills due from today through "
+                    "the end of the current month, explain cash-flow impact, and draft a concise reminder email. Today is included."
                 ),
                 "steps": [
                     {"tool": "get_dashboard_summary", "arguments": {}, "action": "Captured the current month cash position before reminders are prepared."},
-                    {"tool": "get_upcoming_recurring_items", "arguments": {"days": 21}, "action": "Scanned recurring items due in the next 21 days."},
+                    {"tool": "get_upcoming_recurring_items", "arguments": {"current_month_only": True}, "action": "Scanned late unpaid reminders and current-month recurring items from today through month end."},
                     {"tool": "get_recent_transactions", "arguments": {"limit": 8}, "action": "Reviewed recent transactions to add context for reminder messaging."},
                 ],
             },
@@ -1353,9 +1910,16 @@ class AgentService:
         normalized = task.lower()
         if AgentService._looks_like_email_dispatch_command(normalized):
             return True
-        action_words = ("add", "create", "set up", "update", "change", "edit", "delete", "remove", "replace", "set", "send")
+        action_words = ("add", "create", "generate", "set up", "update", "change", "edit", "delete", "remove", "replace", "set", "send")
         domain_words = ("reminder", "recurring", "bill", "bills", "cost", "costs", "subscription", "transaction", "expense", "income", "budget", "email", "report")
         return any(word in normalized for word in action_words) and any(word in normalized for word in domain_words)
+
+    @staticmethod
+    def _looks_like_report_generation_command(task: str) -> bool:
+        normalized = task.lower()
+        return "report" in normalized and any(
+            word in normalized for word in ("generate", "create", "build", "prepare", "refresh", "summarise", "summarize")
+        )
 
     @staticmethod
     def _looks_like_email_dispatch_command(task: str) -> bool:
@@ -1368,7 +1932,7 @@ class AgentService:
             or "email this" in normalized
         )
         return dispatch_requested and any(
-            word in normalized for word in ("report", "briefing", "summary", "bill", "bills", "due", "financial", "finance")
+            word in normalized for word in ("report", "briefing", "summary", "bill", "bills", "due", "financial", "finance", "month-end", "month end", "upcoming")
         )
 
     @staticmethod
@@ -1376,6 +1940,14 @@ class AgentService:
         normalized = task.lower()
         return any(word in normalized for word in ("bill", "bills", "due", "upcoming")) and not any(
             phrase in normalized for phrase in ("financial report", "finance report", "month-end", "month end")
+        )
+
+    @staticmethod
+    def _looks_like_all_upcoming_bills_email_command(task: str) -> bool:
+        normalized = task.lower()
+        return (
+            any(phrase in normalized for phrase in ("all upcoming bills", "all projected upcoming bills", "all bills"))
+            and AgentService._looks_like_upcoming_bills_email_command(normalized)
         )
 
     @staticmethod
@@ -1390,7 +1962,7 @@ class AgentService:
         try:
             parsed = json.loads(content)
         except json.JSONDecodeError:
-            parsed = {
+            parsed = AgentService._parse_python_style_payload(content) or AgentService._parse_relaxed_json_payload(content) or {
                 "headline": "Finance briefing generated",
                 "summary": content.strip() or "No summary returned.",
                 "risk_level": "medium",
@@ -1401,12 +1973,427 @@ class AgentService:
 
         return {
             "headline": str(parsed.get("headline") or "Finance briefing generated"),
-            "summary": str(parsed.get("summary") or "No summary returned."),
+            "summary": AgentService._format_structured_summary(parsed),
             "risk_level": str(parsed.get("risk_level") or "medium").lower(),
             "recommended_actions": AgentService._normalize_recommended_actions(parsed.get("recommended_actions")),
             "email_subject": str(parsed.get("email_subject") or "Monthly finance briefing"),
-            "email_draft": str(parsed.get("email_draft") or "No email draft returned."),
+            "email_draft": AgentService._with_standard_email_signoff(
+                str(parsed.get("email_draft") or AgentService._build_email_ready_summary(parsed))
+            ),
         }
+
+    @staticmethod
+    def _enrich_sparse_cfo_briefing(payload: dict, context: dict, task: str) -> dict:
+        if not AgentService._looks_like_briefing_request(task):
+            return payload
+        if (
+            not AgentService._briefing_payload_is_sparse(payload)
+            and not AgentService._full_cfo_briefing_is_incomplete(payload, task)
+        ):
+            return payload
+
+        enriched = AgentService._build_cfo_briefing_from_context(context)
+        merged = dict(payload)
+        merged["headline"] = enriched["headline"]
+        merged["summary"] = enriched["summary"]
+        merged["risk_level"] = enriched["risk_level"]
+        existing_actions = AgentService._normalize_recommended_actions(payload.get("recommended_actions"))
+        enriched_actions = AgentService._normalize_recommended_actions(enriched.get("recommended_actions"))
+        merged["recommended_actions"] = list(dict.fromkeys([*existing_actions, *enriched_actions]))[:5]
+        merged["email_subject"] = enriched["email_subject"]
+        merged["email_draft"] = AgentService._with_standard_email_signoff(enriched["email_draft"])
+        return merged
+
+    @staticmethod
+    def _looks_like_briefing_request(task: str) -> bool:
+        normalized = str(task or "").lower()
+        return any(
+            phrase in normalized
+            for phrase in (
+                "briefing",
+                "cfo",
+                "cash-flow risk",
+                "cash flow risk",
+                "recurring bill pressure",
+                "email-ready summary",
+                "email ready summary",
+            )
+        )
+
+    @staticmethod
+    def _briefing_payload_is_sparse(payload: dict) -> bool:
+        summary = str(payload.get("summary") or "").strip()
+        email_draft = str(payload.get("email_draft") or "").strip()
+        generic_email = re.search(r"(?i)\bmonthly finance briefing\.?\b", email_draft) is not None
+        cash_flow_only = re.fullmatch(r"(?is)\s*cash flow:\s*[-+]?[\d,.]+\.?\s*", summary) is not None
+        placeholder_summary = summary.lower() in {
+            "no summary returned.",
+            "task completed successfully.",
+            "request completed.",
+        }
+        return cash_flow_only or generic_email or placeholder_summary
+
+    @staticmethod
+    def _full_cfo_briefing_is_incomplete(payload: dict, task: str) -> bool:
+        normalized_task = str(task or "").lower()
+        requires_full_cfo = (
+            "cfo" in normalized_task
+            or "cash-flow risk" in normalized_task
+            or "cash flow risk" in normalized_task
+            or "recurring bill pressure" in normalized_task
+            or "email-ready summary" in normalized_task
+            or "email ready summary" in normalized_task
+        )
+        if not requires_full_cfo:
+            return False
+
+        summary = str(payload.get("summary") or "").lower()
+        email_draft = str(payload.get("email_draft") or "").lower()
+        actions = AgentService._normalize_recommended_actions(payload.get("recommended_actions"))
+        required_summary_sections = (
+            "cash-flow risk:",
+            "recurring bill pressure:",
+        )
+        has_required_summary = all(section in summary for section in required_summary_sections)
+        has_email_format = "dear user" in email_draft and "kind regards" in email_draft and "monetra organisation" in email_draft
+        return not has_required_summary or not actions or not has_email_format
+
+    @staticmethod
+    def _build_cfo_briefing_from_context(context: dict) -> dict:
+        dashboard = AgentService._context_block(context, "dashboard", "get_dashboard_summary")
+        pulse = AgentService._context_block(context, "financial_pulse", "get_financial_pulse")
+        category_insights = AgentService._context_block(context, "category_insights", "get_category_insights")
+        prediction = AgentService._context_block(context, "prediction", "get_spending_prediction")
+        recurring = AgentService._context_block(context, "upcoming_recurring_items", "get_upcoming_recurring_items")
+
+        month_label = str(dashboard.get("month_label") or "current month")
+        budget = AgentService._as_float(dashboard.get("monthly_budget"))
+        income = AgentService._as_float(dashboard.get("monthly_income") or pulse.get("cash_in"))
+        expenses = AgentService._as_float(dashboard.get("monthly_expenses") or pulse.get("cash_out"))
+        net_cash_flow = AgentService._as_float(dashboard.get("net_cash_flow"))
+        remaining_budget = AgentService._as_float(dashboard.get("remaining_budget"))
+        status = str(dashboard.get("status") or "").strip().lower()
+
+        risk_level = "low"
+        if net_cash_flow is not None and net_cash_flow < 0:
+            risk_level = "high"
+        elif (remaining_budget is not None and remaining_budget < 0) or status in {"over", "over_budget", "over budget"}:
+            risk_level = "medium"
+
+        cash_flow_line = AgentService._cash_flow_risk_line(net_cash_flow, income, expenses)
+        budget_line = AgentService._budget_pressure_line(expenses, budget, remaining_budget, status)
+        recurring_line = AgentService._recurring_pressure_line(recurring)
+        category_line = AgentService._category_pressure_line(category_insights)
+        forecast_line = AgentService._forecast_line(prediction, budget)
+
+        summary_lines = [
+            cash_flow_line,
+            budget_line,
+            recurring_line,
+            category_line,
+            forecast_line,
+        ]
+        actions = AgentService._cfo_recommended_actions(risk_level, recurring, category_insights, prediction)
+        subject = f"[Monetra] {month_label.title()} Monthly Finance Briefing"
+        email_draft = AgentService._compose_cfo_email(subject, summary_lines, actions)
+        return {
+            "headline": f"{month_label.title()} CFO-style finance briefing",
+            "summary": "\n".join(summary_lines),
+            "risk_level": risk_level,
+            "recommended_actions": actions,
+            "email_subject": subject,
+            "email_draft": email_draft,
+        }
+
+    @staticmethod
+    def _context_block(context: dict, compact_key: str, tool_key: str) -> dict:
+        value = context.get(compact_key) or context.get(tool_key) or {}
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _cash_flow_risk_line(net_cash_flow: float | None, income: float | None, expenses: float | None) -> str:
+        if net_cash_flow is None:
+            return "Cash-flow risk: Monetra reviewed the available dashboard context, but net cash flow was not returned by the backend tools."
+        if net_cash_flow < 0:
+            stance = "high because spending is currently greater than recorded income"
+        elif expenses is not None and income and expenses > income * 0.8:
+            stance = "moderate because spending is using a large share of recorded income"
+        else:
+            stance = "low because recorded income is comfortably above current spending"
+        detail = f"net cash flow is {AgentService._format_gbp(net_cash_flow)}"
+        if income is not None and expenses is not None:
+            detail += f" after {AgentService._format_gbp(income)} income and {AgentService._format_gbp(expenses)} expenses"
+        return f"Cash-flow risk: {stance}; {detail}."
+
+    @staticmethod
+    def _budget_pressure_line(
+        expenses: float | None,
+        budget: float | None,
+        remaining_budget: float | None,
+        status: str,
+    ) -> str:
+        if expenses is None or budget is None:
+            return "Budget pressure: Monetra could not calculate utilisation because budget or expense totals were unavailable."
+        utilisation = (expenses / budget * 100) if budget else 0.0
+        status_text = "within budget" if status in {"", "within", "on_track", "on track"} else status.replace("_", " ")
+        remaining = (
+            f", leaving {AgentService._format_gbp(remaining_budget)} remaining"
+            if remaining_budget is not None
+            else ""
+        )
+        return (
+            "Budget pressure: Current spend is "
+            f"{AgentService._format_gbp(expenses)} against a {AgentService._format_gbp(budget)} monthly budget "
+            f"({utilisation:.1f}% used){remaining}; status is {status_text}."
+        )
+
+    @staticmethod
+    def _recurring_pressure_line(recurring: dict) -> str:
+        late_items = AgentService._recurring_items(recurring, "late_occurrences", "late_reminders")
+        upcoming_items = AgentService._recurring_items(recurring, "next_occurrences", "occurrences", "items")
+        if late_items:
+            examples = "; ".join(AgentService._format_recurring_item(item) for item in late_items[:3])
+            return f"Recurring bill pressure: {len(late_items)} late unpaid reminder(s) need attention: {examples}."
+        if upcoming_items:
+            examples = "; ".join(AgentService._format_recurring_item(item) for item in upcoming_items[:3])
+            return f"Recurring bill pressure: {len(upcoming_items)} upcoming reminder(s) are in the review window: {examples}."
+        return "Recurring bill pressure: No late or upcoming recurring reminders were returned in the review window."
+
+    @staticmethod
+    def _category_pressure_line(category_insights: dict) -> str:
+        top_categories = category_insights.get("top_categories") or []
+        if not isinstance(top_categories, list) or not top_categories:
+            return "Spending pressure: No category concentration was returned for this month."
+        formatted = []
+        for item in top_categories[:3]:
+            if not isinstance(item, dict):
+                continue
+            category = str(item.get("category") or item.get("name") or "Uncategorised")
+            amount = AgentService._format_gbp(AgentService._as_float(item.get("amount") or item.get("total")) or 0.0)
+            formatted.append(f"{category} at {amount}")
+        return f"Spending pressure: The largest categories are {', '.join(formatted)}." if formatted else "Spending pressure: No category concentration was returned for this month."
+
+    @staticmethod
+    def _forecast_line(prediction: dict, budget: float | None) -> str:
+        if prediction.get("error"):
+            return f"Forecast: Prediction was unavailable because {prediction['error']}"
+        predicted = AgentService._as_float(
+            prediction.get("predicted_spending")
+            or prediction.get("predicted_total")
+            or prediction.get("forecast")
+        )
+        if predicted is None:
+            return "Forecast: No next-month forecast was returned by the prediction tool."
+        comparison = ""
+        if budget is not None:
+            comparison = " and sits within budget" if predicted <= budget else " and is above the current monthly budget"
+        return f"Forecast: Next-month spending is projected at {AgentService._format_gbp(predicted)}{comparison}."
+
+    @staticmethod
+    def _cfo_recommended_actions(
+        risk_level: str,
+        recurring: dict,
+        category_insights: dict,
+        prediction: dict,
+    ) -> list[str]:
+        actions: list[str] = []
+        if risk_level == "high":
+            actions.append("Reduce or defer non-essential spending until cash flow returns positive.")
+        elif risk_level == "medium":
+            actions.append("Review discretionary spending before adding more commitments this month.")
+        else:
+            actions.append("Keep current spend controls in place while cash flow remains positive.")
+
+        late_items = AgentService._recurring_items(recurring, "late_occurrences", "late_reminders")
+        upcoming_items = AgentService._recurring_items(recurring, "next_occurrences", "occurrences", "items")
+        if late_items:
+            actions.append("Verify or pay late reminders so recurring commitments do not stay overdue.")
+        elif upcoming_items:
+            actions.append("Check upcoming reminders before their due dates and verify paid transactions once completed.")
+
+        top_categories = category_insights.get("top_categories") or []
+        if isinstance(top_categories, list) and top_categories:
+            category = str((top_categories[0] or {}).get("category") or "the largest category")
+            actions.append(f"Monitor {category} because it is the largest current spending pressure.")
+
+        if prediction and not prediction.get("error"):
+            actions.append("Compare the next-month forecast against the monthly budget before carrying over savings.")
+        return actions[:4]
+
+    @staticmethod
+    def _compose_cfo_email(subject: str, summary_lines: list[str], actions: list[str]) -> str:
+        cash_flow = summary_lines[0] if len(summary_lines) > 0 else "Cash-flow risk: Not available."
+        budget = summary_lines[1] if len(summary_lines) > 1 else "Budget pressure: Not available."
+        recurring = summary_lines[2] if len(summary_lines) > 2 else "Recurring bill pressure: Not available."
+        category = summary_lines[3] if len(summary_lines) > 3 else "Spending pressure: Not available."
+        forecast = summary_lines[4] if len(summary_lines) > 4 else "Forecast: Not available."
+        lines = [
+            f"Subject: {subject}",
+            "",
+            "Dear User,",
+            "",
+            "Please find below your CFO-style monthly finance briefing.",
+            "",
+            "Cash-flow and budget position:",
+            f"- {cash_flow}",
+            f"- {budget}",
+            "",
+            "Recurring bill pressure:",
+            f"- {recurring}",
+            "",
+            "Spending and forecast:",
+            f"- {category}",
+            f"- {forecast}",
+        ]
+        if actions:
+            lines.extend(["", "Recommended actions:"])
+            lines.extend(f"- {action}" for action in actions)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _recurring_items(recurring: dict, *keys: str) -> list[dict]:
+        for key in keys:
+            value = recurring.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        return []
+
+    @staticmethod
+    def _format_recurring_item(item: dict) -> str:
+        description = str(item.get("description") or item.get("name") or "Recurring reminder")
+        due_date = str(item.get("due_date") or item.get("date") or item.get("occurrence_date") or "").strip()
+        amount = AgentService._as_float(item.get("amount") or item.get("cost"))
+        amount_text = f" for {AgentService._format_gbp(amount)}" if amount is not None else ""
+        due_text = f" due {due_date}" if due_date else ""
+        return f"{description}{amount_text}{due_text}"
+
+    @staticmethod
+    def _as_float(value) -> float | None:
+        try:
+            if value in (None, ""):
+                return None
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _format_gbp(value: float) -> str:
+        return f"GBP {float(value):,.2f}"
+
+    @staticmethod
+    def _parse_python_style_payload(content: str) -> dict | None:
+        try:
+            import ast
+
+            start = content.find("{")
+            end = content.rfind("}")
+            if start == -1 or end <= start:
+                return None
+            parsed = ast.literal_eval(content[start : end + 1])
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _parse_relaxed_json_payload(content: str) -> dict | None:
+        raw = str(content or "").strip()
+        if "{" not in raw or "}" not in raw:
+            return None
+
+        keys = (
+            "headline",
+            "summary",
+            "risk_level",
+            "recommended_actions",
+            "email_subject",
+            "email_draft",
+        )
+        parsed: dict[str, object] = {}
+        for index, key in enumerate(keys):
+            following_keys = "|".join(re.escape(next_key) for next_key in keys[index + 1 :])
+            if following_keys:
+                pattern = rf'"{re.escape(key)}"\s*:\s*(?P<value>.*?)(?=,\s*"({following_keys})"\s*:|\s*}}\s*$)'
+            else:
+                pattern = rf'"{re.escape(key)}"\s*:\s*(?P<value>.*?)(?=\s*}}\s*$)'
+            match = re.search(pattern, raw, flags=re.DOTALL)
+            if not match:
+                continue
+            value = match.group("value").strip().rstrip(",").strip()
+            parsed[key] = AgentService._parse_relaxed_json_value(value)
+
+        return parsed if parsed else None
+
+    @staticmethod
+    def _parse_relaxed_json_value(value: str):
+        cleaned = str(value or "").strip()
+        if len(cleaned) >= 2 and cleaned[0] == '"' and cleaned[-1] == '"':
+            cleaned = cleaned[1:-1]
+            cleaned = cleaned.replace('\\"', '"').replace("\\n", "\n").replace("\\r", "\r")
+            return cleaned.strip()
+        if cleaned.startswith("[") and cleaned.endswith("]"):
+            try:
+                parsed = json.loads(cleaned)
+                return parsed
+            except json.JSONDecodeError:
+                items = re.findall(r'"([^"]+)"', cleaned, flags=re.DOTALL)
+                return [item.strip() for item in items if item.strip()]
+        return cleaned.strip('"').strip()
+
+    @staticmethod
+    def _format_structured_summary(parsed: dict) -> str:
+        summary = str(parsed.get("summary") or "").strip()
+        structured_keys = (
+            "cash_flow",
+            "recurring_bills",
+            "budget_pressure",
+            "spending_pressure",
+            "forecast",
+        )
+        if summary and not any(str(parsed.get(key) or "").strip() for key in structured_keys):
+            return summary
+
+        sections = [
+            ("Cash flow", parsed.get("cash_flow")),
+            ("Recurring bill pressure", parsed.get("recurring_bills")),
+            ("Budget pressure", parsed.get("budget_pressure")),
+            ("Spending pressure", parsed.get("spending_pressure")),
+            ("Forecast", parsed.get("forecast")),
+            ("Summary", summary),
+        ]
+        lines = [f"{label}: {value}" for label, value in sections if str(value or "").strip()]
+        return "\n".join(lines) if lines else "No summary returned."
+
+    @staticmethod
+    def _build_email_ready_summary(parsed: dict) -> str:
+        lines = [
+            str(parsed.get("email_subject") or "Monthly finance briefing"),
+            "",
+            str(parsed.get("cash_flow") or "").strip(),
+            str(parsed.get("recurring_bills") or "").strip(),
+        ]
+        actions = AgentService._normalize_recommended_actions(parsed.get("recommended_actions"))
+        if actions:
+            lines.extend(["", "Recommended actions:"])
+            lines.extend(f"- {action}" for action in actions)
+        return "\n".join(line for line in lines if line or line == "")
+
+    @staticmethod
+    def _with_standard_email_signoff(email_draft: str) -> str:
+        cleaned = str(email_draft or "").strip()
+        cleaned = re.sub(
+            r"(?is)\n*\s*(best regards|kind regards|regards),?\s*\n+.*$",
+            "",
+            cleaned,
+        ).strip()
+        cleaned = re.sub(
+            r"(?is)\s*(best regards|kind regards|regards),?\s*(?:\n|\r|\s)*(?:monetra organisation|rushabh dharamshi|the finance operations team|the finance team)?\s*$",
+            "",
+            cleaned,
+        ).strip()
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        if not cleaned:
+            return "Kind Regards,\nMonetra Organisation"
+        return f"{cleaned}\n\nKind Regards,\nMonetra Organisation"
 
     @staticmethod
     def _parse_reminder_payload(content: str | dict, fallback_date: str) -> dict:

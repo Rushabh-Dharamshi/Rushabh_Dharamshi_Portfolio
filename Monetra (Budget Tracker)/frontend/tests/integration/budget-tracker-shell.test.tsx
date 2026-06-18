@@ -65,6 +65,14 @@ jest.mock("@/hooks/use-budget-tracker", () => ({
     recurringItems: [],
     recurringCalendar: { window_start: "2026-03-01", window_end: "2026-04-04", occurrences: [], completed_occurrences: [] },
     prediction: null,
+    latencyReport: {
+      scope: "current_user",
+      record_count: 0,
+      failed_count: 0,
+      summary: { average_ms: 0, minimum_ms: 0, maximum_ms: 0, p95_ms: 0 },
+      by_endpoint: [],
+      latest: [],
+    },
     agentTaskDraft: "Prepare a finance briefing",
     agentWorkflows: [
       {
@@ -77,7 +85,7 @@ jest.mock("@/hooks/use-budget-tracker", () => ({
     ],
     agentRuns: [],
     agentBriefing: {
-      headline: "Local finance briefing",
+      headline: "Finance briefing",
       summary: "Cash flow remains positive.",
       risk_level: "low",
       recommended_actions: ["Keep monitoring recurring bills."],
@@ -124,6 +132,7 @@ jest.mock("@/hooks/use-budget-tracker", () => ({
     runFinanceBriefingAgent: jest.fn(),
     runAutomationWorkflow: jest.fn(),
     refresh: jest.fn(),
+    refreshLatencyReport: jest.fn(),
   }),
 }));
 
@@ -135,8 +144,9 @@ describe("BudgetTrackerShell", () => {
     expect(screen.getByText("Financial pulse")).toBeInTheDocument();
     expect(screen.getByText("Charts and performance signals")).toBeInTheDocument();
     expect(screen.getByText("Overlay spending comparison")).toBeInTheDocument();
-    expect(screen.getByText("Agent workflows for repetitive finance tasks")).toBeInTheDocument();
-    expect(screen.getByText("Local Ollama analysis agent")).toBeInTheDocument();
+    expect(screen.getByText("Monetra workflow assistant")).toBeInTheDocument();
+    expect(screen.getByText("Live request timings")).toBeInTheDocument();
+    expect(screen.getByText("Ollama analysis agent")).toBeInTheDocument();
     expect(screen.getByText("Expense records")).toBeInTheDocument();
     expect(screen.getByText("Showing all records.")).toBeInTheDocument();
   });

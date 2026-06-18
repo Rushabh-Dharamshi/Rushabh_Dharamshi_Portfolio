@@ -36,9 +36,10 @@ def test_security_helpers_and_guards():
     with app.test_request_context("/"):
         assert security.should_expose_error_details(app) is False
         assert security.current_authenticated_user() is None
-        security.log_in_user("Rushabh")
+        security.log_in_user("Rushabh", 1)
         assert security.is_logged_in() is True
         assert security.current_authenticated_user() == "Rushabh"
+        assert security.current_authenticated_user_id() == 1
         security.log_out_user()
         assert security.is_logged_in() is False
 

@@ -36,7 +36,7 @@ class StubPredictionRepository:
 
 
 def test_prediction_requires_data():
-    service = PredictionService(StubPredictionRepository([]), lambda: 1050.0)
+    service = PredictionService(StubPredictionRepository([]), lambda month=None: 1050.0)
 
     with pytest.raises(ValidationError, match="No expense data available"):
         service.predict_next_month()
@@ -53,7 +53,7 @@ def test_prediction_requires_two_months_of_data(monkeypatch):
             return datetime.strptime(value, fmt)
 
     monkeypatch.setattr("budget_tracker_api.services.prediction_service.datetime", FakeDateTime)
-    service = PredictionService(StubPredictionRepository([("2026-03", 120.0)]), lambda: 1050.0)
+    service = PredictionService(StubPredictionRepository([("2026-03", 120.0)]), lambda month=None: 1050.0)
 
     with pytest.raises(ValidationError, match="At least two months"):
         service.predict_next_month()
@@ -78,7 +78,7 @@ def test_prediction_success(monkeypatch):
         StubPredictionRepository(
             [("2026-01", 120.0), ("2026-02", 140.0), ("2026-03", 180.0)]
         ),
-        lambda: 1050.0,
+        lambda month=None: 1050.0,
     )
 
     prediction = service.predict_next_month()

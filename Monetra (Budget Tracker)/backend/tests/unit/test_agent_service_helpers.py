@@ -2,6 +2,7 @@ from flask import Flask
 import pytest
 
 from budget_tracker_api.errors import ValidationError
+from budget_tracker_api.security import current_background_user_id
 from budget_tracker_api.services.agent_service import AgentService
 
 
@@ -105,16 +106,16 @@ class StubSettingsService:
 
     def update_monthly_budget(self, payload):
         self.budget = float(payload["monthly_budget"])
-        return {"monthly_budget": self.budget}
+        return {"monthly_budget": self.budget, "budget_month": payload.get("month") or "2026-03"}
 
     def update_monthly_income(self, payload):
         self.income = float(payload["monthly_income"])
         return {"monthly_income": self.income, "income_month": payload.get("month") or "2026-03"}
 
-    def get_monthly_budget(self):
+    def get_monthly_budget(self, month_key=None):
         return self.budget
 
-    def get_monthly_income(self):
+    def get_monthly_income(self, month_key=None):
         return self.income
 
 
@@ -189,6 +190,53 @@ def test_agent_service_runtime_fallback_and_action_helpers(monkeypatch):
         service._update_matching_expense({"description": "missing"}, {"amount": 10})
 
 
+def test_agent_service_deletes_expenses_by_inferred_month_and_date_range():
+    class DateRangeExpenseService(StubExpenseService):
+        def __init__(self):
+            super().__init__()
+            self.expenses = [
+                {"id": 1, "date": "2026-05-18", "category": "Food", "description": "Lunch", "amount": 9.0, "entry_type": "expense"},
+                {"id": 2, "date": "2026-05-19", "category": "Travel", "description": "Train", "amount": 12.0, "entry_type": "expense"},
+                {"id": 3, "date": "2026-06-05", "category": "Food", "description": "Groceries", "amount": 30.0, "entry_type": "expense"},
+                {"id": 4, "date": "2026-06-10", "category": "Salary", "description": "Part-time work", "amount": 200.0, "entry_type": "income"},
+                {"id": 5, "date": "2026-04-10", "category": "Food", "description": "Coffee", "amount": 3.0, "entry_type": "expense"},
+            ]
+
+    expense_service = DateRangeExpenseService()
+    service = build_service(expense=expense_service)
+
+    result = service._run_expense_command(
+        "remove all expenses for june and for expenses beyond 18th may",
+        {"operation": "delete", "entity": {}, "target": {}},
+    )
+
+    assert result["action_result"]["type"] == "expense_deleted"
+    assert sorted(expense_service.deleted) == [2, 3]
+    assert "2026-06" in result["summary"]
+    assert "2026-05-18" in result["summary"]
+
+
+def test_agent_service_accepts_list_shaped_expense_delete_targets():
+    expense_service = StubExpenseService()
+    expense_service.expenses = [
+        {"id": 1, "date": "2026-05-19", "category": "Travel", "description": "Train", "amount": 12.0, "entry_type": "expense"},
+        {"id": 2, "date": "2026-06-05", "category": "Food", "description": "Groceries", "amount": 30.0, "entry_type": "expense"},
+    ]
+    service = build_service(expense=expense_service)
+
+    result = service._run_expense_command(
+        "remove all expenses for june and for expenses beyond 18th may",
+        {
+            "operation": "delete",
+            "entity": {},
+            "target": [{"month": "2026-06"}, {"date_after": "2026-05-18"}],
+        },
+    )
+
+    assert result["headline"] == "Transaction deleted"
+    assert sorted(expense_service.deleted) == [1, 2]
+
+
 def test_agent_service_parsing_and_recurring_helpers(monkeypatch):
     service = build_service(ollama=StubOllamaClient('{"domain":"unknown","operation":"noop","setting_key":"monthly_budget","value":1500}'))
     parsed = service._parse_manual_action_command("set my monthly budget to 1500 pounds")
@@ -244,11 +292,14 @@ def test_agent_service_tool_context_and_background_jobs(monkeypatch):
     assert service._execute_tool("get_spending_prediction", {}) == {"error": "No data"}
     assert len(service._execute_tool("get_recent_transactions", {"limit": 99})["transactions"]) == 2
     assert service._execute_tool("get_upcoming_recurring_items", {"days": 99})["days"] == 60
+    current_month_days = service._execute_tool("get_upcoming_recurring_items", {"current_month_only": True})["days"]
+    assert 1 <= current_month_days <= 31
     assert service._execute_tool("generate_monthly_report", {})["available"] is True
     assert service._execute_tool("unknown_tool", {})["error"].startswith("Unknown tool")
     assert service._should_use_context_prompt() is False
     assert service._looks_like_manual_action_command("Add a recurring bill") is True
     assert service._workflow_catalog()["month_end_close"]["label"] == "Month-end close"
+    assert service._workflow_catalog()["upcoming_bills_check"]["steps"][1]["arguments"] == {"current_month_only": True}
     assert any(tool["function"]["name"] == "get_dashboard_summary" for tool in service._tool_definitions())
     workflow_context, automated_actions, tools_used, report_url = service._run_workflow_steps(service._workflow_catalog()["month_end_close"])
     assert "generate_monthly_report" in workflow_context
@@ -260,12 +311,14 @@ def test_agent_service_tool_context_and_background_jobs(monkeypatch):
     app = Flask(__name__)
     service._finance_briefing_jobs["job-1"] = {"id": "job-1", "status": "queued", "started_at": None, "completed_at": None, "error": None, "result": None}
     service._workflow_jobs["wf-1"] = {"id": "wf-1", "status": "queued", "workflow_name": "month_end_close", "started_at": None, "completed_at": None, "error": None, "result": None}
-    monkeypatch.setattr(service, "run_finance_briefing", lambda payload: {"headline": "done"})
-    monkeypatch.setattr(service, "run_workflow", lambda workflow_name, payload: {"workflow_name": workflow_name})
-    service._run_finance_briefing_job("job-1", {}, app)
-    service._run_workflow_job("wf-1", "month_end_close", {}, app)
+    monkeypatch.setattr(service, "run_finance_briefing", lambda payload: {"headline": "done", "background_user_id": current_background_user_id()})
+    monkeypatch.setattr(service, "run_workflow", lambda workflow_name, payload: {"workflow_name": workflow_name, "background_user_id": current_background_user_id()})
+    service._run_finance_briefing_job("job-1", {"user_id": 2}, app)
+    service._run_workflow_job("wf-1", "month_end_close", {"user_id": 3}, app)
     assert service._finance_briefing_jobs["job-1"]["status"] == "completed"
     assert service._workflow_jobs["wf-1"]["status"] == "completed"
+    assert service._finance_briefing_jobs["job-1"]["result"]["background_user_id"] == 2
+    assert service._workflow_jobs["wf-1"]["result"]["background_user_id"] == 3
 
     service._finance_briefing_jobs["job-2"] = {"id": "job-2", "status": "queued", "started_at": None, "completed_at": None, "error": None, "result": None}
     service._workflow_jobs["wf-2"] = {"id": "wf-2", "status": "queued", "workflow_name": "month_end_close", "started_at": None, "completed_at": None, "error": None, "result": None}
@@ -275,4 +328,155 @@ def test_agent_service_tool_context_and_background_jobs(monkeypatch):
     service._run_workflow_job("wf-2", "month_end_close", {}, app)
     assert service._finance_briefing_jobs["job-2"]["status"] == "failed"
     assert service._workflow_jobs["wf-2"]["status"] == "failed"
+
+
+def test_agent_service_remaining_parse_and_cfo_edges():
+    service = build_service()
+
+    class BadToolCallOllama(StubOllamaClient):
+        def __init__(self, tool_calls):
+            super().__init__()
+            self._tool_calls = tool_calls
+
+        def chat(self, messages, tools=None):
+            return {"message": {"role": "assistant", "content": "", "tool_calls": self._tool_calls}}
+
+    service = build_service(ollama=BadToolCallOllama(["bad"]))
+    with pytest.raises(ValidationError, match="invalid tool call"):
+        service.run_finance_briefing({"task": "general analysis"})
+
+    service = build_service(ollama=BadToolCallOllama([{"function": "bad"}]))
+    with pytest.raises(ValidationError, match="invalid tool function"):
+        service.run_finance_briefing({"task": "general analysis"})
+
+    service = build_service()
+    assert service._parse_direct_prompt_command("") is None
+    assert service._parse_direct_transaction_create("Add an expense for lunch today under Food.", "expense") is None
+    assert service._parse_direct_recurring_command("hello world") is None
+    assert service._parse_direct_recurring_command("Set a monthly reminder for university house rent.") is None
+    assert service._parse_direct_recurring_command("Replace weekly utility bills with monthly utility bills.") is None
+    assert service._parse_direct_recurring_command("Update the utility bills reminder.") is None
+    assert service._extract_money_amount("costs 25 pounds") == 25.0
+    assert service._extract_money_amount("no money here") is None
+
+    assert service._run_direct_prompt_command_if_requested("not a direct finance action") is None
+    settings_legacy = build_service(
+        ollama=StubOllamaClient('{"domain":"settings","setting_key":"monthly_budget","value":1200}')
+    )
+    assert settings_legacy._run_manual_action_command_legacy("set budget")["headline"] == "Monthly budget updated"
+    expense_legacy = build_service(
+        ollama=StubOllamaClient('{"domain":"expense","operation":"create","entity":{"date":"2026-03-22","category":"Travel","description":"Tube","amount":6.4,"entry_type":"expense"}}')
+    )
+    assert expense_legacy._run_manual_action_command_legacy("add expense")["headline"] == "Transaction created"
+
+    with pytest.raises(ValidationError, match="invalid command object"):
+        build_service(ollama=StubOllamaClient('[{"bad":"object"},"invalid"]'))._parse_manual_action_command("set budget")
+    with pytest.raises(ValidationError, match="invalid command object"):
+        build_service(ollama=StubOllamaClient('"not an object"'))._parse_manual_action_command("set budget")
+    assert build_service(
+        ollama=StubOllamaClient('[{"domain":"settings","setting_key":"monthly_budget","value":1000}]')
+    )._parse_manual_action_command("change settings")["value"] == 1000
+    assert build_service(
+        ollama=StubOllamaClient('[{"description":"Train"},{"category":"Food"}]')
+    )._parse_manual_action_command("delete expense")["target"] == [{"description": "Train"}, {"category": "Food"}]
+    with pytest.raises(ValidationError, match="could not map"):
+        build_service(ollama=StubOllamaClient('{"domain":"unknown"}'))._parse_manual_action_command("do something vague")
+    parsed_delete = build_service(ollama=StubOllamaClient('{"domain":"recurring","operation":"delete"}'))._parse_manual_action_command("delete the weekly rent bill")
+    assert parsed_delete["domain"] == "recurring"
+    assert parsed_delete["target"]["frequency"] == "weekly"
+
+    parsed = build_service(ollama=StubOllamaClient('{"description":"Gym","amount":30}'))._parse_manual_action_command("add a gym subscription reminder")
+    assert parsed["domain"] == "recurring"
+    assert parsed["reminder"]["description"] == "Gym"
+    inferred_recurring = build_service(
+        ollama=StubOllamaClient('{"domain":"unknown","description":"Gym","amount":30}')
+    )._parse_manual_action_command("gym subscription")
+    assert inferred_recurring["domain"] == "recurring"
+
+    target = service._infer_recurring_target_from_task(
+        "update the rent reminder",
+        {"description": "Rent", "category": "Housing"},
+    )
+    assert target["category"] == "Housing"
+
+    with pytest.raises(ValidationError, match="list of objects"):
+        service._normalize_expense_criteria_items([{"description": "Train"}, "bad"])
+    assert service._normalize_expense_criteria_items(None) == [{}]
+    with pytest.raises(ValidationError, match="must be an object"):
+        service._normalize_expense_criteria_items("bad")
+
+    expense = {"date": "2026-06-10", "category": "Food", "description": "Lunch", "amount": 10.0, "entry_type": "expense"}
+    assert service._expense_matches_criteria(expense, {"date_from": "2026-06-11"}) is False
+    assert service._expense_matches_criteria(expense, {"date_to": "2026-06-09"}) is False
+    assert service._expense_matches_criteria(expense, {"date_after": "2026-06-10"}) is False
+    assert service._expense_matches_criteria(expense, {"date_before": "2026-06-10"}) is False
+
+    assert service._expense_criteria_label("bad") == "the requested criteria"
+    assert service._expense_criteria_label({"date_before": "2026-06-10"}) == "dates before 2026-06-10"
+    assert service._expense_criteria_label({"date_from": "2026-06-01", "date_to": "2026-06-10"}) == "date range 2026-06-01 to 2026-06-10"
+    assert service._extract_relative_expense_date("before 28th february 2026") == ("date_before", "2026-02-28")
+    assert service._extract_relative_expense_date("after 18th may 2026") == ("date_after", "2026-05-18")
+    with pytest.raises(ValidationError, match="could not be resolved"):
+        service._extract_relative_expense_date("before 31st february 2026")
+
+    assert service._cash_flow_risk_line(None, None, None).startswith("Cash-flow risk")
+    assert "high" in service._cash_flow_risk_line(-10, 100, 110)
+    assert "moderate" in service._cash_flow_risk_line(10, 100, 90)
+    assert service._budget_pressure_line(110, 100, -10, "over").startswith("Budget pressure")
+    assert "late unpaid" in service._recurring_pressure_line({"late_occurrences": [{"description": "Rent", "amount": 700, "date": "2026-06-01"}]})
+    assert "upcoming" in service._recurring_pressure_line({"occurrences": [{"description": "Rent", "amount": 700, "date": "2026-06-01"}]})
+    assert "No category" in service._category_pressure_line({"top_categories": ["bad"]})
+    assert "No next-month forecast" in service._forecast_line({}, 100)
+    assert service._cfo_recommended_actions("high", {"late_occurrences": [{"description": "Rent"}]}, {"top_categories": [{"category": "Food"}]}, {"predicted_spending": 100})[:3] == [
+        "Reduce or defer non-essential spending until cash flow returns positive.",
+        "Verify or pay late reminders so recurring commitments do not stay overdue.",
+        "Monitor Food because it is the largest current spending pressure.",
+    ]
+    assert service._cfo_recommended_actions("medium", {}, {}, {})[0].startswith("Review discretionary")
+    assert AgentService._build_cfo_briefing_from_context(
+        {
+            "dashboard": {
+                "month_label": "June 2026",
+                "monthly_budget": 600,
+                "monthly_income": 500,
+                "monthly_expenses": 700,
+                "net_cash_flow": -200,
+                "remaining_budget": -100,
+                "status": "over",
+            },
+            "financial_pulse": {},
+            "category_insights": {},
+            "prediction": {},
+            "upcoming_recurring_items": {},
+        }
+    )["risk_level"] == "high"
+    assert AgentService._build_cfo_briefing_from_context(
+        {
+            "dashboard": {
+                "month_label": "June 2026",
+                "monthly_budget": 600,
+                "monthly_income": 1000,
+                "monthly_expenses": 700,
+                "net_cash_flow": 300,
+                "remaining_budget": -100,
+                "status": "over",
+            },
+            "financial_pulse": {},
+            "category_insights": {},
+            "prediction": {},
+            "upcoming_recurring_items": {},
+        }
+    )["risk_level"] == "medium"
+    assert service._as_float(object()) is None
+    assert service._parse_python_style_payload("no object") is None
+    assert service._parse_relaxed_json_payload('{"headline":"Hi","summary":"Done","recommended_actions":["A","B"]}')["headline"] == "Hi"
+    assert service._parse_relaxed_json_value('["A", bad, "B"]') == ["A", "B"]
+    assert service._parse_relaxed_json_value("plain text") == "plain text"
+    assert service._with_standard_email_signoff("") == "Kind Regards,\nMonetra Organisation"
+
+
+def test_agent_service_direct_prompt_unknown_domain_returns_none(monkeypatch):
+    service = build_service()
+    monkeypatch.setattr(service, "_parse_direct_prompt_command", lambda task: {"domain": "unknown"})
+    assert service._run_direct_prompt_command_if_requested("unknown direct command") is None
 

@@ -1,6 +1,14 @@
 version: 2.1
 setup: true
 
+parameters:
+  deploy-oracle:
+    type: boolean
+    default: false
+  run-reliability:
+    type: boolean
+    default: false
+
 orbs:
   continuation: circleci/continuation@1.0.0
 
@@ -22,10 +30,10 @@ jobs:
               BASE_REVISION="origin/main"
             fi
 
-            if git diff --name-only "$BASE_REVISION"...HEAD | grep -E '^(Monetra \(Budget Tracker\)/|\.circleci/)'; then
-              printf '{"run-monetra": true}' > /tmp/monetra-continuation.json
+            if [ "<< pipeline.parameters.deploy-oracle >>" = "true" ] || [ "<< pipeline.parameters.run-reliability >>" = "true" ] || git diff --name-only "$BASE_REVISION"...HEAD | grep -E '^(Monetra \(Budget Tracker\)/|\.circleci/)'; then
+              printf '{"run-monetra": true, "deploy-oracle": << pipeline.parameters.deploy-oracle >>, "run-reliability": << pipeline.parameters.run-reliability >>}' > /tmp/monetra-continuation.json
             else
-              printf '{"run-monetra": false}' > /tmp/monetra-continuation.json
+              printf '{"run-monetra": false, "deploy-oracle": false, "run-reliability": false}' > /tmp/monetra-continuation.json
             fi
       - continuation/continue:
           configuration_path: .circleci/continue-config.yml

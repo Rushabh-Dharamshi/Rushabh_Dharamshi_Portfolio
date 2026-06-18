@@ -1,5 +1,6 @@
 ﻿import json
 import logging
+import re
 from calendar import monthrange
 from datetime import UTC, datetime, datetime as _real_datetime
 from pathlib import Path
@@ -78,14 +79,18 @@ class AutomationService:
 
         return runs
 
-    def queue_realtime_refresh(self, flask_app, event_type: str | None = None) -> list[dict]:
+    def queue_realtime_refresh(self, flask_app, event_type: str | None = None, user_id: int | None = None) -> list[dict]:
         normalized_event_type = str(event_type or "finance_state_changed").strip().lower() or "finance_state_changed"
         jobs: list[dict] = []
+        payload = {"task": ""}
+        if user_id is not None:
+            payload["user_id"] = int(user_id)
         for workflow_name in self._realtime_workflow_names(normalized_event_type):
+            payload["task"] = self._workflow_refresh_task(workflow_name, normalized_event_type)
             jobs.append(
                 self._agent_service.start_workflow_run(
                     workflow_name,
-                    {"task": self._workflow_refresh_task(workflow_name, normalized_event_type)},
+                    dict(payload),
                     flask_app,
                     reuse_active=True,
                 )
@@ -174,7 +179,7 @@ class AutomationService:
                 self._bootstrap_running = False
             logger.info("Automation bootstrap background run finished.")
 
-    def run_month_end_email_if_due(self) -> dict | None:
+    def run_month_end_email_if_due(self, recipient: str | None = None) -> dict | None:
         now = datetime.now()
         if now.day != monthrange(now.year, now.month)[1]:
             return None
@@ -192,6 +197,7 @@ class AutomationService:
             headline="Month-end report emailed",
             summary_template="Monthly PDF report emailed to {recipient}.",
             automated_actions_prefix=["Generated the month-end close workflow summary."],
+            recipient=recipient,
         )
 
     def _is_month_end_send_time(self, now: datetime) -> bool:
@@ -200,7 +206,7 @@ class AutomationService:
             self._month_end_email_minute,
         )
 
-    def run_month_end_email_now(self) -> dict:
+    def run_month_end_email_now(self, recipient: str | None = None) -> dict:
         return self._dispatch_month_end_email(
             workflow_name="month_end_email_manual_dispatch",
             workflow_label="Month-end email manual dispatch",
@@ -208,9 +214,10 @@ class AutomationService:
             headline="Month-end report emailed manually",
             summary_template="Manual month-end PDF report emailed to {recipient}.",
             automated_actions_prefix=["Triggered the month-end close workflow manually."],
+            recipient=recipient,
         )
 
-    def run_upcoming_bills_email_if_due(self) -> dict | None:
+    def run_upcoming_bills_email_if_due(self, recipient: str | None = None) -> dict | None:
         due_expenses = self._get_due_expenses_within_days(7)
         if not due_expenses:
             return None
@@ -224,9 +231,16 @@ class AutomationService:
             signature=signature,
             workflow_name="upcoming_bills_email_dispatch",
             workflow_label="Upcoming bills email dispatch",
+            window_label="late unpaid reminders and bills due today plus the next 7 days (8 calendar dates total)",
+            no_due_message="No expense reminders are late or due today or in the next 7 days, so no upcoming-bills email was sent.",
+            automated_actions=[
+                "Reviewed late unpaid recurring bills and recurring bills due today plus the next 7 days.",
+                "Prepared an updated scheduled upcoming-bills summary covering 8 calendar dates total.",
+            ],
+            recipient=recipient,
         )
 
-    def run_upcoming_bills_email_now(self) -> dict:
+    def run_upcoming_bills_email_now(self, recipient: str | None = None) -> dict:
         due_expenses = self._get_due_expenses_within_days(7)
         signature = self._upcoming_bills_signature(due_expenses)
         if not due_expenses:
@@ -236,15 +250,15 @@ class AutomationService:
                     "workflow_label": "Upcoming bills email manual dispatch",
                     "status": "completed",
                     "headline": "No upcoming bills email sent",
-                    "summary": "No email was sent because there are no expense reminders due within the next 7 days.",
+                    "summary": "No email was sent because there are no late unpaid expense reminders or expense reminders due today or in the next 7 days.",
                     "risk_level": "low",
                     "recommended_actions": ["No bill reminder email is needed right now."],
                     "automated_actions": [
-                        "Checked the latest recurring expense reminders due within 7 days.",
+                        "Checked late unpaid expense reminders and recurring expense reminders due today plus the next 7 days.",
                         "Skipped email delivery because no bills are due in that window.",
                     ],
                     "email_subject": "No upcoming bills due",
-                    "email_draft": "No email was sent because there are no upcoming bills due within the next 7 days.",
+                    "email_draft": "No email was sent because there are no late unpaid expense reminders or upcoming bills due today or in the next 7 days. This check includes today plus the next 7 days, covering 8 calendar dates total.",
                     "task": signature,
                     "model": "system",
                     "tools_used": ["upcoming_bills_change_detection"],
@@ -257,23 +271,106 @@ class AutomationService:
             signature=signature,
             workflow_name="upcoming_bills_email_manual_dispatch",
             workflow_label="Upcoming bills email manual dispatch",
+            window_label="late unpaid reminders and bills due today plus the next 7 days (8 calendar dates total)",
+            no_due_message="No expense reminders are late or due today or in the next 7 days, so no upcoming-bills email was sent.",
+            automated_actions=[
+                "Reviewed late unpaid recurring bills and recurring bills due today plus the next 7 days.",
+                "Prepared an updated due-soon upcoming-bills summary covering 8 calendar dates total.",
+            ],
+            recipient=recipient,
+        )
+
+    def run_all_upcoming_bills_email_now(self, recipient: str | None = None) -> dict:
+        due_expenses = self._get_all_projected_upcoming_expenses()
+        signature = self._upcoming_bills_signature(due_expenses)
+        if not due_expenses:
+            return self._run_repository.create_run(
+                {
+                    "workflow_name": "all_upcoming_bills_email_manual_dispatch",
+                    "workflow_label": "All upcoming bills email manual dispatch",
+                    "status": "completed",
+                    "headline": "No upcoming bills email sent",
+                    "summary": "No email was sent because there are no active unpaid expense reminders in the projected upcoming schedule.",
+                    "risk_level": "low",
+                    "recommended_actions": ["No projected bill reminder email is needed right now."],
+                    "automated_actions": [
+                        "Checked late unpaid reminders and the projected active recurring expense schedule.",
+                        "Skipped email delivery because no projected bills were found.",
+                    ],
+                    "email_subject": "No upcoming bills found",
+                    "email_draft": "No email was sent because Monetra found no late unpaid reminders or projected upcoming expense reminders.",
+                    "task": signature,
+                    "model": "system",
+                    "tools_used": ["upcoming_bills_change_detection"],
+                    "report_download_url": None,
+                    "generated_at": _utc_timestamp(),
+                }
+            )
+        return self._dispatch_upcoming_bills_email(
+            due_expenses=due_expenses,
+            signature=signature,
+            workflow_name="all_upcoming_bills_email_manual_dispatch",
+            workflow_label="All upcoming bills email manual dispatch",
+            window_label="late unpaid reminders and all projected upcoming bills for the next 12 months",
+            no_due_message="No projected upcoming expense reminders were found, so no upcoming-bills email was sent.",
+            headline="All upcoming bills emailed",
+            summary="All projected upcoming bills emailed to {recipient}.",
+            automated_actions=[
+                "Reviewed late unpaid recurring bills and all projected recurring expense reminders for the next 12 months.",
+                "Prepared an all-upcoming-bills summary.",
+            ],
+            recipient=recipient,
         )
 
     def _get_due_expenses_within_days(self, days: int) -> list[dict]:
-        upcoming = self._recurring_service.upcoming_calendar(days + 1)
-        return [
-            {
-                "recurring_item_id": occurrence.get("recurring_item_id"),
-                "date": occurrence.get("date"),
-                "description": occurrence.get("description"),
-                "amount": occurrence.get("amount"),
-                "entry_type": occurrence.get("entry_type"),
-                "frequency": occurrence.get("frequency"),
-            }
-            for occurrence in upcoming.get("occurrences", [])
-            if occurrence.get("entry_type") == "expense"
-            and int(occurrence.get("days_until_due") or 0) <= days
+        calendar = self._recurring_service.upcoming_calendar(days + 1)
+        candidates = [
+            *calendar.get("late_occurrences", []),
+            *[
+                occurrence
+                for occurrence in calendar.get("occurrences", [])
+                if int(occurrence.get("days_until_due") or 0) <= days
+            ],
         ]
+        return self._normalize_due_expenses(candidates)
+
+    def _get_all_projected_upcoming_expenses(self) -> list[dict]:
+        calendar = self._recurring_service.upcoming_calendar(365)
+        return self._normalize_due_expenses(
+            [
+                *calendar.get("late_occurrences", []),
+                *calendar.get("occurrences", []),
+            ]
+        )
+
+    @staticmethod
+    def _normalize_due_expenses(occurrences: list[dict]) -> list[dict]:
+        normalized: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        for occurrence in occurrences:
+            if occurrence.get("entry_type") != "expense":
+                continue
+            key = (
+                str(occurrence.get("recurring_item_id") or ""),
+                str(occurrence.get("date") or ""),
+                str(occurrence.get("description") or ""),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            normalized.append(
+                {
+                    "recurring_item_id": occurrence.get("recurring_item_id"),
+                    "date": occurrence.get("date"),
+                    "description": occurrence.get("description"),
+                    "amount": occurrence.get("amount"),
+                    "entry_type": occurrence.get("entry_type"),
+                    "frequency": occurrence.get("frequency"),
+                    "days_until_due": occurrence.get("days_until_due"),
+                }
+            )
+        return sorted(normalized, key=lambda item: (str(item.get("date") or ""), str(item.get("description") or "")))
+
 
     def _dispatch_month_end_email(
         self,
@@ -284,6 +381,7 @@ class AutomationService:
         headline: str,
         summary_template: str,
         automated_actions_prefix: list[str],
+        recipient: str | None = None,
     ) -> dict:
         workflow_result = self._agent_service.run_workflow("month_end_close", {})
         report_path = self._report_service.generate_monthly_report()
@@ -292,6 +390,7 @@ class AutomationService:
             subject=workflow_result["email_subject"],
             body=composed_email_body,
             attachment_path=Path(report_path),
+            recipient=recipient,
         )
         return self._run_repository.create_run(
             {
@@ -323,19 +422,23 @@ class AutomationService:
         signature: str,
         workflow_name: str,
         workflow_label: str,
+        window_label: str = "late unpaid reminders and bills due today plus the next 7 days (8 calendar dates total)",
+        no_due_message: str = "No expense reminders are late or due today or in the next 7 days, so no upcoming-bills email was sent.",
+        headline: str = "Upcoming bills alert emailed",
+        summary: str = "Upcoming bills alert emailed to {recipient} for {window_label}.",
+        automated_actions: list[str] | None = None,
+        recipient: str | None = None,
     ) -> dict:
         if not due_expenses:
-            raise ValidationError("No expense reminders are due within the next 7 days, so no upcoming-bills email was sent.")
+            raise ValidationError(no_due_message)
 
         workflow_result = self._agent_service.run_workflow("upcoming_bills_check", {})
         email_subject = workflow_result["email_subject"]
-        email_body = workflow_result["email_draft"]
-        headline = "Upcoming bills alert emailed"
-        summary = "Upcoming bills alert emailed to {recipient} for items due within 7 days."
+        email_body = self._compose_upcoming_bills_email_body(workflow_result, due_expenses, window_label)
         risk_level = workflow_result["risk_level"]
         recommended_actions = workflow_result["recommended_actions"]
-        automated_actions = [
-            "Reviewed recurring bill pressure for the next 7 days.",
+        action_log = automated_actions or [
+            "Reviewed recurring bill pressure for today plus the next 7 days.",
             "Prepared an updated upcoming-bills summary.",
         ]
         model = workflow_result["model"]
@@ -345,6 +448,7 @@ class AutomationService:
         email_result = self._email_service.send_email(
             subject=email_subject,
             body=email_body,
+            recipient=recipient,
         )
         return self._run_repository.create_run(
             {
@@ -352,11 +456,11 @@ class AutomationService:
                 "workflow_label": workflow_label,
                 "status": "completed",
                 "headline": headline,
-                "summary": summary.format(recipient=email_result["recipient"]),
+                "summary": summary.format(recipient=email_result["recipient"], window_label=window_label),
                 "risk_level": risk_level,
                 "recommended_actions": recommended_actions,
                 "automated_actions": [
-                    *automated_actions,
+                    *action_log,
                     f"Emailed the latest upcoming-bills update to {email_result['recipient']}.",
                 ],
                 "email_subject": email_result["subject"],
@@ -368,6 +472,54 @@ class AutomationService:
                 "generated_at": _utc_timestamp(),
             }
         )
+
+    def _compose_upcoming_bills_email_body(self, workflow_result: dict, due_expenses: list[dict], window_label: str) -> str:
+        intro = self._normalize_email_paragraph(workflow_result.get("email_draft"))
+        lines = [
+            "Dear [Recipient's Name],",
+            "",
+            intro or "Here is the latest upcoming-bills review.",
+            "",
+            "Included reminders:",
+            f"- {window_label}.",
+        ]
+        lines.extend(["", "Bills included:"])
+        for item in due_expenses:
+            lines.append(f"- {self._format_due_expense_line(item)}")
+
+        recommended_actions = self._normalize_email_list(workflow_result.get("recommended_actions"))
+        if recommended_actions:
+            lines.extend(["", "Recommended actions:"])
+            lines.extend(f"- {action}" for action in recommended_actions[:3])
+
+        lines.extend(["", "Kind Regards,", "Monetra Organisation"])
+        return "\n".join(lines)
+
+    @staticmethod
+    def _format_due_expense_line(item: dict) -> str:
+        description = str(item.get("description") or "Recurring expense").strip()
+        date = str(item.get("date") or "unknown date").strip()
+        frequency = str(item.get("frequency") or "recurring").strip()
+        try:
+            amount = f"GBP {float(item.get('amount') or 0.0):.2f}"
+        except (TypeError, ValueError):
+            amount = "GBP 0.00"
+        days_until_due = item.get("days_until_due")
+        timing = ""
+        if days_until_due is not None:
+            try:
+                days = int(days_until_due)
+                if days < 0:
+                    timing = f" ({abs(days)} days late)"
+                elif days == 0:
+                    timing = " (due today)"
+                elif days == 1:
+                    timing = " (due tomorrow)"
+                else:
+                    timing = f" (due in {days} days)"
+            except (TypeError, ValueError):
+                timing = ""
+        return f"{description}: {amount}, due {date}{timing}, {frequency}"
 
     def _compose_month_end_email_body(self, workflow_result: dict, report_path: Path) -> str:
         dashboard = self._analytics_service.dashboard()
@@ -393,6 +545,8 @@ class AutomationService:
             cash_flow_sentence = f"Net cash flow for {month_label} was negative at GBP {abs(net_cash_flow):.2f}."
 
         lines = [
+            "Dear [Recipient's Name],",
+            "",
             f"Month-end summary for {month_label}.",
             f"Total income for the month was GBP {monthly_income:.2f}.",
             f"Total spending for the month was GBP {monthly_expenses:.2f} against a monthly budget of GBP {monthly_budget:.2f}.",
@@ -410,7 +564,7 @@ class AutomationService:
             lines.extend(["", "Recommended actions:"])
             lines.extend(f"- {action}" for action in recommended_actions[:3])
 
-        lines.extend(["", "Best regards,", "Rushabh Dharamshi"])
+        lines.extend(["", "Kind Regards,", "Monetra Organisation"])
         return "\n".join(lines)
 
     @staticmethod
@@ -419,8 +573,50 @@ class AutomationService:
             return ""
         if isinstance(text, (list, tuple)):
             text = " ".join(str(item) for item in text if str(item).strip())
-        normalized = " ".join(str(text).replace("\r", " ").replace("\n", " ").split())
+        text = AutomationService._extract_embedded_email_text(str(text))
+        text = AutomationService._strip_email_signoff(str(text))
+        text = AutomationService._strip_email_salutation(text)
+        normalized = " ".join(text.replace("\r", " ").replace("\n", " ").split())
         return normalized.strip()
+
+    @staticmethod
+    def _extract_embedded_email_text(text: str) -> str:
+        raw = str(text or "").strip()
+        if not raw.startswith("{") or '"email_draft"' not in raw:
+            return raw
+        match = re.search(
+            r'"email_draft"\s*:\s*"(?P<value>.*?)(?:"\s*}\s*$|",\s*"[a-zA-Z_]+")',
+            raw,
+            flags=re.DOTALL,
+        )
+        if not match:
+            return raw
+        return match.group("value").replace('\\"', '"').replace("\\n", "\n").strip()
+
+    @staticmethod
+    def _strip_email_salutation(text: str) -> str:
+        cleaned = str(text or "").strip()
+        cleaned = re.sub(
+            r"(?is)^\s*dear\s+[^,\n\r]{1,120},\s*",
+            "",
+            cleaned,
+        )
+        return cleaned.strip()
+
+    @staticmethod
+    def _strip_email_signoff(text: str) -> str:
+        cleaned = str(text or "").strip()
+        cleaned = re.sub(
+            r"(?is)\s*(?:best regards|kind regards|regards),?\s*(?:\n|\r|\s)*(?:monetra organisation|rushabh dharamshi|the finance operations team|the finance team)?\s*$",
+            "",
+            cleaned,
+        )
+        cleaned = re.sub(
+            r"(?is)(?:\n|\r)\s*(?:best regards|kind regards|regards),?\s*(?:\n|\r|\s)+.*$",
+            "",
+            cleaned,
+        )
+        return cleaned.strip()
 
     @classmethod
     def _normalize_email_list(cls, value: object) -> list[str]:

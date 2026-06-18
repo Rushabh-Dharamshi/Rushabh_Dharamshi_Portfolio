@@ -5,6 +5,7 @@ import { EmailAutomationPanel } from "@/components/email-automation-panel";
 describe("EmailAutomationPanel", () => {
   it("renders empty state and forwards dispatch actions", () => {
     const onSendUpcomingBillsEmail = jest.fn();
+    const onSendAllUpcomingBillsEmail = jest.fn();
     const onSendMonthEndEmail = jest.fn();
 
     render(
@@ -12,16 +13,19 @@ describe("EmailAutomationPanel", () => {
         runs={[]}
         activeDispatchId={null}
         onSendUpcomingBillsEmail={onSendUpcomingBillsEmail}
+        onSendAllUpcomingBillsEmail={onSendAllUpcomingBillsEmail}
         onSendMonthEndEmail={onSendMonthEndEmail}
       />,
     );
 
     expect(screen.getByText("Manual and scheduled email dispatches will appear here once they run.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Send upcoming bills email"));
+    fireEvent.click(screen.getByRole("button", { name: "Send due-soon bills" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send all upcoming bills" }));
     fireEvent.click(screen.getByText("Send month-end report"));
 
     expect(onSendUpcomingBillsEmail).toHaveBeenCalled();
+    expect(onSendAllUpcomingBillsEmail).toHaveBeenCalled();
     expect(onSendMonthEndEmail).toHaveBeenCalled();
   });
 
@@ -86,12 +90,13 @@ describe("EmailAutomationPanel", () => {
         ]}
         activeDispatchId="upcoming_bills_email"
         onSendUpcomingBillsEmail={jest.fn()}
+        onSendAllUpcomingBillsEmail={jest.fn()}
         onSendMonthEndEmail={jest.fn()}
       />,
     );
 
     expect(screen.getByText("Email automation is running.")).toBeInTheDocument();
-    expect(screen.getByText("Sending upcoming bills email...")).toBeDisabled();
+    expect(screen.getByText("Sending due-soon bills...")).toBeDisabled();
     expect(screen.getByText("Send month-end report")).toBeEnabled();
     expect(screen.getByText("2 logged")).toBeInTheDocument();
     expect(screen.getByText("Month-end email")).toBeInTheDocument();

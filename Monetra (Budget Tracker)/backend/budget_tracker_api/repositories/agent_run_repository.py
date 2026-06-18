@@ -8,14 +8,19 @@ from budget_tracker_api.db import agent_runs_table
 
 
 class AgentRunRepository:
-    def __init__(self, connection_factory: Callable[[], Connection]):
+    def __init__(self, connection_factory: Callable[[], Connection], user_id_provider: Callable[[], int] | None = None):
         self._connection_factory = connection_factory
+        self._user_id_provider = user_id_provider or (lambda: 1)
 
     def _db(self) -> Connection:
         return self._connection_factory()
 
+    def _user_id(self) -> int:
+        return int(self._user_id_provider() or 1)
+
     def create_run(self, payload: dict) -> dict:
         record = {
+            "user_id": self._user_id(),
             "workflow_name": payload["workflow_name"],
             "workflow_label": payload["workflow_label"],
             "status": payload["status"],
@@ -39,7 +44,10 @@ class AgentRunRepository:
 
     def get_run(self, run_id: int) -> dict | None:
         row = self._db().execute(
-            select(agent_runs_table).where(agent_runs_table.c.id == run_id)
+            select(agent_runs_table).where(
+                agent_runs_table.c.id == run_id,
+                agent_runs_table.c.user_id == self._user_id(),
+            )
         ).mappings().first()
         if row is None:
             return None
@@ -48,6 +56,7 @@ class AgentRunRepository:
     def list_runs(self, limit: int = 8) -> list[dict]:
         rows = self._db().execute(
             select(agent_runs_table)
+            .where(agent_runs_table.c.user_id == self._user_id())
             .order_by(agent_runs_table.c.generated_at.desc(), agent_runs_table.c.id.desc())
             .limit(limit)
         ).mappings().all()
@@ -56,7 +65,10 @@ class AgentRunRepository:
     def latest_run(self, workflow_name: str) -> dict | None:
         row = self._db().execute(
             select(agent_runs_table)
-            .where(agent_runs_table.c.workflow_name == workflow_name)
+            .where(
+                agent_runs_table.c.user_id == self._user_id(),
+                agent_runs_table.c.workflow_name == workflow_name,
+            )
             .order_by(agent_runs_table.c.generated_at.desc(), agent_runs_table.c.id.desc())
             .limit(1)
         ).mappings().first()
@@ -68,6 +80,7 @@ class AgentRunRepository:
         row = self._db().execute(
             select(agent_runs_table)
             .where(
+                agent_runs_table.c.user_id == self._user_id(),
                 agent_runs_table.c.workflow_name == workflow_name,
                 agent_runs_table.c.generated_at.like(f"{date_prefix}%"),
             )

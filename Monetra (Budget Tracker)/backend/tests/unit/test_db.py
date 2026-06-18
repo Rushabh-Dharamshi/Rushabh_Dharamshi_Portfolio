@@ -11,13 +11,14 @@ class FakeConnection:
         self.closed = False
         self.executed = []
         self.scalar = 0
+        self.first_row = None
 
     def close(self):
         self.closed = True
 
     def execute(self, statement):
         self.executed.append(str(statement))
-        return SimpleNamespace(scalar_one=lambda: self.scalar)
+        return SimpleNamespace(scalar_one=lambda: self.scalar, first=lambda: self.first_row)
 
 
 class FakeEngine:
@@ -105,6 +106,9 @@ def test_db_migration_seed_and_database_creation(monkeypatch):
         POSTGRES_MAINTENANCE_DB="postgres",
         MONTHLY_BUDGET=1000,
         MONTHLY_INCOME=1500,
+        AUTH_USERNAME="Rushabh",
+        AUTH_EMAIL="rushabh@example.com",
+        AUTH_PASSWORD_HASH="hashed-password",
     )
     engine = FakeEngine(dialect_name="postgresql")
     engine.connection.scalar = 0
@@ -115,6 +119,7 @@ def test_db_migration_seed_and_database_creation(monkeypatch):
         "settings": ["id"],
         "recurring_occurrence_status": ["id"],
         "recurring_items": ["id"],
+        "monthly_budget_records": ["id", "month_key", "monthly_budget"],
     }))
     psycopg_conn = FakePsycopgConnection(row=None)
     monkeypatch.setattr(db, "connect", lambda **kwargs: psycopg_conn)
@@ -128,6 +133,8 @@ def test_db_migration_seed_and_database_creation(monkeypatch):
     assert "ALTER TABLE settings ADD COLUMN monthly_income" in sql_calls
     assert "ALTER TABLE recurring_occurrence_status ADD COLUMN transaction_id" in sql_calls
     assert "ALTER TABLE recurring_items ADD COLUMN end_date" in sql_calls
+    assert "ALTER TABLE monthly_budget_records ADD COLUMN user_id" in sql_calls
+    assert "pg_get_serial_sequence('users', 'id')" in sql_calls
     assert any("CREATE DATABASE" in str(call[0]) for call in psycopg_conn.cursor_obj.executed)
 
 

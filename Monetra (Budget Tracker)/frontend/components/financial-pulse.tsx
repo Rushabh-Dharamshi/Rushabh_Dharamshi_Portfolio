@@ -28,26 +28,32 @@ export function FinancialPulse({ pulse }: FinancialPulseProps) {
         <article className="metric-card">
           <span>Average transaction</span>
           <strong>{formatCurrency(pulse.average_transaction)}</strong>
+          <small>Average size of recorded income and expense transactions this month.</small>
         </article>
         <article className="metric-card">
           <span>Spend velocity</span>
           <strong>{formatCurrency(pulse.spend_velocity)}/day</strong>
+          <small>How quickly expenses are being recorded each day this month.</small>
         </article>
         <article className="metric-card">
           <span>Cash flow</span>
           <strong>{formatCurrency(pulse.net_cash_flow)}</strong>
+          <small>Monthly income minus monthly expenses.</small>
         </article>
         <article className="metric-card">
           <span>Income coverage</span>
           <strong>{pulse.income_coverage.toFixed(1)}%</strong>
+          <small>Monthly income divided by monthly expenses. Very high values usually mean expenses are still low.</small>
         </article>
         <article className="metric-card">
           <span>Top category share</span>
           <strong>{pulse.top_category_share.toFixed(1)}%</strong>
+          <small>The share of monthly expenses coming from your largest spending category.</small>
         </article>
         <article className="metric-card">
           <span>Budget runway</span>
           <strong>{pulse.runway_days !== null ? `${pulse.runway_days} days` : "Stable"}</strong>
+          <small>Estimated days your remaining budget lasts at the current daily spend rate.</small>
         </article>
       </div>
 

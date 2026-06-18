@@ -4,6 +4,12 @@ parameters:
   run-monetra:
     type: boolean
     default: false
+  deploy-oracle:
+    type: boolean
+    default: false
+  run-reliability:
+    type: boolean
+    default: false
 
 jobs:
   monetra-backend-tests:
@@ -68,6 +74,274 @@ jobs:
             cd "Monetra (Budget Tracker)"
             docker build -t monetra-frontend ./frontend
 
+  monetra-frontend-e2e:
+    docker:
+      - image: mcr.microsoft.com/playwright:v1.52.0-jammy
+    working_directory: ~/project
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Install frontend dependencies
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npm ci
+      - run:
+          name: Run Playwright E2E tests
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npm run test:e2e
+
+  monetra-dummy-load-tests:
+    machine:
+      image: ubuntu-2204:current
+    working_directory: ~/project
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Create safe CI environment file
+          command: |
+            set -euo pipefail
+            cd "Monetra (Budget Tracker)"
+            cat > backend/.env <<'EOF'
+            SECRET_KEY=ci-reliability-secret
+            LOGIN_REQUIRED=true
+            EMAIL_MODE=mock
+            EMAIL_FROM=ci@monetra.test
+            SMTP_HOST=
+            SMTP_USERNAME=
+            SMTP_PASSWORD=
+            SMTP_REQUIRE_AUTH=false
+            SMTP_USE_TLS=false
+            AUTOMATION_SCHEDULER_ENABLED=false
+            OLLAMA_BASE_URL=http://host.docker.internal:11434
+            OLLAMA_MODEL=qwen2.5:7b
+            OLLAMA_TIMEOUT_SECONDS=10
+            RAG_EMBEDDING_MODEL=nomic-embed-text
+            EOF
+      - run:
+          name: Start Monetra stack for reliability testing
+          command: |
+            set -euo pipefail
+            cd "Monetra (Budget Tracker)"
+            docker compose up -d --build postgres chroma backend
+      - run:
+          name: Wait for backend health
+          command: |
+            set -euo pipefail
+            for i in $(seq 1 60); do
+              if curl -fsS http://localhost:8000/api/health >/dev/null; then
+                echo "Backend is healthy."
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "Backend did not become healthy in time." >&2
+            cd "Monetra (Budget Tracker)"
+            docker compose logs backend
+            exit 1
+      - run:
+          name: Run rigorous dummy-user/load test
+          command: |
+            set -euo pipefail
+            cd "Monetra (Budget Tracker)"
+            docker compose --profile load run --rm \
+              -e MONETRA_BASE_URL=http://backend:8000 \
+              -e MONETRA_STRICT_AI=false \
+              -e MONETRA_THINK_TIME_SECONDS=0.1 \
+              -e MONETRA_TEST_RUN_ID="circleci-${CIRCLE_WORKFLOW_ID:-local}" \
+              load-test-runner
+      - run:
+          name: Capture reliability logs
+          when: always
+          command: |
+            mkdir -p "Monetra (Budget Tracker)/.run/circleci"
+            cd "Monetra (Budget Tracker)"
+            docker compose ps > .run/circleci/docker-compose-ps.txt || true
+            docker compose logs backend > .run/circleci/backend.log || true
+            docker compose logs postgres > .run/circleci/postgres.log || true
+            docker compose logs chroma > .run/circleci/chroma.log || true
+      - store_artifacts:
+          path: Monetra (Budget Tracker)/.run/circleci
+          destination: monetra-reliability-logs
+
+  monetra-chaos-smoke:
+    machine:
+      image: ubuntu-2204:current
+    working_directory: ~/project
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Create safe CI environment file
+          command: |
+            set -euo pipefail
+            cd "Monetra (Budget Tracker)"
+            cat > backend/.env <<'EOF'
+            SECRET_KEY=ci-chaos-secret
+            LOGIN_REQUIRED=true
+            EMAIL_MODE=mock
+            EMAIL_FROM=ci@monetra.test
+            SMTP_HOST=
+            SMTP_USERNAME=
+            SMTP_PASSWORD=
+            SMTP_REQUIRE_AUTH=false
+            SMTP_USE_TLS=false
+            AUTOMATION_SCHEDULER_ENABLED=false
+            OLLAMA_BASE_URL=http://host.docker.internal:11434
+            OLLAMA_MODEL=qwen2.5:7b
+            OLLAMA_TIMEOUT_SECONDS=10
+            RAG_EMBEDDING_MODEL=nomic-embed-text
+            EOF
+      - run:
+          name: Start Monetra stack for chaos smoke
+          command: |
+            set -euo pipefail
+            cd "Monetra (Budget Tracker)"
+            docker compose up -d --build postgres chroma backend
+      - run:
+          name: Wait for backend health
+          command: |
+            set -euo pipefail
+            for i in $(seq 1 60); do
+              if curl -fsS http://localhost:8000/api/health >/dev/null; then
+                echo "Backend is healthy."
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "Backend did not become healthy in time." >&2
+            cd "Monetra (Budget Tracker)"
+            docker compose logs backend
+            exit 1
+      - run:
+          name: Run controlled chaos smoke check
+          command: |
+            set -euo pipefail
+            cd "Monetra (Budget Tracker)"
+            docker compose --profile load run --rm \
+              -e MONETRA_BASE_URL=http://backend:8000 \
+              load-test-runner run /scripts/k6/monetra-chaos-smoke.js
+      - run:
+          name: Run controlled Chroma outage drill
+          command: |
+            set -euo pipefail
+            cd "Monetra (Budget Tracker)"
+            docker compose stop chroma
+            set +e
+            docker compose --profile load run --rm \
+              -e MONETRA_BASE_URL=http://backend:8000 \
+              load-test-runner run /scripts/k6/monetra-chaos-smoke.js
+            STATUS=$?
+            set -e
+            docker compose up -d chroma
+            exit "$STATUS"
+      - run:
+          name: Run controlled PostgreSQL outage drill
+          command: |
+            set -euo pipefail
+            cd "Monetra (Budget Tracker)"
+            docker compose stop postgres
+            set +e
+            docker compose --profile load run --rm \
+              -e MONETRA_BASE_URL=http://backend:8000 \
+              load-test-runner run /scripts/k6/monetra-chaos-smoke.js
+            STATUS=$?
+            set -e
+            docker compose up -d postgres
+            exit "$STATUS"
+      - run:
+          name: Capture chaos logs
+          when: always
+          command: |
+            mkdir -p "Monetra (Budget Tracker)/.run/circleci-chaos"
+            cd "Monetra (Budget Tracker)"
+            docker compose ps > .run/circleci-chaos/docker-compose-ps.txt || true
+            docker compose logs backend > .run/circleci-chaos/backend.log || true
+            docker compose logs postgres > .run/circleci-chaos/postgres.log || true
+            docker compose logs chroma > .run/circleci-chaos/chroma.log || true
+      - store_artifacts:
+          path: Monetra (Budget Tracker)/.run/circleci-chaos
+          destination: monetra-chaos-logs
+
+  monetra-deploy-oracle:
+    docker:
+      - image: cimg/base:stable
+    working_directory: ~/project
+    parameters:
+      environment-name:
+        type: enum
+        enum: ["staging", "production"]
+      host-env-var:
+        type: string
+      user-env-var:
+        type: string
+      ssh-key-env-var:
+        type: string
+      app-dir-env-var:
+        type: string
+      base-url-env-var:
+        type: string
+      frontend-url-env-var:
+        type: string
+      remote-env-file:
+        type: string
+    steps:
+      - checkout:
+          path: ~/project
+      - run:
+          name: Prepare SSH for << parameters.environment-name >>
+          command: |
+            set -euo pipefail
+            HOST_VAR="<< parameters.host-env-var >>"
+            USER_VAR="<< parameters.user-env-var >>"
+            SSH_KEY_VAR="<< parameters.ssh-key-env-var >>"
+            HOST="$(printenv "$HOST_VAR" || true)"
+            USER="$(printenv "$USER_VAR" || true)"
+            SSH_KEY_B64="$(printenv "$SSH_KEY_VAR" || true)"
+
+            if [ -z "$HOST" ] || [ -z "$USER" ] || [ -z "$SSH_KEY_B64" ]; then
+              echo "Missing CircleCI SSH environment variables for << parameters.environment-name >>." >&2
+              exit 1
+            fi
+
+            mkdir -p ~/.ssh
+            echo "$SSH_KEY_B64" | base64 --decode > ~/.ssh/monetra_oracle_vm
+            chmod 600 ~/.ssh/monetra_oracle_vm
+            ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+      - run:
+          name: Deploy Monetra to << parameters.environment-name >>
+          command: |
+            set -euo pipefail
+            HOST_VAR="<< parameters.host-env-var >>"
+            USER_VAR="<< parameters.user-env-var >>"
+            APP_DIR_VAR="<< parameters.app-dir-env-var >>"
+            HOST="$(printenv "$HOST_VAR" || true)"
+            USER="$(printenv "$USER_VAR" || true)"
+            APP_DIR="$(printenv "$APP_DIR_VAR" || true)"
+            APP_DIR="${APP_DIR:-/opt/monetra}"
+
+            ssh -i ~/.ssh/monetra_oracle_vm "$USER@$HOST" \
+              "APP_DIR='$APP_DIR' GIT_BRANCH='${CIRCLE_BRANCH:-main}' COMPOSE_FILE='Monetra (Budget Tracker)/docker-compose.yml' ENV_FILE='<< parameters.remote-env-file >>' bash -s" \
+              < "Monetra (Budget Tracker)/deploy/remote-compose-deploy.sh"
+      - run:
+          name: Smoke check << parameters.environment-name >>
+          command: |
+            set -euo pipefail
+            BASE_URL_VAR="<< parameters.base-url-env-var >>"
+            FRONTEND_URL_VAR="<< parameters.frontend-url-env-var >>"
+            BASE_URL="$(printenv "$BASE_URL_VAR" || true)"
+            FRONTEND_URL="$(printenv "$FRONTEND_URL_VAR" || true)"
+
+            if [ -z "$BASE_URL" ]; then
+              echo "Missing smoke-test base URL for << parameters.environment-name >>." >&2
+              exit 1
+            fi
+
+            cd ~/project
+            MONETRA_BASE_URL="$BASE_URL" MONETRA_FRONTEND_URL="$FRONTEND_URL" bash "Monetra (Budget Tracker)/deploy/smoke-test.sh"
+
 workflows:
   monetra-ci:
     when: << pipeline.parameters.run-monetra >>
@@ -78,3 +352,87 @@ workflows:
           requires:
             - monetra-backend-tests
             - monetra-frontend-tests
+      - monetra-frontend-e2e:
+          requires:
+            - monetra-frontend-tests
+
+  monetra-reliability:
+    when: << pipeline.parameters.run-reliability >>
+    jobs:
+      - monetra-backend-tests
+      - monetra-frontend-tests
+      - monetra-system-build:
+          requires:
+            - monetra-backend-tests
+            - monetra-frontend-tests
+      - monetra-dummy-load-tests:
+          requires:
+            - monetra-system-build
+      - monetra-chaos-smoke:
+          requires:
+            - monetra-system-build
+
+  monetra-oracle-deploy:
+    when: << pipeline.parameters.deploy-oracle >>
+    jobs:
+      - monetra-backend-tests
+      - monetra-frontend-tests
+      - monetra-system-build:
+          requires:
+            - monetra-backend-tests
+            - monetra-frontend-tests
+      - monetra-frontend-e2e:
+          requires:
+            - monetra-frontend-tests
+      - monetra-dummy-load-tests:
+          requires:
+            - monetra-system-build
+          filters:
+            branches:
+              only: main
+      - monetra-chaos-smoke:
+          requires:
+            - monetra-system-build
+          filters:
+            branches:
+              only: main
+      - monetra-deploy-oracle:
+          name: monetra-deploy-staging
+          environment-name: staging
+          host-env-var: STAGING_ORACLE_VM_HOST
+          user-env-var: STAGING_ORACLE_VM_USER
+          ssh-key-env-var: STAGING_ORACLE_VM_SSH_KEY_B64
+          app-dir-env-var: STAGING_MONETRA_APP_DIR
+          base-url-env-var: STAGING_MONETRA_BASE_URL
+          frontend-url-env-var: STAGING_MONETRA_FRONTEND_URL
+          remote-env-file: .env.staging
+          requires:
+            - monetra-system-build
+            - monetra-frontend-e2e
+            - monetra-dummy-load-tests
+            - monetra-chaos-smoke
+          filters:
+            branches:
+              only: main
+      - hold-production-deploy:
+          type: approval
+          requires:
+            - monetra-deploy-staging
+          filters:
+            branches:
+              only: main
+      - monetra-deploy-oracle:
+          name: monetra-deploy-production
+          environment-name: production
+          host-env-var: PROD_ORACLE_VM_HOST
+          user-env-var: PROD_ORACLE_VM_USER
+          ssh-key-env-var: PROD_ORACLE_VM_SSH_KEY_B64
+          app-dir-env-var: PROD_MONETRA_APP_DIR
+          base-url-env-var: PROD_MONETRA_BASE_URL
+          frontend-url-env-var: PROD_MONETRA_FRONTEND_URL
+          remote-env-file: .env.production
+          requires:
+            - hold-production-deploy
+          filters:
+            branches:
+              only: main

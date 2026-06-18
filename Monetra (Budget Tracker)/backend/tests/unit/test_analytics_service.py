@@ -37,7 +37,7 @@ class ConcentratedAnalyticsRepository(StubAnalyticsRepository):
 
 
 def test_dashboard_and_category_views():
-    service = AnalyticsService(StubAnalyticsRepository(), lambda: 1050.0, lambda _month=None: 1500.0)
+    service = AnalyticsService(StubAnalyticsRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0)
 
     dashboard = service.dashboard()
     categories = service.category_insights()
@@ -47,9 +47,28 @@ def test_dashboard_and_category_views():
     assert dashboard["current_month_total"] == 420.0
     assert dashboard["monthly_income"] == 1500.0
     assert categories["top_categories"][0]["category"] == "Food"
-    assert categories["bottom_categories"][-1]["category"] == "Bills"
+    assert categories["bottom_categories"][0]["category"] == "Bills"
     assert wordcloud["top_category"] == "Food"
     assert wordcloud["frequencies"][0]["label"] == "Groceries"
+
+
+def test_category_insights_bottom_categories_are_lowest_spend_first_with_two_categories():
+    class TwoCategoryRepository(StubAnalyticsRepository):
+        def category_totals(self, month_key, entry_type="expense"):
+            return [("Food", 13.0), ("Travel", 6.4)]
+
+    service = AnalyticsService(TwoCategoryRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0)
+
+    categories = service.category_insights()
+
+    assert categories["top_categories"] == [
+        {"category": "Food", "amount": 13.0},
+        {"category": "Travel", "amount": 6.4},
+    ]
+    assert categories["bottom_categories"] == [
+        {"category": "Travel", "amount": 6.4},
+        {"category": "Food", "amount": 13.0},
+    ]
 
 
 def test_wordcloud_data_without_categories():
@@ -57,7 +76,7 @@ def test_wordcloud_data_without_categories():
         def category_totals(self, month_key, entry_type="expense"):
             return []
 
-    service = AnalyticsService(EmptyRepository(), lambda: 1050.0, lambda _month=None: 1500.0)
+    service = AnalyticsService(EmptyRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0)
 
     assert service.wordcloud_data() == {
         "top_category": None,
@@ -69,7 +88,7 @@ def test_wordcloud_data_without_categories():
 
 
 def test_financial_pulse_balanced_month():
-    service = AnalyticsService(StubAnalyticsRepository(), lambda: 1050.0, lambda _month=None: 1500.0)
+    service = AnalyticsService(StubAnalyticsRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0)
 
     pulse = service.financial_pulse()
 
@@ -82,7 +101,7 @@ def test_financial_pulse_balanced_month():
 
 
 def test_financial_pulse_detects_pressure():
-    service = AnalyticsService(ConcentratedAnalyticsRepository(), lambda: 1050.0, lambda _month=None: 1500.0)
+    service = AnalyticsService(ConcentratedAnalyticsRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0)
 
     pulse = service.financial_pulse()
 
@@ -99,7 +118,7 @@ def test_dashboard_warning_status():
         def monthly_total(self, month_key, entry_type="expense"):
             return 900.0 if entry_type == "expense" else 1100.0
 
-    service = AnalyticsService(WarningRepository(), lambda: 1050.0, lambda _month=None: 1500.0)
+    service = AnalyticsService(WarningRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0)
 
     assert service.dashboard()["status"] == "warning"
 
@@ -109,7 +128,7 @@ def test_dashboard_over_status():
         def monthly_total(self, month_key, entry_type="expense"):
             return 1200.0 if entry_type == "expense" else 900.0
 
-    service = AnalyticsService(OverBudgetRepository(), lambda: 1050.0, lambda _month=None: 1500.0)
+    service = AnalyticsService(OverBudgetRepository(), lambda _month=None: 1050.0, lambda _month=None: 1500.0)
 
     assert service.dashboard()["status"] == "over"
 
@@ -125,7 +144,7 @@ def test_financial_pulse_detects_tight_runway():
         def count_expenses_for_month(self, month_key, entry_type=None):
             return 40
 
-    service = AnalyticsService(TightRunwayRepository(), lambda: 900.0, lambda _month=None: 1500.0)
+    service = AnalyticsService(TightRunwayRepository(), lambda _month=None: 900.0, lambda _month=None: 1500.0)
 
     assert service.financial_pulse()["narrative"] == "Budget runway is getting tight for the rest of the month."
 
@@ -135,7 +154,7 @@ def test_dashboard_uses_configured_income_when_no_income_transactions_exist():
         def monthly_total(self, month_key, entry_type="expense"):
             return 420.0 if entry_type == "expense" else 0.0
 
-    service = AnalyticsService(NoIncomeRepository(), lambda: 1050.0, lambda _month=None: 1800.0)
+    service = AnalyticsService(NoIncomeRepository(), lambda _month=None: 1050.0, lambda _month=None: 1800.0)
 
     dashboard = service.dashboard()
 

@@ -22,3 +22,5 @@ out/
 
 backend/generated_reports/
 backend/.mypy_cache/
+latency-results/
+latency-users*.csv

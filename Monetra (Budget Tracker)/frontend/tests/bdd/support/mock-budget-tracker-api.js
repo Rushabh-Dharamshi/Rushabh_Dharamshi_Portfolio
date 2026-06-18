@@ -107,7 +107,7 @@ function createFinanceBriefingJob() {
 
 function createFinanceBriefingResult() {
   return {
-    headline: "Local finance briefing",
+    headline: "Finance briefing",
     summary: "Cash flow remains positive and recurring costs are covered.",
     risk_level: "low",
     recommended_actions: ["Keep monitoring travel costs."],
@@ -508,7 +508,7 @@ function installBudgetTrackerApiMock(overrides = {}) {
         workflow_name: "upcoming_bills_email_dispatch",
         workflow_label: "Upcoming bills email manual dispatch",
         headline: "Upcoming bills alert emailed",
-        summary: "Upcoming bills alert emailed to rushabh@example.com for items due within 7 days.",
+        summary: "Upcoming bills alert emailed to rushabh@example.com for late unpaid reminders and bills due today plus the next 7 days (8 calendar dates total).",
         email_subject: "Upcoming bills update",
         email_draft: "Upcoming bills email sent.",
         report_download_url: null,

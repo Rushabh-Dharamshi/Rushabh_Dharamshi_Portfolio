@@ -22,10 +22,20 @@ class RagServiceStub:
 
 
 class EmailAutomationStub:
-    def run_upcoming_bills_email_now(self):
+    def __init__(self):
+        self.upcoming_recipient = None
+        self.month_end_recipient = None
+
+    def run_upcoming_bills_email_now(self, recipient=None):
+        self.upcoming_recipient = recipient
         return {"headline": "Upcoming bills email sent", "summary": "Upcoming bills sent", "report_download_url": None}
 
-    def run_month_end_email_now(self):
+    def run_all_upcoming_bills_email_now(self, recipient=None):
+        self.upcoming_recipient = recipient
+        return {"headline": "All upcoming bills emailed", "summary": "All upcoming bills sent", "report_download_url": None}
+
+    def run_month_end_email_now(self, recipient=None):
+        self.month_end_recipient = recipient
         return {"headline": "Month-end report sent", "summary": "Month end sent", "report_download_url": "/api/reports/monthly"}
 
 
@@ -81,14 +91,19 @@ def test_agent_service_email_wrappers_and_parse_edges():
     with pytest.raises(ValidationError, match="Automation service"):
         service._mcp_send_upcoming_bills_email_now({})
     with pytest.raises(ValidationError, match="Automation service"):
+        service._mcp_send_all_upcoming_bills_email_now({})
+    with pytest.raises(ValidationError, match="Automation service"):
         service._mcp_send_month_end_email_now({})
 
     service._automation_service = EmailAutomationStub()
     upcoming_result = service._mcp_send_upcoming_bills_email_now({})
+    all_upcoming_result = service._mcp_send_all_upcoming_bills_email_now({})
     month_end_result = service._mcp_send_month_end_email_now({})
     assert upcoming_result["action_result"]["type"] == "upcoming_bills_email_sent"
+    assert all_upcoming_result["action_result"]["type"] == "upcoming_bills_email_sent"
     assert month_end_result["action_result"]["type"] == "month_end_email_sent"
     json.dumps(upcoming_result)
+    json.dumps(all_upcoming_result)
     json.dumps(month_end_result)
     assert service._looks_like_manual_action_command("send me the month-end report email")
     assert service._looks_like_manual_action_command("email me if bills are due")
@@ -97,8 +112,27 @@ def test_agent_service_email_wrappers_and_parse_edges():
     assert report_email["action_result"]["type"] == "month_end_email_sent"
     assert report_email["report_download_url"] == "/api/reports/monthly"
 
+    current_report_email = service.run_finance_briefing({"task": "send the current financial report to the user's email address"})
+    assert current_report_email["action_result"]["type"] == "month_end_email_sent"
+    assert current_report_email["report_download_url"] == "/api/reports/monthly"
+
     bills_email = service.run_finance_briefing({"task": "email me if bills are due"})
     assert bills_email["action_result"]["type"] == "upcoming_bills_email_sent"
+
+    all_bills_email = service.run_finance_briefing({"task": "Send all upcoming bills."})
+    assert all_bills_email["action_result"]["type"] == "upcoming_bills_email_sent"
+
+    per_user_email = service.run_finance_briefing(
+        {"task": "Send the month-end email now.", "recipient": "registered-user@example.com"}
+    )
+    assert per_user_email["action_result"]["type"] == "month_end_email_sent"
+    assert service._automation_service.month_end_recipient == "registered-user@example.com"
+
+    per_user_bills = service.run_finance_briefing(
+        {"task": "Send the upcoming bills email now.", "recipient_email": "registered-user@example.com"}
+    )
+    assert per_user_bills["action_result"]["type"] == "upcoming_bills_email_sent"
+    assert service._automation_service.upcoming_recipient == "registered-user@example.com"
 
     bad_json_service = build_service(StubOllamaClient("not-json"))
     with pytest.raises(ValidationError, match="could not understand the requested action"):
@@ -111,6 +145,84 @@ def test_agent_service_email_wrappers_and_parse_edges():
     unsupported_service = build_service(StubOllamaClient('{"domain":"unknown","operation":"noop"}'))
     with pytest.raises(ValidationError, match="settings, transactions, or recurring reminders"):
         unsupported_service._parse_manual_action_command("do something ambiguous")
+
+
+def test_agent_service_builtin_prompt_library_commands_are_direct_and_versatile():
+    prompt_expectations = [
+        ("Generate the current monthly report and summarise the main budget pressure points.", "monthly_report_generated"),
+        ("Send due-soon bills for today plus the next 7 days. This covers 8 calendar dates total and includes late unpaid reminders.", "upcoming_bills_email_sent"),
+        ("Send all upcoming bills.", "upcoming_bills_email_sent"),
+        ("Send the month-end email now.", "month_end_email_sent"),
+        ("Set my monthly budget to 1600 pounds.", "monthly_budget_updated"),
+        ("Set my monthly income to 2400 pounds.", "monthly_income_updated"),
+        ("Set my monthly income for 2026-04 to 2400 pounds.", "monthly_income_updated"),
+        ("Add an expense for Tube fare of 6.40 pounds today under Travel.", "expense_created"),
+        ("Add an income transaction for part-time work of 250 pounds on 2026-05-18 under Income.", "expense_created"),
+        ("Update the Travel expense called Train pass to 81 pounds on 2026-03-20.", "expense_updated"),
+        ("Delete the expense matching Train pass under Travel.", "expense_deleted"),
+        ("Remove all expenses for June 2026.", "expense_deleted"),
+        ("Remove all expenses for June 2026 and expenses beyond 18th May 2026.", "expense_deleted"),
+        (
+            "Set a monthly reminder for university house rent on the 23rd of every month from April 2026 to June 2026 inclusive at 452.74 pounds.",
+            "recurring_item_created",
+        ),
+        ("Add a weekly reminder for rent of 850 pounds starting 2026-03-27.", "recurring_item_created"),
+        ("Replace weekly utility bills with monthly utility bills of 24.51 pounds on the 23rd of each month.", "recurring_item_replaced"),
+        ("Remove the weekly utility bills reminder.", "recurring_item_deleted"),
+        ("Update the utility bills reminder to 24.51 pounds monthly from 2026-04-23.", "recurring_item_updated"),
+    ]
+
+    class DateRangeExpenseService(StubExpenseService):
+        def __init__(self):
+            super().__init__()
+            self.expenses = [
+                {"id": 1, "date": "2026-03-20", "category": "Travel", "description": "Train pass", "amount": 80.0, "entry_type": "expense"},
+                {"id": 2, "date": "2026-05-19", "category": "Food", "description": "Lunch", "amount": 9.0, "entry_type": "expense"},
+                {"id": 3, "date": "2026-06-05", "category": "Food", "description": "Groceries", "amount": 30.0, "entry_type": "expense"},
+                {"id": 4, "date": "2026-06-10", "category": "Income", "description": "Side work", "amount": 200.0, "entry_type": "income"},
+            ]
+
+    def build_prompt_service():
+        service = AgentService(
+            StubOllamaClient(),
+            StubAnalyticsService(),
+            StubPredictionService(),
+            StubRecurringService(),
+            StubReportService(),
+            DateRangeExpenseService(),
+            StubSettingsService(),
+            StubRepository(),
+            rag_service=RagServiceStub(),
+        )
+        service._automation_service = EmailAutomationStub()
+        return service
+
+    for prompt, expected_action_type in prompt_expectations:
+        service = build_prompt_service()
+        result = service.run_finance_briefing({"task": prompt})
+        assert result["action_result"]["type"] == expected_action_type, prompt
+
+    custom_rent_service = build_prompt_service()
+    custom_rent_service.run_finance_briefing(
+        {
+            "task": (
+                "Set a monthly reminder for university house rent on the 23rd of every month "
+                "from April 2026 to June 2026 inclusive at 500 pounds."
+            )
+        }
+    )
+    assert custom_rent_service._recurring_service.created[-1]["amount"] == 500.0
+
+    briefing_service = build_service()
+    briefing = briefing_service.run_finance_briefing(
+        {
+            "task": (
+                "Prepare a CFO-style monthly finance briefing with cash pressure, recurring bill pressure, "
+                "recommended actions, and an email-ready summary."
+            )
+        }
+    )
+    assert briefing["headline"]
 
 
 def test_agent_service_recurring_parsing_and_matching_edges():

@@ -3,6 +3,8 @@ import time
 
 from flask import Blueprint, current_app, jsonify, request
 
+from budget_tracker_api.security import current_authenticated_user_id
+
 
 agents_bp = Blueprint("agents", __name__, url_prefix="/api/agents")
 logger = logging.getLogger(__name__)
@@ -16,9 +18,25 @@ def _automation_service():
     return current_app.extensions["services"]["automation_service"]
 
 
+def _current_user_email() -> str | None:
+    user_id = current_authenticated_user_id()
+    if user_id is None:
+        return None
+    user = current_app.extensions["services"]["user_service"].get_user(user_id)
+    if user is None:
+        return None
+    return str(user.get("email") or "").strip() or None
+
+
 @agents_bp.post("/finance-briefing")
 def start_finance_briefing():
     payload = request.get_json(silent=True) or {}
+    user_id = current_authenticated_user_id()
+    recipient = _current_user_email()
+    if user_id is not None and not payload.get("user_id"):
+        payload = {**payload, "user_id": user_id}
+    if recipient and not payload.get("recipient") and not payload.get("recipient_email"):
+        payload = {**payload, "recipient": recipient}
     task = str(payload.get("task", "")).strip()
     logger.info("Finance briefing requested | task_preview=%s", task[:120])
     job = _service().start_finance_briefing(payload, current_app._get_current_object())
@@ -55,6 +73,9 @@ def list_runs():
 @agents_bp.post("/workflows/<workflow_name>/run")
 def run_workflow(workflow_name: str):
     payload = request.get_json(silent=True) or {}
+    user_id = current_authenticated_user_id()
+    if user_id is not None and not payload.get("user_id"):
+        payload = {**payload, "user_id": user_id}
     logger.info("Workflow requested | workflow_name=%s", workflow_name)
     started = time.perf_counter()
     job = _service().start_workflow_run(workflow_name, payload, current_app._get_current_object())
@@ -82,11 +103,24 @@ def get_workflow_job(job_id: str):
 
 @agents_bp.post("/automation/upcoming-bills-email")
 def run_upcoming_bills_email_now():
-    logger.info("Manual upcoming bills email dispatch requested.")
+    logger.info("Manual 7-day upcoming bills email dispatch requested.")
     started = time.perf_counter()
-    result = _automation_service().run_upcoming_bills_email_now()
+    result = _automation_service().run_upcoming_bills_email_now(recipient=_current_user_email())
     logger.info(
-        "Manual upcoming bills email dispatch completed | duration_ms=%.1f run_id=%s",
+        "Manual 7-day upcoming bills email dispatch completed | duration_ms=%.1f run_id=%s",
+        (time.perf_counter() - started) * 1000,
+        result.get("id"),
+    )
+    return jsonify({"data": result})
+
+
+@agents_bp.post("/automation/all-upcoming-bills-email")
+def run_all_upcoming_bills_email_now():
+    logger.info("Manual all-upcoming bills email dispatch requested.")
+    started = time.perf_counter()
+    result = _automation_service().run_all_upcoming_bills_email_now(recipient=_current_user_email())
+    logger.info(
+        "Manual all-upcoming bills email dispatch completed | duration_ms=%.1f run_id=%s",
         (time.perf_counter() - started) * 1000,
         result.get("id"),
     )
@@ -97,7 +131,7 @@ def run_upcoming_bills_email_now():
 def run_month_end_email_now():
     logger.info("Manual month-end email dispatch requested.")
     started = time.perf_counter()
-    result = _automation_service().run_month_end_email_now()
+    result = _automation_service().run_month_end_email_now(recipient=_current_user_email())
     logger.info(
         "Manual month-end email dispatch completed | duration_ms=%.1f run_id=%s",
         (time.perf_counter() - started) * 1000,
@@ -130,6 +164,7 @@ def refresh_automation_runs():
     jobs = _automation_service().queue_realtime_refresh(
         current_app._get_current_object(),
         event_type,
+        user_id=current_authenticated_user_id(),
     )
     logger.info(
         "Automation refresh queued | event_type=%s duration_ms=%.1f jobs=%s",

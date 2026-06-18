@@ -54,14 +54,15 @@ describe("frontend coverage gaps", () => {
       />,
     );
 
-    expect(screen.getByText("High risk")).toBeInTheDocument();
+    expect(screen.getByText("Successful")).toBeInTheDocument();
     expect(screen.queryByText("Agent trace")).not.toBeInTheDocument();
     expect(screen.queryByText("Identify the main risk.")).not.toBeInTheDocument();
     expect(screen.queryByText("1. get_dashboard_summary")).not.toBeInTheDocument();
     expect(screen.queryByText("broken_tool")).not.toBeInTheDocument();
-    expect(screen.getByText("[object Object].")).toBeInTheDocument();
-    expect(screen.getByText("Review the deficit immediately.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Download agent report" })).toHaveAttribute("href", "/api/reports/monthly");
+    expect(screen.getByText("First finding.")).toBeInTheDocument();
+    expect(screen.getByText("Second finding.")).toBeInTheDocument();
+    expect(screen.getByText(/review the deficit immediately/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Download agent report" })).not.toBeInTheDocument();
   });
 
   it("covers automation workflow buttons without rendering run history", () => {
@@ -102,8 +103,8 @@ describe("frontend coverage gaps", () => {
       />,
     );
 
-    expect(screen.getByText("Cash-flow recovery")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run workflow" })).toBeInTheDocument();
+    expect(screen.getAllByText("Cash-flow recovery").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /Run workflow/ })).toBeInTheDocument();
     expect(screen.queryByText("medium risk")).not.toBeInTheDocument();
   });
 

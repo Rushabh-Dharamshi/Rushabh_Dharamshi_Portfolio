@@ -36,6 +36,7 @@ jest.mock("@/lib/api-client", () => ({
     exportExpenses: jest.fn().mockReturnValue("/export"),
     downloadMonthlyReport: jest.fn().mockReturnValue("/report"),
     getSettings: jest.fn().mockResolvedValue({ monthly_budget: 1050, monthly_income: 1500, income_month: "2026-03" }),
+    listMonthlyIncomeRecords: jest.fn().mockResolvedValue([]),
     getDashboard: jest.fn().mockResolvedValue({
       monthly_budget: 1050,
       current_month_total: 420,
@@ -79,6 +80,14 @@ jest.mock("@/lib/api-client", () => ({
       predicted_spending: 880,
       is_budget_exceeded: false,
       monthly_budget: 1050,
+    }),
+    getLatencyReport: jest.fn().mockResolvedValue({
+      scope: "current_user",
+      record_count: 0,
+      failed_count: 0,
+      summary: { average_ms: 0, minimum_ms: 0, maximum_ms: 0, p95_ms: 0 },
+      by_endpoint: [],
+      latest: [],
     }),
     getRagStatus: jest.fn().mockResolvedValue({
       collection_name: "monetra-finance-knowledge",
@@ -125,7 +134,7 @@ jest.mock("@/lib/api-client", () => ({
       completed_at: "2026-03-21T10:00:05Z",
       error: null,
       result: {
-        headline: "Local finance briefing",
+        headline: "Finance briefing",
         summary: "Cash flow remains positive.",
         risk_level: "low",
         recommended_actions: ["Keep monitoring recurring bills."],
@@ -195,6 +204,8 @@ jest.mock("@/lib/api-client", () => ({
       occurrences: [],
       completed_occurrences: [],
     }),
+    listSavingsGoals: jest.fn().mockResolvedValue([]),
+    runAutomationRefresh: jest.fn().mockResolvedValue([]),
     updateMonthlyBudget: jest.fn().mockResolvedValue({ monthly_budget: 1200, monthly_income: 1500 }),
     updateMonthlyIncome: jest.fn().mockResolvedValue({ monthly_budget: 1200, monthly_income: 2400, income_month: "2026-03" }),
     createRecurringItem: jest.fn().mockResolvedValue({ id: 1 }),
@@ -244,7 +255,7 @@ describe("useBudgetTracker", () => {
     });
 
     expect(result.current.prediction?.next_month).toBe("April 2026");
-    expect(result.current.agentBriefing?.headline).toBe("Local finance briefing");
+    expect(result.current.agentBriefing?.headline).toBe("Finance briefing");
     expect(result.current.exportUrl).toBe("/export");
     expect(result.current.budgetDraft).toBe("1050.00");
     expect(result.current.incomeDraft).toBe("1500.00");

@@ -273,6 +273,15 @@ def test_clean_csv_row_returns_none_for_blank_rows():
     assert service._clean_csv_row({"date": " ", "category": "", "description": None, "amount": ""}) is None
 
 
+def test_list_expenses_rejects_invalid_filter_dates():
+    service = ExpenseService(StubExpenseRepository())
+
+    with pytest.raises(ValidationError, match="start_date must use YYYY-MM-DD"):
+        service.list_expenses(filters={"start_date": "06/01/2026"})
+    with pytest.raises(ValidationError, match="end_date must use YYYY-MM-DD"):
+        service.list_expenses(filters={"end_date": "06/30/2026"})
+
+
 def test_export_csv_outputs_header_and_only_current_may_to_date_expense_rows(monkeypatch):
     import budget_tracker_api.services.expense_service as expense_service_module
     from datetime import datetime as real_datetime

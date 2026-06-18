@@ -9,12 +9,12 @@ class FakeAutomationService:
         self.upcoming_calls = 0
         self.month_end_calls = 0
 
-    def run_upcoming_bills_email_if_due(self):
+    def run_upcoming_bills_email_if_due(self, recipient=None):
         self.upcoming_calls += 1
         if self.fail:
             raise RuntimeError("boom")
 
-    def run_month_end_email_if_due(self):
+    def run_month_end_email_if_due(self, recipient=None):
         self.month_end_calls += 1
 
 

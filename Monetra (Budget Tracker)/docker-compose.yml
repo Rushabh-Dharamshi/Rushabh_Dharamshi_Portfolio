@@ -57,6 +57,19 @@ services:
     depends_on:
       - backend
 
+  load-test-runner:
+    image: grafana/k6:0.50.0
+    profiles:
+      - load
+    environment:
+      MONETRA_BASE_URL: http://backend:8000
+    volumes:
+      - ./load-tests:/scripts:ro
+    entrypoint: ["k6"]
+    command: ["run", "/scripts/k6/monetra-load.js"]
+    depends_on:
+      - backend
+
 volumes:
   postgres_data:
   chroma_data:

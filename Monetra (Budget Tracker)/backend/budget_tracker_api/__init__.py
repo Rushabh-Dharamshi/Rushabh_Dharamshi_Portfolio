@@ -1,5 +1,5 @@
 ﻿from pathlib import Path
-from flask import Flask, jsonify, request
+from flask import Flask, has_request_context, jsonify, request
 from flask_cors import CORS
 
 from budget_tracker_api.blueprints.agents import agents_bp
@@ -7,10 +7,12 @@ from budget_tracker_api.blueprints.analytics import analytics_bp
 from budget_tracker_api.blueprints.auth import auth_bp
 from budget_tracker_api.blueprints.expenses import expenses_bp
 from budget_tracker_api.blueprints.health import health_bp
+from budget_tracker_api.blueprints.observability import observability_bp
 from budget_tracker_api.blueprints.predictions import predictions_bp
 from budget_tracker_api.blueprints.rag import rag_bp
 from budget_tracker_api.blueprints.recurring import recurring_bp
 from budget_tracker_api.blueprints.reports import reports_bp
+from budget_tracker_api.blueprints.savings_goals import savings_goals_bp
 from budget_tracker_api.blueprints.settings import settings_bp
 from budget_tracker_api.config import Config
 from budget_tracker_api.db import close_db, get_db, init_db
@@ -18,9 +20,12 @@ from budget_tracker_api.errors import ApiError
 from budget_tracker_api.logging_config import configure_logging, register_request_logging
 from budget_tracker_api.repositories.agent_run_repository import AgentRunRepository
 from budget_tracker_api.repositories.expense_repository import ExpenseRepository
+from budget_tracker_api.repositories.latency_repository import LatencyRepository
 from budget_tracker_api.repositories.recurring_repository import RecurringRepository
+from budget_tracker_api.repositories.savings_goal_repository import SavingsGoalRepository
 from budget_tracker_api.repositories.settings_repository import SettingsRepository
-from budget_tracker_api.security import register_request_guards, should_expose_error_details
+from budget_tracker_api.repositories.user_repository import UserRepository
+from budget_tracker_api.security import current_authenticated_user_id, current_background_user_id, register_request_guards, should_expose_error_details
 from budget_tracker_api.services.agent_service import AgentService
 from budget_tracker_api.services.agent_memory_service import AgentMemoryService
 from budget_tracker_api.services.analytics_service import AnalyticsService
@@ -29,13 +34,16 @@ from budget_tracker_api.services.automation_service import AutomationService
 from budget_tracker_api.services.email_service import EmailService
 from budget_tracker_api.services.expense_service import ExpenseService
 from budget_tracker_api.services.fastmcp_client_service import FastMcpClientService
+from budget_tracker_api.services.latency_service import LatencyService
 from budget_tracker_api.services.ollama_client import OllamaClient
 from budget_tracker_api.services.ollama_embedding_client import OllamaEmbeddingClient
 from budget_tracker_api.services.prediction_service import PredictionService
 from budget_tracker_api.services.rag_service import RagService
 from budget_tracker_api.services.recurring_service import RecurringService
 from budget_tracker_api.services.report_service import ReportService
+from budget_tracker_api.services.savings_goal_service import SavingsGoalService
 from budget_tracker_api.services.settings_service import SettingsService
+from budget_tracker_api.services.user_service import UserService
 
 
 def create_app(config_overrides: dict | None = None) -> Flask:
@@ -67,10 +75,21 @@ def create_app(config_overrides: dict | None = None) -> Flask:
 
 
 def _register_services(app: Flask) -> None:
-    repository = ExpenseRepository(get_db)
-    settings_repository = SettingsRepository(get_db)
-    recurring_repository = RecurringRepository(get_db)
-    agent_run_repository = AgentRunRepository(get_db)
+    def user_id_provider() -> int:
+        background_user_id = current_background_user_id()
+        if background_user_id is not None:
+            return background_user_id
+        if has_request_context():
+            return current_authenticated_user_id() or 1
+        return 1
+
+    repository = ExpenseRepository(get_db, user_id_provider)
+    settings_repository = SettingsRepository(get_db, user_id_provider)
+    recurring_repository = RecurringRepository(get_db, user_id_provider)
+    agent_run_repository = AgentRunRepository(get_db, user_id_provider)
+    latency_repository = LatencyRepository(get_db)
+    savings_goal_repository = SavingsGoalRepository(get_db, user_id_provider)
+    user_repository = UserRepository(get_db)
     settings_service = SettingsService(settings_repository)
     expense_service = ExpenseService(repository)
     analytics_service = AnalyticsService(
@@ -86,11 +105,18 @@ def _register_services(app: Flask) -> None:
         app.config["GENERATED_REPORTS_DIR"],
     )
     recurring_service = RecurringService(recurring_repository, expense_service)
+    savings_goal_service = SavingsGoalService(savings_goal_repository)
+    latency_service = LatencyService(latency_repository)
     ollama_client = OllamaClient(
         app.config["OLLAMA_BASE_URL"],
         app.config["OLLAMA_MODEL"],
         app.config["OLLAMA_TIMEOUT_SECONDS"],
     )
+
+    def resolve_email_recipient_name(email: str) -> str | None:
+        user = user_repository.get_user_by_email(str(email or "").strip().lower())
+        return str(user.get("username") or "").strip() if user else None
+
     email_service = EmailService(
         app.config["SMTP_HOST"],
         app.config["SMTP_PORT"],
@@ -99,6 +125,19 @@ def _register_services(app: Flask) -> None:
         app.config["SMTP_USE_TLS"],
         app.config["REPORT_EMAIL_TO"],
         app.config["REPORT_EMAIL_RECIPIENT_NAME"],
+        app.config["EMAIL_DELIVERY_MODE"],
+        app.config["SMTP_REQUIRE_AUTH"],
+        app.config["EMAIL_ALLOWED_RECIPIENTS"],
+        sender_email=app.config["EMAIL_FROM"],
+        mock_domains=app.config["EMAIL_MOCK_DOMAINS"],
+        mock_sender_email=app.config["MOCK_EMAIL_FROM"],
+        recipient_name_resolver=resolve_email_recipient_name,
+    )
+    user_service = UserService(
+        user_repository,
+        email_service=email_service,
+        expose_reset_tokens=app.testing or app.debug or not email_service.is_configured(),
+        password_fingerprint_secret=app.config["SECRET_KEY"],
     )
     agent_memory_service = AgentMemoryService(app.config["AGENT_MEMORY_PATH"])
     mcp_client_service = FastMcpClientService(
@@ -162,9 +201,12 @@ def _register_services(app: Flask) -> None:
         "prediction_service": prediction_service,
         "report_service": report_service,
         "recurring_service": recurring_service,
+        "savings_goal_service": savings_goal_service,
+        "latency_service": latency_service,
         "agent_service": agent_service,
         "automation_service": automation_service,
         "email_service": email_service,
+        "user_service": user_service,
         "agent_memory_service": agent_memory_service,
         "rag_service": rag_service,
     }
@@ -178,12 +220,14 @@ def _register_services(app: Flask) -> None:
 def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(health_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(observability_bp)
     app.register_blueprint(expenses_bp)
     app.register_blueprint(analytics_bp)
     app.register_blueprint(agents_bp)
     app.register_blueprint(predictions_bp)
     app.register_blueprint(rag_bp)
     app.register_blueprint(reports_bp)
+    app.register_blueprint(savings_goals_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(recurring_bp)
 

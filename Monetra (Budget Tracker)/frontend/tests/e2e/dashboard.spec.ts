@@ -13,7 +13,7 @@ test("smoke: loads the dashboard shell and primary panels", async ({ page }) => 
   await expect(page.getByText("Transaction records")).toBeVisible();
   await expect(page.getByText("Upcoming bills and frequent purchases")).toBeVisible();
   await expect(page.getByText("Agent workflows for repetitive finance tasks")).toBeVisible();
-  await expect(page.getByText("Local Ollama analysis agent")).toBeVisible();
+  await expect(page.getByText("Ollama analysis agent")).toBeVisible();
 });
 
 test("shows the month label and budget context", async ({ page }) => {

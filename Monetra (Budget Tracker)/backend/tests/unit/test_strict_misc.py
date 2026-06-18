@@ -76,7 +76,7 @@ def test_create_app_uses_configured_fastmcp_python_executable(monkeypatch, tmp_p
     assert created["python_executable"] == "python"
 
 
-def test_auth_login_returns_500_when_password_hash_missing(tmp_path):
+def test_auth_login_rejects_unknown_user_when_default_password_hash_missing(tmp_path):
     app = create_app(
         {
             "TESTING": True,
@@ -90,8 +90,8 @@ def test_auth_login_returns_500_when_password_hash_missing(tmp_path):
 
     response = client.post("/api/auth/login", json={"username": "Rushabh", "password": "secret"})
 
-    assert response.status_code == 500
-    assert response.get_json()["error"] == "Application login is not configured."
+    assert response.status_code == 401
+    assert response.get_json()["error"] == "Invalid username or password."
 
 
 def test_security_non_api_path_is_not_intercepted():

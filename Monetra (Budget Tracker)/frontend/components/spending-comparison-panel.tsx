@@ -134,10 +134,12 @@ export function SpendingComparisonPanel({
         <article className="metric-card">
           <span>Current period</span>
           <strong>{model.currentPeriodLabel ?? "No data"}</strong>
+          <small>The latest week or month in the selected comparison window.</small>
         </article>
         <article className="metric-card">
           <span>Average spend</span>
           <strong>{formatCurrency(model.averagePeriodSpend)}</strong>
+          <small>Average spend across the visible comparison periods.</small>
         </article>
         <article className="metric-card">
           <span>Strongest period</span>
@@ -146,10 +148,12 @@ export function SpendingComparisonPanel({
               ? `${model.strongestPeriodLabel} | ${formatCurrency(model.strongestPeriodValue)}`
               : "No data"}
           </strong>
+          <small>The period with the highest recorded spend in this comparison.</small>
         </article>
         <article className="metric-card">
           <span>Change vs previous</span>
           <strong>{formatDelta(model.currentPeriodChange)}</strong>
+          <small>How the current period changed compared with the immediately previous period.</small>
         </article>
       </div>
 
