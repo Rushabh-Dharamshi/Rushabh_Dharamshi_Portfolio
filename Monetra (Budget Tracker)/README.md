@@ -198,39 +198,44 @@ The RAG assistant has two answer paths:
 ### RAG Flow Diagram
 
 ```mermaid
-flowchart TD
-    U[User asks finance question] --> FE[Next.js RAG chat UI]
-    FE --> API[Flask /api/rag/query endpoint]
-    API --> RS[RagService]
+flowchart LR
+    USER[User question] --> UI[RAG chat UI]
+    UI --> API[Flask RAG API]
+    API --> RAG[RagService]
+    RAG --> ROUTER{Question type}
 
-    RS --> INTENT[Finance intent router]
-    INTENT -->|Exact KPI or numeric fact| DET[Deterministic metric registry]
-    DET --> DB1[(PostgreSQL via services/repositories)]
-    DB1 --> FACT[Verified financial answer]
-    FACT --> FE
+    subgraph FACTS[Exact financial facts]
+        ROUTER -->|KPI or number| REGISTRY[Metric registry]
+        REGISTRY --> SERVICES[Finance services]
+        SERVICES --> PG[(PostgreSQL)]
+        PG --> VERIFIED[Verified answer]
+    end
 
-    INTENT -->|Open-ended or explanatory question| IDX{Index current?}
-    IDX --> SIG[Build source signature]
-    SIG -->|Data unchanged| CACHE[Use retrieval/answer cache]
-    SIG -->|Data changed or first run| BUILD[Build finance documents]
+    subgraph RETRIEVAL[Retrieval-based answers]
+        ROUTER -->|Summary or explanation| SIGNATURE[Data signature]
+        SIGNATURE --> FRESH{Data changed?}
+        FRESH -->|No| CACHE[Answer cache]
+        FRESH -->|Yes| DOCS[Finance documents]
+        DOCS --> CHUNKS[Text chunks]
+        CHUNKS --> EMBED[Ollama embeddings]
+        EMBED --> CHROMA[(Chroma DB)]
+        CHROMA --> SEARCH[Similarity search]
+        SEARCH --> EXPAND[Query expansion]
+        EXPAND --> FILTER[Date and month filters]
+        FILTER --> RERANK[Source reranking]
+        RERANK --> CONTEXT[Grounded context]
+        CONTEXT --> LLM[Ollama chat model]
+        LLM --> NATURAL[Natural answer]
+    end
 
-    BUILD --> DOCS[Dashboard, settings, expenses, recurring reminders, recurring occurrences, predictions, reports, agent runs, agent memory]
-    DOCS --> CHUNK[Sentence-aware chunking with overlap]
-    CHUNK --> EMB[Ollama embeddings: nomic-embed-text]
-    EMB --> CHROMA[(Chroma vector database)]
-
-    CACHE --> RETRIEVE[Retrieve context]
-    CHROMA --> RETRIEVE
-    RETRIEVE --> MULTI[Multi-query expansion for bills, due dates, recurring reminders, and month scopes]
-    MULTI --> FILTER[Month-aware recurring calendar lookup]
-    FILTER --> ESSENTIAL[Add essential dashboard/settings/category/prediction context]
-    ESSENTIAL --> RERANK[Lightweight reranking by similarity, token overlap, month match, bill relevance, and exact date match]
-    RERANK --> PROMPT[Grounded prompt with retrieved source excerpts]
-    PROMPT --> OLLAMA[Ollama chat model: qwen2.5:7b]
-    OLLAMA --> JSON[Structured JSON answer]
-    JSON --> MEMORY[Save query to agent memory]
-    MEMORY --> FE
+    VERIFIED --> RESPONSE[Assistant response]
+    CACHE --> RESPONSE
+    NATURAL --> MEMORY[Agent memory]
+    MEMORY --> RESPONSE
+    RESPONSE --> UI
 ```
+
+The diagram is split into two paths. Exact numerical questions use the deterministic metric path. Broader explanation questions use Chroma retrieval, source reranking, and the Ollama chat model.
 
 ### What Gets Indexed
 
