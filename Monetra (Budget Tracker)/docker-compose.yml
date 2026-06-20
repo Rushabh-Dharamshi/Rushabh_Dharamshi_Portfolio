@@ -2,13 +2,18 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: budget_tracker
-      POSTGRES_USER: budget_user
-      POSTGRES_PASSWORD: budget_password
+      POSTGRES_DB: ${POSTGRES_DB:-budget_tracker}
+      POSTGRES_USER: ${POSTGRES_USER:-budget_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-budget_password}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-budget_user} -d ${POSTGRES_DB:-budget_tracker}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build:
@@ -18,28 +23,37 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql+psycopg://budget_user:budget_password@postgres:5432/budget_tracker
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://budget_user:budget_password@postgres:5432/budget_tracker}
       GENERATED_REPORTS_DIR: /app/generated_reports
-      LOG_TIMEZONE: Europe/London
-      OLLAMA_BASE_URL: http://host.docker.internal:11434
-      OLLAMA_MODEL: qwen2.5:7b
+      LOG_TIMEZONE: ${LOG_TIMEZONE:-Europe/London}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
       FASTMCP_PYTHON_EXECUTABLE: python
-      RAG_EMBEDDING_MODEL: nomic-embed-text
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-nomic-embed-text}
       RAG_PERSIST_DIRECTORY: /app/.run/chroma
       RAG_MANIFEST_PATH: /app/.run/rag_manifest.json
       CHROMA_HTTP_HOST: chroma
-      CHROMA_HTTP_PORT: 8000
+      CHROMA_HTTP_PORT: ${CHROMA_HTTP_PORT:-8000}
     volumes:
       - ./backend/generated_reports:/app/generated_reports
       - ./backend/.run:/app/.run
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      - postgres
-      - chroma
+      postgres:
+        condition: service_healthy
+      chroma:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   chroma:
-    image: chromadb/chroma:1.5.9.dev43-amd64
+    build:
+      context: ./docker/chroma
     ports:
       - "8001:8000"
     volumes:
@@ -55,7 +69,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_started
 
   load-test-runner:
     image: grafana/k6:0.50.0
@@ -68,7 +83,8 @@ services:
     entrypoint: ["k6"]
     command: ["run", "/scripts/k6/monetra-load.js"]
     depends_on:
-      - backend
+      backend:
+        condition: service_started
 
 volumes:
   postgres_data:

@@ -102,6 +102,8 @@ See `docs/ORACLE_VM_CICD.md` for the required Oracle VM and CircleCI environment
 
 Before creating the Oracle VM or enabling deploys, complete `docs/LOCAL_VALIDATION_RUNBOOK.md`.
 
+Staging environment templates are provided in `.env.staging.example`, `backend/.env.staging.example`, and `frontend/.env.staging.example`. Fill these on the Oracle VM before starting Docker. See `docs/STAGING_ENVIRONMENT.md`.
+
 ## Rollback Notes
 
 - Keep database backups before schema changes.

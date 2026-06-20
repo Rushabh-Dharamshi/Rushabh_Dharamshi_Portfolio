@@ -32,6 +32,13 @@ Each VM should have:
 - Firewall rules allowing only required public ports, normally `80` and `443`.
 - Ollama/model runtime reachable from the backend through `OLLAMA_BASE_URL`.
 
+You can create the VM and base networking manually in the OCI console, or automatically with Terraform. Terraform files are provided in `infra/oracle`:
+
+- `infra/oracle/environments/staging`
+- `infra/oracle/environments/production`
+
+Terraform creates the VCN, subnet, route table, security list, public IP, VM, and first-boot Docker setup. See `infra/oracle/README.md`.
+
 ## CircleCI Environment Variables
 
 Create separate CircleCI contexts for staging and production, or store these as project environment variables.

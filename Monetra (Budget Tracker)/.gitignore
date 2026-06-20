@@ -19,6 +19,12 @@ out/
 
 .env
 .env.local
+terraform.tfvars
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+**/.terraform/
 
 backend/generated_reports/
 backend/.mypy_cache/

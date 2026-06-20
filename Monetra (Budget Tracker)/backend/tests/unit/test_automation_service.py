@@ -355,7 +355,7 @@ def test_manual_upcoming_bills_email_sends_when_bills_exist_and_private_guard_re
     result = service.run_upcoming_bills_email_now()
 
     assert result["headline"] == "Upcoming bills alert emailed"
-    assert email_service.sent_messages[-1]["subject"] == "Upcoming bills summary"
+    assert email_service.sent_messages[-1]["subject"] == "Upcoming payment reminders"
 
     import pytest
     from budget_tracker_api.errors import ValidationError
@@ -420,6 +420,42 @@ def test_upcoming_bills_email_includes_late_and_today_reminders():
     assert "Late bill: GBP 30.00, due 2026-03-20 (5 days late), monthly" in body
     assert "Due today: GBP 12.00, due 2026-03-25 (due today), monthly" in body
     assert "Outside window" not in body
+    assert email_service.sent_messages[-1]["subject"] == "Overdue and due-today payment reminders"
+
+
+def test_upcoming_bills_email_subject_does_not_say_due_today_for_late_only_reminder():
+    class MisleadingSubjectAgentService(FakeAgentService):
+        def run_workflow(self, workflow_name, payload):
+            result = super().run_workflow(workflow_name, payload)
+            result["email_subject"] = "[Urgent] Payment Reminder: Late Test Deposit - Due Today"
+            return result
+
+    email_service = FakeEmailService()
+    service = AutomationService(
+        MisleadingSubjectAgentService(),
+        FakeReportService(),
+        email_service,
+        FakeRunRepository(),
+        FakeRecurringService(
+            [
+                {
+                    "recurring_item_id": 1,
+                    "date": "2026-06-10",
+                    "description": "Monthly Test Late Deposit Reminder",
+                    "amount": 12.5,
+                    "entry_type": "expense",
+                    "frequency": "monthly",
+                    "days_until_due": -9,
+                }
+            ]
+        ),
+        FakeAnalyticsService(),
+    )
+
+    service.run_upcoming_bills_email_now()
+
+    assert email_service.sent_messages[-1]["subject"] == "Overdue payment reminder: Monthly Test Late Deposit Reminder"
+    assert "Due Today" not in email_service.sent_messages[-1]["subject"]
 
 
 def test_upcoming_bills_email_strips_duplicate_signoff_and_uses_clean_spacing():

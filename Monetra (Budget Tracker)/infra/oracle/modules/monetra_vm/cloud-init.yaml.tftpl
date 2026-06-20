@@ -1,0 +1,36 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+packages:
+  - git
+  - curl
+  - ca-certificates
+
+write_files:
+  - path: /etc/profile.d/monetra.sh
+    permissions: "0644"
+    content: |
+      export MONETRA_APP_DIR="${app_dir}"
+
+runcmd:
+  - dnf install -y docker docker-compose-plugin
+  - systemctl enable --now docker
+  - usermod -aG docker ${app_user}
+  - mkdir -p ${app_dir}
+  - chown -R ${app_user}:${app_user} ${app_dir}
+  - firewall-cmd --permanent --add-service=http || true
+  - firewall-cmd --permanent --add-service=https || true
+%{ if expose_app_debug_ports ~}
+  - firewall-cmd --permanent --add-port=3000/tcp || true
+  - firewall-cmd --permanent --add-port=8000/tcp || true
+%{ endif ~}
+  - firewall-cmd --reload || true
+%{ if install_ollama ~}
+  - curl -fsSL https://ollama.com/install.sh | sh
+  - systemctl enable --now ollama || true
+%{ for model in ollama_models ~}
+  - ollama pull ${model} || true
+%{ endfor ~}
+%{ endif ~}
+  - echo "Monetra VM bootstrap completed at $(date -Is)" > /var/log/monetra-bootstrap.done

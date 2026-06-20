@@ -1,0 +1,35 @@
+# Copy this file to terraform.tfvars and fill in your own values.
+# Do not commit terraform.tfvars.
+
+tenancy_ocid     = "ocid1.tenancy.oc1..CHANGE_ME"
+user_ocid        = "ocid1.user.oc1..CHANGE_ME"
+fingerprint      = "CHANGE_ME_API_KEY_FINGERPRINT"
+private_key_path = "C:/Users/rusha/.oci/oci_api_key.pem"
+region           = "uk-london-1"
+compartment_ocid = "ocid1.tenancy.oc1..CHANGE_ME_OR_COMPARTMENT_OCID"
+
+instance_name             = "monetra-staging-a1"
+availability_domain_index = 0
+availability_domain_name  = ""
+
+instance_shape = "VM.Standard.A1.Flex"
+ocpus          = 2
+memory_in_gbs  = 12
+
+# Leave empty to auto-select the newest compatible Oracle Linux 9 image.
+image_ocid = ""
+
+# Paste the contents of your public SSH key, not the private key.
+ssh_public_key = "ssh-rsa CHANGE_ME"
+
+# Safer production/staging setting: replace 0.0.0.0/0 with your public IP/32.
+ssh_allowed_cidr  = "0.0.0.0/0"
+http_allowed_cidr = "0.0.0.0/0"
+
+# Keep true during early staging. Later use a reverse proxy on 80/443 and set false.
+expose_app_debug_ports = true
+
+app_dir        = "/opt/monetra"
+install_ollama = true
+ollama_models  = ["qwen2.5:7b", "nomic-embed-text"]
+

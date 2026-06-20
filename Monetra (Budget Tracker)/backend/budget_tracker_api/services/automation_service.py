@@ -433,7 +433,7 @@ class AutomationService:
             raise ValidationError(no_due_message)
 
         workflow_result = self._agent_service.run_workflow("upcoming_bills_check", {})
-        email_subject = workflow_result["email_subject"]
+        email_subject = self._compose_upcoming_bills_email_subject(due_expenses)
         email_body = self._compose_upcoming_bills_email_body(workflow_result, due_expenses, window_label)
         risk_level = workflow_result["risk_level"]
         recommended_actions = workflow_result["recommended_actions"]
@@ -494,6 +494,39 @@ class AutomationService:
 
         lines.extend(["", "Kind Regards,", "Monetra Organisation"])
         return "\n".join(lines)
+
+    @staticmethod
+    def _compose_upcoming_bills_email_subject(due_expenses: list[dict]) -> str:
+        has_late = False
+        has_today = False
+        has_future = False
+
+        for item in due_expenses:
+            try:
+                days = int(item.get("days_until_due"))
+            except (TypeError, ValueError):
+                has_future = True
+                continue
+
+            if days < 0:
+                has_late = True
+            elif days == 0:
+                has_today = True
+            else:
+                has_future = True
+
+        if has_late and not has_today and not has_future:
+            if len(due_expenses) == 1:
+                description = str(due_expenses[0].get("description") or "payment").strip()
+                return f"Overdue payment reminder: {description}"
+            return f"Overdue payment reminders: {len(due_expenses)} items need attention"
+        if has_late and has_today:
+            return "Overdue and due-today payment reminders"
+        if has_late:
+            return "Overdue and upcoming payment reminders"
+        if has_today:
+            return "Payment reminders due today"
+        return "Upcoming payment reminders"
 
     @staticmethod
     def _format_due_expense_line(item: dict) -> str:
