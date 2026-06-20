@@ -458,6 +458,26 @@ def test_upcoming_bills_email_subject_does_not_say_due_today_for_late_only_remin
     assert "Due Today" not in email_service.sent_messages[-1]["subject"]
 
 
+def test_upcoming_bills_email_subject_covers_late_future_and_today_branches():
+    assert AutomationService._compose_upcoming_bills_email_subject(
+        [
+            {"description": "Late rent", "days_until_due": -2},
+            {"description": "Late utility", "days_until_due": -1},
+        ]
+    ) == "Overdue payment reminders: 2 items need attention"
+
+    assert AutomationService._compose_upcoming_bills_email_subject(
+        [
+            {"description": "Late rent", "days_until_due": -2},
+            {"description": "Future utility", "days_until_due": 4},
+        ]
+    ) == "Overdue and upcoming payment reminders"
+
+    assert AutomationService._compose_upcoming_bills_email_subject(
+        [{"description": "Due today", "days_until_due": 0}]
+    ) == "Payment reminders due today"
+
+
 def test_upcoming_bills_email_strips_duplicate_signoff_and_uses_clean_spacing():
     class SignoffAgentService(FakeAgentService):
         def run_workflow(self, workflow_name, payload):
