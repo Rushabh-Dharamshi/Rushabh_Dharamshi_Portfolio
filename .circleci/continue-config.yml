@@ -125,22 +125,22 @@ jobs:
           command: |
             set -euo pipefail
             cd "Monetra (Budget Tracker)"
-            cat > backend/.env <<'EOF'
-            SECRET_KEY=ci-reliability-secret
-            LOGIN_REQUIRED=true
-            EMAIL_MODE=mock
-            EMAIL_FROM=ci@monetra.test
-            SMTP_HOST=
-            SMTP_USERNAME=
-            SMTP_PASSWORD=
-            SMTP_REQUIRE_AUTH=false
-            SMTP_USE_TLS=false
-            AUTOMATION_SCHEDULER_ENABLED=false
-            OLLAMA_BASE_URL=http://host.docker.internal:11434
-            OLLAMA_MODEL=qwen2.5:7b
-            OLLAMA_TIMEOUT_SECONDS=10
-            RAG_EMBEDDING_MODEL=nomic-embed-text
-            EOF
+            printf '%s\n' \
+              'SECRET_KEY=ci-reliability-secret' \
+              'LOGIN_REQUIRED=true' \
+              'EMAIL_MODE=mock' \
+              'EMAIL_FROM=ci@monetra.test' \
+              'SMTP_HOST=' \
+              'SMTP_USERNAME=' \
+              'SMTP_PASSWORD=' \
+              'SMTP_REQUIRE_AUTH=false' \
+              'SMTP_USE_TLS=false' \
+              'AUTOMATION_SCHEDULER_ENABLED=false' \
+              'OLLAMA_BASE_URL=http://host.docker.internal:11434' \
+              'OLLAMA_MODEL=qwen2.5:7b' \
+              'OLLAMA_TIMEOUT_SECONDS=10' \
+              'RAG_EMBEDDING_MODEL=nomic-embed-text' \
+              > backend/.env
       - run:
           name: Start Monetra stack for reliability testing
           command: |
@@ -199,22 +199,22 @@ jobs:
           command: |
             set -euo pipefail
             cd "Monetra (Budget Tracker)"
-            cat > backend/.env <<'EOF'
-            SECRET_KEY=ci-chaos-secret
-            LOGIN_REQUIRED=true
-            EMAIL_MODE=mock
-            EMAIL_FROM=ci@monetra.test
-            SMTP_HOST=
-            SMTP_USERNAME=
-            SMTP_PASSWORD=
-            SMTP_REQUIRE_AUTH=false
-            SMTP_USE_TLS=false
-            AUTOMATION_SCHEDULER_ENABLED=false
-            OLLAMA_BASE_URL=http://host.docker.internal:11434
-            OLLAMA_MODEL=qwen2.5:7b
-            OLLAMA_TIMEOUT_SECONDS=10
-            RAG_EMBEDDING_MODEL=nomic-embed-text
-            EOF
+            printf '%s\n' \
+              'SECRET_KEY=ci-chaos-secret' \
+              'LOGIN_REQUIRED=true' \
+              'EMAIL_MODE=mock' \
+              'EMAIL_FROM=ci@monetra.test' \
+              'SMTP_HOST=' \
+              'SMTP_USERNAME=' \
+              'SMTP_PASSWORD=' \
+              'SMTP_REQUIRE_AUTH=false' \
+              'SMTP_USE_TLS=false' \
+              'AUTOMATION_SCHEDULER_ENABLED=false' \
+              'OLLAMA_BASE_URL=http://host.docker.internal:11434' \
+              'OLLAMA_MODEL=qwen2.5:7b' \
+              'OLLAMA_TIMEOUT_SECONDS=10' \
+              'RAG_EMBEDDING_MODEL=nomic-embed-text' \
+              > backend/.env
       - run:
           name: Start Monetra stack for chaos smoke
           command: |
