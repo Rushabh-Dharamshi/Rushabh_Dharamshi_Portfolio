@@ -19,7 +19,8 @@ test("smoke: loads the dashboard shell and primary panels", async ({ page }) => 
 test("shows the month label and budget context", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByText("March 2026")).toBeVisible();
+  const budgetOverview = page.locator(".summary-panel");
+  await expect(budgetOverview.locator("h2", { hasText: "March 2026" })).toBeVisible();
   await expect(page.getByText(/Budget status for March 2026:/)).toBeVisible();
   await expect(page.getByText(/Cash flow this month:/)).toBeVisible();
 });
