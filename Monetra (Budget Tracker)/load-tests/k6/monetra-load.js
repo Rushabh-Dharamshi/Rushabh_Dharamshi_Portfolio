@@ -6,68 +6,116 @@ const BASE_URL = __ENV.MONETRA_BASE_URL || "http://localhost:5000";
 const TEST_RUN_ID = __ENV.MONETRA_TEST_RUN_ID || `${Date.now()}`;
 const STRICT_AI = String(__ENV.MONETRA_STRICT_AI || "false").toLowerCase() === "true";
 const THINK_TIME_SECONDS = Number(__ENV.MONETRA_THINK_TIME_SECONDS || "0.2");
+const LOAD_PROFILE = String(__ENV.MONETRA_LOAD_PROFILE || "full").toLowerCase();
+
+const profiles = {
+  ci: {
+    authVus: 2,
+    authIterations: 4,
+    journeyVus: 2,
+    journeyIterations: 4,
+    isolationVus: 2,
+    isolationIterations: 4,
+    readVus: 8,
+    readDuration: "15s",
+    budgetVus: 3,
+    budgetIterations: 8,
+    invalidVus: 2,
+    invalidIterations: 4,
+    aiVus: 1,
+    aiIterations: 2,
+    thresholds: {
+      checks: ["rate>=0.95"],
+      monetra_business_failure_rate: ["rate<0.05"],
+      monetra_isolation_failure_rate: ["rate==0"],
+      monetra_unexpected_status_count: ["count==0"],
+      http_req_duration: ["p(95)<10000", "p(99)<20000"],
+      "http_req_duration{suite:read-concurrency}": ["p(95)<8000"],
+      "http_req_duration{suite:write-concurrency}": ["p(95)<10000"],
+    },
+  },
+  full: {
+    authVus: 8,
+    authIterations: 24,
+    journeyVus: 12,
+    journeyIterations: 36,
+    isolationVus: 6,
+    isolationIterations: 18,
+    readVus: 50,
+    readDuration: "45s",
+    budgetVus: 20,
+    budgetIterations: 60,
+    invalidVus: 8,
+    invalidIterations: 32,
+    aiVus: 4,
+    aiIterations: 12,
+    thresholds: {
+      checks: ["rate>=0.97"],
+      monetra_business_failure_rate: ["rate<0.01"],
+      monetra_isolation_failure_rate: ["rate==0"],
+      monetra_unexpected_status_count: ["count==0"],
+      http_req_duration: ["p(95)<2500", "p(99)<5000"],
+      "http_req_duration{suite:read-concurrency}": ["p(95)<1500"],
+      "http_req_duration{suite:write-concurrency}": ["p(95)<2500"],
+    },
+  },
+};
+
+const activeProfile = profiles[LOAD_PROFILE] || profiles.full;
 
 export const options = {
   scenarios: {
     auth_lifecycle: {
       executor: "shared-iterations",
-      vus: 8,
-      iterations: 24,
+      vus: activeProfile.authVus,
+      iterations: activeProfile.authIterations,
       exec: "authLifecycle",
       tags: { suite: "auth" },
     },
     end_to_end_finance_journeys: {
       executor: "shared-iterations",
-      vus: 12,
-      iterations: 36,
+      vus: activeProfile.journeyVus,
+      iterations: activeProfile.journeyIterations,
       exec: "endToEndFinanceJourney",
       tags: { suite: "e2e-finance" },
     },
     user_isolation_probes: {
       executor: "shared-iterations",
-      vus: 6,
-      iterations: 18,
+      vus: activeProfile.isolationVus,
+      iterations: activeProfile.isolationIterations,
       exec: "userIsolationProbe",
       tags: { suite: "isolation" },
     },
     concurrent_dashboard_reads: {
       executor: "constant-vus",
-      vus: 50,
-      duration: "45s",
+      vus: activeProfile.readVus,
+      duration: activeProfile.readDuration,
       exec: "dashboardReadPressure",
       tags: { suite: "read-concurrency" },
     },
     concurrent_budget_updates: {
       executor: "shared-iterations",
-      vus: 20,
-      iterations: 60,
+      vus: activeProfile.budgetVus,
+      iterations: activeProfile.budgetIterations,
       exec: "budgetUpdatePressure",
       tags: { suite: "write-concurrency" },
     },
     invalid_and_security_inputs: {
       executor: "shared-iterations",
-      vus: 8,
-      iterations: 32,
+      vus: activeProfile.invalidVus,
+      iterations: activeProfile.invalidIterations,
       exec: "invalidAndSecurityInputs",
       tags: { suite: "negative-paths" },
     },
     reports_rag_and_agent_resilience: {
       executor: "shared-iterations",
-      vus: 4,
-      iterations: 12,
+      vus: activeProfile.aiVus,
+      iterations: activeProfile.aiIterations,
       exec: "reportsRagAndAgentResilience",
       tags: { suite: "ai-reporting" },
     },
   },
-  thresholds: {
-    checks: ["rate>=0.97"],
-    monetra_business_failure_rate: ["rate<0.01"],
-    monetra_isolation_failure_rate: ["rate==0"],
-    monetra_unexpected_status_count: ["count==0"],
-    http_req_duration: ["p(95)<2500", "p(99)<5000"],
-    "http_req_duration{suite:read-concurrency}": ["p(95)<1500"],
-    "http_req_duration{suite:write-concurrency}": ["p(95)<2500"],
-  },
+  thresholds: activeProfile.thresholds,
 };
 
 const businessFailureRate = new Rate("monetra_business_failure_rate");

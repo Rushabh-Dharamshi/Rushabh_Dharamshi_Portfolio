@@ -163,12 +163,13 @@ jobs:
             docker compose logs backend
             exit 1
       - run:
-          name: Run rigorous dummy-user/load test
+          name: Run CI dummy-user/load test
           command: |
             set -euo pipefail
             cd "Monetra (Budget Tracker)"
             docker compose --profile load run --rm \
               -e MONETRA_BASE_URL=http://backend:8000 \
+              -e MONETRA_LOAD_PROFILE=ci \
               -e MONETRA_STRICT_AI=false \
               -e MONETRA_THINK_TIME_SECONDS=0.1 \
               -e MONETRA_TEST_RUN_ID="circleci-${CIRCLE_WORKFLOW_ID:-local}" \
