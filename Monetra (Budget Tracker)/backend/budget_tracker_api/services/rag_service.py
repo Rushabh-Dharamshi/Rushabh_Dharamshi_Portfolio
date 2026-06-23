@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from budget_tracker_api.errors import ServiceUnavailableError, ValidationError
+from budget_tracker_api.errors import NotFoundError, ServiceUnavailableError, ValidationError
 from budget_tracker_api.services.agent_memory_service import AgentMemoryService
 from budget_tracker_api.services.metric_registry import FinanceIntent, FinanceIntentRouter, MetricRegistry
 from budget_tracker_api.services.rag_chunking import RagChunkingService
@@ -272,6 +272,12 @@ class RagService:
         registry_answer = self._metric_registry.execute(self._intent_router.classify(normalized), normalized)
         if registry_answer is not None:
             return registry_answer
+        expense_id = self._extract_expense_id_question(normalized)
+        if expense_id is not None:
+            return self._expense_id_answer(expense_id)
+        recurring_id = self._extract_recurring_id_question(normalized)
+        if recurring_id is not None:
+            return self._recurring_id_answer(recurring_id)
         if self._is_latest_expense_question(normalized):
             return self._latest_expense_answer()
         if self._is_next_payment_due_question(normalized):
@@ -289,7 +295,7 @@ class RagService:
             {
                 FinanceIntent.CASH_FLOW: lambda _: self._cash_flow_answer(),
                 FinanceIntent.MONTHLY_EXPENSES: lambda _: self._dashboard_metric_answer("monthly_expenses"),
-                FinanceIntent.MONTHLY_BUDGET: lambda _: self._dashboard_metric_answer("monthly_budget"),
+                FinanceIntent.MONTHLY_BUDGET: lambda question: self._monthly_budget_answer(question),
                 FinanceIntent.WEEKLY_SPENDING: lambda _: self._dashboard_metric_answer("weekly_spending"),
                 FinanceIntent.BUDGET_STATUS: lambda _: self._dashboard_metric_answer("budget_status"),
                 FinanceIntent.AVERAGE_DAILY_BURN: lambda _: self._kpi_studio_metric_answer("average daily burn"),
@@ -298,7 +304,7 @@ class RagService:
                 FinanceIntent.CURRENT_MONTH_TRANSACTIONS: lambda _: self._kpi_studio_metric_answer("current month transactions"),
                 FinanceIntent.REMAINING_BUDGET: lambda _: self._remaining_budget_answer(),
                 FinanceIntent.BUDGET_USAGE: lambda _: self._budget_consumption_answer(),
-                FinanceIntent.MONTHLY_INCOME: lambda _: self._monthly_income_answer(),
+                FinanceIntent.MONTHLY_INCOME: lambda question: self._monthly_income_answer(question),
                 FinanceIntent.FINANCIAL_STATUS: lambda _: self._financial_status_answer(),
                 FinanceIntent.AVERAGE_TRANSACTION: lambda _: self._financial_pulse_metric_answer("average transaction"),
                 FinanceIntent.SPEND_VELOCITY: lambda _: self._financial_pulse_metric_answer("spend velocity"),
@@ -324,11 +330,13 @@ class RagService:
     def _current_source_signature(self) -> str:
         return self._build_signature(self._build_source_documents())
 
-    def _monthly_income_answer(self) -> dict:
-        settings = self._settings_service.get_settings()
+    def _monthly_income_answer(self, question: str = "") -> dict:
+        requested_month = self._extract_requested_month_key(question)
+        settings = self._settings_service.get_settings(requested_month)
         income = self._format_gbp(settings.get("monthly_income"))
-        month_key = str(settings.get("income_month") or "the current month")
-        answer = f"Your monthly income for {month_key} is {income}."
+        month_key = str(settings.get("income_month") or requested_month or "the current month")
+        month_label = self._month_label(month_key)
+        answer = f"Your monthly income for {month_label} is {income}."
         return {
             "answer": answer,
             "follow_up_questions": [],
@@ -338,6 +346,30 @@ class RagService:
                     "settings",
                     f"settings::{month_key}",
                     f"Monthly income: {income}. Income month: {month_key}.",
+                    {"month_key": month_key},
+                )
+            ],
+            "tools_used": ["settings_lookup"],
+        }
+
+    def _monthly_budget_answer(self, question: str = "") -> dict:
+        requested_month = self._extract_requested_month_key(question)
+        settings = self._settings_service.get_settings(requested_month)
+        month_key = str(settings.get("budget_month") or requested_month or settings.get("income_month") or "the current month")
+        month_label = self._month_label(month_key)
+        monthly_budget = self._format_gbp(settings.get("monthly_budget"))
+        return {
+            "answer": (
+                f"Monthly budget for {month_label}: {monthly_budget}. "
+                "This is the planned living-cost estimate for that month, not your income."
+            ),
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Budget settings {month_key}",
+                    "settings",
+                    f"settings::{month_key}",
+                    f"Monthly budget: {monthly_budget}. Budget month: {month_key}.",
                     {"month_key": month_key},
                 )
             ],
@@ -969,6 +1001,109 @@ class RagService:
             "tools_used": ["find_latest_expense"],
         }
 
+    def _expense_id_answer(self, expense_id: int) -> dict:
+        try:
+            expense = self._expense_service.get_expense(expense_id)
+        except NotFoundError:
+            answer = f"I could not find an expense with ID {expense_id} for your signed-in account."
+            return {
+                "answer": answer,
+                "follow_up_questions": [],
+                "sources": [
+                    self._structured_source(
+                        f"Expense ID {expense_id}",
+                        "expense_lookup",
+                        f"expense::{expense_id}",
+                        answer,
+                        {"expense_id": expense_id, "found": False},
+                    )
+                ],
+                "tools_used": ["expense_id_lookup"],
+            }
+
+        cost = self._format_gbp(expense.get("amount"))
+        date_value = expense.get("date")
+        category = expense.get("category")
+        description = expense.get("description")
+        excerpt = (
+            f"Expense ID {expense_id} on {date_value}. Category {category}. "
+            f"Description {description}. Cost: {cost}. Entry type expense."
+        )
+        return {
+            "answer": (
+                f"Expense ID {expense_id} is {description}: {cost} on {date_value} "
+                f"under {category}."
+            ),
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Expense ID {expense_id}",
+                    "expense",
+                    f"expense::{expense_id}",
+                    excerpt,
+                    {
+                        "expense_id": expense_id,
+                        "date": date_value,
+                        "category": category,
+                        "entry_type": "expense",
+                    },
+                )
+            ],
+            "tools_used": ["expense_id_lookup"],
+        }
+
+    def _recurring_id_answer(self, recurring_id: int) -> dict:
+        try:
+            item = self._recurring_service.get_item(recurring_id)
+        except NotFoundError:
+            answer = f"I could not find a recurring reminder with ID {recurring_id} for your signed-in account."
+            return {
+                "answer": answer,
+                "follow_up_questions": [],
+                "sources": [
+                    self._structured_source(
+                        f"Recurring reminder ID {recurring_id}",
+                        "recurring_lookup",
+                        f"recurring::{recurring_id}",
+                        answer,
+                        {"recurring_id": recurring_id, "found": False},
+                    )
+                ],
+                "tools_used": ["recurring_id_lookup"],
+            }
+
+        cost = self._format_gbp(item.get("amount"))
+        active_text = "active" if item.get("active") else "paused"
+        end_date = item.get("end_date") or "no end date"
+        excerpt = (
+            f"Recurring reminder ID {recurring_id}. Description {item.get('description')}. "
+            f"Category {item.get('category')}. Cost: {cost}. Entry type {item.get('entry_type')}. "
+            f"Frequency {item.get('frequency')}. Starts {item.get('start_date')}. Ends {end_date}. "
+            f"Status {active_text}."
+        )
+        return {
+            "answer": (
+                f"Recurring reminder ID {recurring_id} is {item.get('description')}: {cost}, "
+                f"{item.get('frequency')}, starting {item.get('start_date')}. Status: {active_text}."
+            ),
+            "follow_up_questions": [],
+            "sources": [
+                self._structured_source(
+                    f"Recurring reminder ID {recurring_id}",
+                    "recurring",
+                    f"recurring::{recurring_id}",
+                    excerpt,
+                    {
+                        "recurring_id": recurring_id,
+                        "category": item.get("category"),
+                        "entry_type": item.get("entry_type"),
+                        "active": bool(item.get("active")),
+                    },
+                )
+            ],
+            "tools_used": ["recurring_id_lookup"],
+        }
+
     def _next_payment_due_answer(self) -> dict:
         calendar = self._recurring_service.upcoming_calendar(90)
         reminders = [
@@ -1188,6 +1323,39 @@ class RagService:
     @staticmethod
     def _is_latest_expense_question(question: str) -> bool:
         return ("expense" in question or "transaction" in question) and any(term in question for term in ("most recent", "latest", "last expense", "last transaction"))
+
+    @staticmethod
+    def _extract_expense_id_question(question: str) -> int | None:
+        normalized = str(question or "").lower()
+        if "expense" not in normalized and "transaction" not in normalized:
+            return None
+        patterns = (
+            r"\b(?:expense|transaction)\s+(?:with\s+)?id\s*#?\s*(\d+)\b",
+            r"\b(?:expense|transaction)\s+(?:number|no\.?)\s*#?\s*(\d+)\b",
+            r"\b(?:expense|transaction)\s*#\s*(\d+)\b",
+            r"\bid\s*#?\s*(\d+)\b",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                return int(match.group(1))
+        return None
+
+    @staticmethod
+    def _extract_recurring_id_question(question: str) -> int | None:
+        normalized = str(question or "").lower()
+        if not any(term in normalized for term in ("recurring", "reminder", "subscription", "bill")):
+            return None
+        patterns = (
+            r"\b(?:recurring reminder|reminder|recurring item|subscription|bill)\s+(?:with\s+)?id\s*#?\s*(\d+)\b",
+            r"\b(?:recurring reminder|reminder|recurring item|subscription|bill)\s+(?:number|no\.?)\s*#?\s*(\d+)\b",
+            r"\b(?:recurring reminder|reminder|recurring item|subscription|bill)\s*#\s*(\d+)\b",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, normalized)
+            if match:
+                return int(match.group(1))
+        return None
 
     @staticmethod
     def _is_recurring_reminder_question(question: str) -> bool:
@@ -1635,6 +1803,22 @@ class RagService:
                     f"{question} monthly recurring bills calendar",
                 ]
             )
+        if any(term in normalized for term in ("expense", "transaction", "spending", "spent", "category", "categories")):
+            variants.extend(
+                [
+                    f"{question} exact transaction ledger entries categories amounts dates",
+                    f"{question} dashboard category insights expense records",
+                ]
+            )
+        if any(term in normalized for term in ("report", "briefing", "workflow", "automation")):
+            variants.extend(
+                [
+                    f"{question} monthly report workflow run automation history",
+                    f"{question} agent run summary recommended actions",
+                ]
+            )
+        if any(term in normalized for term in ("income", "budget", "cash flow", "cashflow", "piggy bank")):
+            variants.append(f"{question} dashboard settings monthly income budget cash flow")
         month_scope = cls._extract_requested_month_scope(question)
         if month_scope:
             variants.append(f"recurring bill occurrences due from {month_scope['start_month']} to {month_scope['end_month']}")

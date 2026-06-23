@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from budget_tracker_api.errors import ValidationError
+from budget_tracker_api.errors import NotFoundError, ValidationError
 from budget_tracker_api.services.agent_memory_service import AgentMemoryService
 from budget_tracker_api.services.metric_registry import FinanceIntent, FinanceIntentRouter, MetricRegistry
 from budget_tracker_api.services.rag_service import RagService
@@ -19,12 +19,24 @@ class StubExpenseService:
             {"id": 2, "date": "2026-03-03", "category": "Travel", "description": "Train pass", "amount": 80.0, "entry_type": "expense"},
         ]
 
+    def get_expense(self, expense_id):
+        for expense in self.list_expenses():
+            if expense["id"] == expense_id and expense["entry_type"] == "expense":
+                return expense
+        raise NotFoundError(f"Expense with id {expense_id} was not found.")
+
 
 class StubRecurringService:
     def list_items(self):
         return [
             {"id": 10, "category": "Housing", "description": "Rent", "amount": 700.0, "entry_type": "expense", "frequency": "monthly", "start_date": "2026-03-15", "end_date": None, "active": True},
         ]
+
+    def get_item(self, item_id):
+        for item in self.list_items():
+            if item["id"] == item_id:
+                return item
+        raise NotFoundError(f"Recurring item with id {item_id} was not found.")
 
     def upcoming_calendar(self, days):
         return {
@@ -100,7 +112,10 @@ class StubPredictionService:
 
 class StubSettingsService:
     def get_settings(self, month_key=None):
-        return {"monthly_budget": 1050.0, "monthly_income": 1500.0, "income_month": month_key or "2026-03"}
+        resolved_month = month_key or "2026-03"
+        if resolved_month == "2026-05":
+            return {"monthly_budget": 950.0, "monthly_income": 1800.0, "income_month": "2026-05", "budget_month": "2026-05"}
+        return {"monthly_budget": 1050.0, "monthly_income": 1500.0, "income_month": resolved_month, "budget_month": resolved_month}
 
     def list_monthly_income_records(self, before_month=None):
         return [
@@ -245,7 +260,7 @@ def test_rag_service_retrieves_context_and_answers_questions(rag_service):
     memory_items = memory.recall(limit=5)
 
     assert retrieval["retrieved_count"] == 2
-    assert retrieval["query_count"] == 1
+    assert retrieval["query_count"] > 1
     assert retrieval["sources"][0]["source_label"]
     assert answer["confidence"] == "high"
     assert answer["follow_up_questions"] == []
@@ -265,6 +280,17 @@ def test_rag_service_multi_query_includes_requested_month_recurring_occurrences(
     assert retrieval["query_count"] > 1
     assert len(service._build_query_variants("Do I have any bills due in the whole of May?")) > 1
     assert service._rerank_sources("bills due in May", retrieval["sources"], 1)[0]["doc_type"] == "recurring_occurrence"
+
+
+def test_rag_service_query_variants_cover_reports_workflows_and_settings(rag_service):
+    service, _, _ = rag_service
+
+    report_variants = service._build_query_variants("Summarise my latest report and workflow automation")
+    settings_variants = service._build_query_variants("Explain my budget and cash flow")
+
+    assert any("monthly report workflow run automation history" in variant for variant in report_variants)
+    assert any("agent run summary recommended actions" in variant for variant in report_variants)
+    assert any("dashboard settings monthly income budget cash flow" in variant for variant in settings_variants)
 
 
 def test_rag_service_caches_retrieval_and_answers_when_signature_is_unchanged(rag_service):
@@ -537,6 +563,45 @@ def test_rag_service_routes_paraphrased_metric_questions_through_registry(rag_se
 
 def test_rag_service_uses_structured_answers_for_exact_finance_questions(rag_service):
     service, _, memory = rag_service
+
+    monthly_budget_for_month = service.answer_question("What is my monthly budget for May 2026?")
+    monthly_income_for_month = service.answer_question("What is my monthly income for May 2026?")
+
+    assert "Monthly budget for May 2026: GBP 950.00" in monthly_budget_for_month["answer"]
+    assert "planned living-cost estimate" in monthly_budget_for_month["answer"]
+    assert monthly_budget_for_month["sources"][0]["doc_type"] == "settings"
+    assert "Your monthly income for May 2026 is GBP 1800.00." == monthly_income_for_month["answer"]
+    assert monthly_income_for_month["sources"][0]["document_id"] == "settings::2026-05"
+    assert service._answer_client.messages == []
+
+    expense_by_id = service.answer_question("What is expense ID 2? please check?")
+
+    assert "Expense ID 2 is Train pass: GBP 80.00 on 2026-03-03 under Travel." == expense_by_id["answer"]
+    assert expense_by_id["confidence"] == "high"
+    assert expense_by_id["follow_up_questions"] == []
+    assert expense_by_id["sources"][0]["document_id"] == "expense::2"
+    assert expense_by_id["sources"][0]["doc_type"] == "expense"
+    assert service._answer_client.messages == []
+    assert memory.recall(1)[0]["tools_used"] == ["expense_id_lookup"]
+
+    missing_expense = service.answer_question("What is transaction #999?")
+
+    assert "could not find an expense with ID 999" in missing_expense["answer"]
+    assert missing_expense["sources"][0]["doc_type"] == "expense_lookup"
+    assert service._answer_client.messages == []
+
+    recurring_by_id = service.answer_question("What is recurring reminder ID 10?")
+
+    assert "Recurring reminder ID 10 is Rent: GBP 700.00, monthly, starting 2026-03-15. Status: active." == recurring_by_id["answer"]
+    assert recurring_by_id["sources"][0]["document_id"] == "recurring::10"
+    assert recurring_by_id["sources"][0]["doc_type"] == "recurring"
+    assert service._answer_client.messages == []
+
+    missing_recurring = service.answer_question("What is reminder id 999?")
+
+    assert "could not find a recurring reminder with ID 999" in missing_recurring["answer"]
+    assert missing_recurring["sources"][0]["doc_type"] == "recurring_lookup"
+    assert service._answer_client.messages == []
 
     latest = service.answer_question("What is my most recent expense?")
 
