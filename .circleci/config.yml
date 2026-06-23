@@ -23,6 +23,8 @@ jobs:
       - run:
           name: Detect Monetra changes
           command: |
+            set -euo pipefail
+
             if [ "${CIRCLE_BRANCH:-}" = "main" ] && git rev-parse HEAD~1 >/dev/null 2>&1; then
               BASE_REVISION="HEAD~1"
             else
@@ -30,8 +32,18 @@ jobs:
               BASE_REVISION="origin/main"
             fi
 
-            if [ "<< pipeline.parameters.deploy-oracle >>" = "true" ] || [ "<< pipeline.parameters.run-reliability >>" = "true" ] || git diff --name-only "$BASE_REVISION"...HEAD | grep -E '^(Monetra \(Budget Tracker\)/|\.circleci/)'; then
-              printf '{"run-monetra": true, "deploy-oracle": << pipeline.parameters.deploy-oracle >>, "run-reliability": << pipeline.parameters.run-reliability >>}' > /tmp/monetra-continuation.json
+            MONETRA_CHANGED=false
+            if git diff --name-only "$BASE_REVISION"...HEAD | grep -E '^(Monetra \(Budget Tracker\)/|\.circleci/)'; then
+              MONETRA_CHANGED=true
+            fi
+
+            AUTO_DEPLOY_ORACLE=false
+            if [ "<< pipeline.parameters.deploy-oracle >>" = "true" ] || { [ "${CIRCLE_BRANCH:-}" = "main" ] && [ "$MONETRA_CHANGED" = "true" ]; }; then
+              AUTO_DEPLOY_ORACLE=true
+            fi
+
+            if [ "$AUTO_DEPLOY_ORACLE" = "true" ] || [ "<< pipeline.parameters.run-reliability >>" = "true" ] || [ "$MONETRA_CHANGED" = "true" ]; then
+              printf '{"run-monetra": true, "deploy-oracle": %s, "run-reliability": << pipeline.parameters.run-reliability >>}' "$AUTO_DEPLOY_ORACLE" > /tmp/monetra-continuation.json
             else
               printf '{"run-monetra": false, "deploy-oracle": false, "run-reliability": false}' > /tmp/monetra-continuation.json
             fi

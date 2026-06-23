@@ -426,7 +426,7 @@ workflows:
           app-dir-env-var: STAGING_MONETRA_APP_DIR
           base-url-env-var: STAGING_MONETRA_BASE_URL
           frontend-url-env-var: STAGING_MONETRA_FRONTEND_URL
-          remote-env-file: .env.staging
+          remote-env-file: Monetra (Budget Tracker)/.env
           requires:
             - monetra-system-build
             - monetra-frontend-e2e

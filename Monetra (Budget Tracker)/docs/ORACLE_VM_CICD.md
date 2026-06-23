@@ -28,7 +28,7 @@ Each VM should have:
 - Ubuntu or another Docker-supported Linux distribution.
 - Docker Engine and Docker Compose plugin.
 - The Monetra repository cloned, for example at `/opt/monetra`.
-- A server-side environment file, for example `.env.staging` or `.env.production`.
+- A server-side environment file, for example `Monetra (Budget Tracker)/.env` for staging or `.env.production` for production.
 - Firewall rules allowing only required public ports, normally `80` and `443`.
 - Ollama/model runtime reachable from the backend through `OLLAMA_BASE_URL`.
 
@@ -43,11 +43,13 @@ Terraform creates the VCN, subnet, route table, security list, public IP, VM, an
 
 Create separate CircleCI contexts for staging and production, or store these as project environment variables.
 
-CircleCI deploy parameter:
+CircleCI deploy behavior:
 
 - `deploy-oracle=true`
 
-Leave this unset or set to `false` until the Oracle account, VMs, DNS, SSH keys, and environment files are ready. Tests and Docker builds can still run without deploying. When you are ready, trigger the CircleCI pipeline with `deploy-oracle=true`.
+On `main`, Monetra changes automatically run the Oracle deployment workflow after the test gates pass. Staging deploys automatically, then production waits for the manual approval step. You can still trigger deployment manually with `deploy-oracle=true`.
+
+Leave the Oracle environment variables unset until the Oracle VM, DNS or IP, SSH keys, and environment files are ready. Tests and Docker builds can still run without deploying on non-main branches.
 
 Staging:
 
@@ -94,7 +96,7 @@ ENV_FILE=".env.production" \
 bash -s
 ```
 
-For staging, use a staging env file such as `.env.staging`.
+For the current staging VM, CircleCI uses `Monetra (Budget Tracker)/.env`, matching the Docker Compose staging file already created on the server.
 
 ## Smoke Checks
 
