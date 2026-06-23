@@ -86,10 +86,11 @@ function uniqueId(prefix) {
 
 function uniqueUser(prefix) {
   const id = uniqueId(prefix).toLowerCase();
+  const passwordToken = Math.random().toString(16).slice(2);
   return {
     username: id,
     email: `${id}@monetra.test`,
-    password: "Password123!",
+    password: `LoadTest-${TEST_RUN_ID}-${__VU}-${__ITER}-${passwordToken}-A1!`,
   };
 }
 
