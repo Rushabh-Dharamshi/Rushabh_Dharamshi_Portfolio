@@ -77,6 +77,14 @@ powershell -ExecutionPolicy Bypass -File "Monetra (Budget Tracker)\scripts\oracl
 
 The script retries only when Terraform output contains Oracle host-capacity errors. It stops for configuration errors.
 
+For production, use the explicit production wrapper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File "Monetra (Budget Tracker)\scripts\oracle-production-terraform-retry.ps1" -IUnderstandFreeTierLimits
+```
+
+Free Tier safety rule: do not run a 12 GB staging VM and a 12 GB production VM at the same time unless your Oracle account limits clearly allow it. Terminate staging and delete its boot volume before creating production if you are trying to stay within the free allowance.
+
 ## After The VM Is Created
 
 Terraform prints the public IP and SSH command. Then:
