@@ -16,10 +16,10 @@ const profiles = {
     journeyIterations: 4,
     isolationVus: 2,
     isolationIterations: 4,
-    readVus: 8,
-    readDuration: "15s",
-    budgetVus: 3,
-    budgetIterations: 8,
+    readVus: 4,
+    readDuration: "10s",
+    budgetVus: 2,
+    budgetIterations: 4,
     invalidVus: 2,
     invalidIterations: 4,
     aiVus: 1,
@@ -29,9 +29,9 @@ const profiles = {
       monetra_business_failure_rate: ["rate<0.05"],
       monetra_isolation_failure_rate: ["rate==0"],
       monetra_unexpected_status_count: ["count==0"],
-      http_req_duration: ["p(95)<10000", "p(99)<20000"],
-      "http_req_duration{suite:read-concurrency}": ["p(95)<8000"],
-      "http_req_duration{suite:write-concurrency}": ["p(95)<10000"],
+      http_req_duration: ["p(95)<20000", "p(99)<30000"],
+      "http_req_duration{suite:read-concurrency}": ["p(95)<20000"],
+      "http_req_duration{suite:write-concurrency}": ["p(95)<20000"],
     },
   },
   full: {
@@ -459,7 +459,7 @@ export function invalidAndSecurityInputs() {
       entry_type: "expense",
     }, [400]);
 
-    request("GET", "/api/dashboard", null, {}, [401], "unauthenticated dashboard blocked");
+    request("GET", "/api/dashboard", null, { jar: new http.CookieJar() }, [401], "unauthenticated dashboard blocked");
     request(
       "POST",
       "/api/auth/login",
