@@ -35,6 +35,7 @@ class RagService:
         chroma_http_host: str = "",
         chroma_http_port: int = 8000,
         chroma_http_ssl: bool = False,
+        user_id_provider=None,
         chroma_client_factory=None,
     ):
         self._expense_service = expense_service
@@ -54,9 +55,10 @@ class RagService:
         self._chroma_http_host = str(chroma_http_host or "").strip()
         self._chroma_http_port = int(chroma_http_port)
         self._chroma_http_ssl = bool(chroma_http_ssl)
+        self._user_id_provider = user_id_provider
         self._chroma_client_factory = chroma_client_factory or self._default_chroma_client_factory
-        self._retrieval_cache: dict[tuple[str, str, int], dict] = {}
-        self._answer_cache: dict[tuple[str, str], dict] = {}
+        self._retrieval_cache: dict[tuple[str, str, str, int], dict] = {}
+        self._answer_cache: dict[tuple[str, str, str], dict] = {}
         self._intent_router = FinanceIntentRouter()
         self._metric_registry = self._build_metric_registry()
 
@@ -64,7 +66,7 @@ class RagService:
         manifest = self._load_manifest()
         return {
             "available": True,
-            "collection_name": self._collection_name,
+            "collection_name": self._scoped_collection_name(),
             "indexed_at": manifest.get("indexed_at"),
             "document_count": int(manifest.get("document_count", 0)),
             "chunk_count": int(manifest.get("chunk_count", 0)),
@@ -72,10 +74,13 @@ class RagService:
         }
 
     def reindex(self, force: bool = False) -> dict:
+        scope_key = self._scope_key()
+        collection_name = self._scoped_collection_name()
+        manifest_path = self._scoped_manifest_path()
         source_documents = self._build_source_documents()
         chunks = self._build_chunks(source_documents)
         signature = self._build_signature(source_documents)
-        manifest = self._load_manifest()
+        manifest = self._load_manifest(manifest_path)
         if not force and manifest.get("signature") == signature:
             return {
                 **self.status(),
@@ -83,15 +88,15 @@ class RagService:
             }
 
         self._persist_directory.mkdir(parents=True, exist_ok=True)
-        self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
         client = self._create_chroma_client()
         try:
-            client.delete_collection(self._collection_name)
+            client.delete_collection(collection_name)
         except Exception:
             pass
         collection = client.get_or_create_collection(
-            name=self._collection_name,
+            name=collection_name,
             metadata={"hnsw:space": "cosine"},
         )
 
@@ -109,14 +114,14 @@ class RagService:
             "document_count": len(source_documents),
             "chunk_count": len(chunks),
             "signature": signature,
+            "scope": scope_key,
         }
-        self._manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        self._retrieval_cache.clear()
-        self._answer_cache.clear()
+        manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self._clear_scope_cache(scope_key)
         return {
             **payload,
             "available": True,
-            "collection_name": self._collection_name,
+            "collection_name": collection_name,
             "reindexed": True,
         }
 
@@ -125,11 +130,13 @@ class RagService:
         if not normalized_question:
             raise ValidationError("question is required.")
         index_status = self.reindex(force=False)
+        scope_key = self._scope_key()
+        collection_name = self._scoped_collection_name()
         signature = str(index_status.get("signature") or "")
         client = self._create_chroma_client()
-        collection = client.get_or_create_collection(name=self._collection_name, metadata={"hnsw:space": "cosine"})
+        collection = client.get_or_create_collection(name=collection_name, metadata={"hnsw:space": "cosine"})
         n_results = max(1, min(int(top_k or self._top_k), 12))
-        cache_key = (signature, normalized_question, n_results)
+        cache_key = (scope_key, signature, normalized_question, n_results)
         cached = self._retrieval_cache.get(cache_key)
         if cached is not None:
             return json.loads(json.dumps(cached))
@@ -183,8 +190,9 @@ class RagService:
         normalized_question = str(question or "").strip()
         structured = self._structured_answer(normalized_question)
         if structured is not None:
+            scope_key = self._scope_key()
             signature = self._current_source_signature()
-            cache_key = (signature, normalized_question)
+            cache_key = (scope_key, signature, normalized_question)
             cached = self._answer_cache.get(cache_key)
             if cached is not None:
                 return json.loads(json.dumps(cached))
@@ -209,8 +217,9 @@ class RagService:
             return answer
 
         retrieval = self.retrieve_context(question)
+        scope_key = self._scope_key()
         signature = str(retrieval.get("signature") or "")
-        cache_key = (signature, normalized_question)
+        cache_key = (scope_key, signature, normalized_question)
         cached = self._answer_cache.get(cache_key)
         if cached is not None:
             return json.loads(json.dumps(cached))
@@ -329,6 +338,36 @@ class RagService:
 
     def _current_source_signature(self) -> str:
         return self._build_signature(self._build_source_documents())
+
+    def _scope_key(self) -> str:
+        if self._user_id_provider is None:
+            return "global"
+        try:
+            user_id = int(self._user_id_provider() or 1)
+        except (TypeError, ValueError):
+            user_id = 1
+        return f"user-{max(user_id, 1)}"
+
+    def _scoped_collection_name(self) -> str:
+        scope_key = self._scope_key()
+        if scope_key == "global":
+            return self._collection_name
+        return f"{self._collection_name}_{scope_key.replace('-', '_')}"
+
+    def _scoped_manifest_path(self) -> Path:
+        scope_key = self._scope_key()
+        if scope_key == "global":
+            return self._manifest_path
+        suffix = self._manifest_path.suffix or ".json"
+        return self._manifest_path.with_name(f"{self._manifest_path.stem}.{scope_key}{suffix}")
+
+    def _clear_scope_cache(self, scope_key: str) -> None:
+        self._retrieval_cache = {
+            cache_key: value for cache_key, value in self._retrieval_cache.items() if cache_key[0] != scope_key
+        }
+        self._answer_cache = {
+            cache_key: value for cache_key, value in self._answer_cache.items() if cache_key[0] != scope_key
+        }
 
     def _monthly_income_answer(self, question: str = "") -> dict:
         requested_month = self._extract_requested_month_key(question)
@@ -2098,11 +2137,12 @@ class RagService:
         payload = json.dumps(signature_documents, sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    def _load_manifest(self) -> dict[str, Any]:
-        if not self._manifest_path.exists():
+    def _load_manifest(self, manifest_path: Path | None = None) -> dict[str, Any]:
+        resolved_path = manifest_path or self._scoped_manifest_path()
+        if not resolved_path.exists():
             return {}
         try:
-            payload = json.loads(self._manifest_path.read_text(encoding="utf-8"))
+            payload = json.loads(resolved_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return {}
         return payload if isinstance(payload, dict) else {}

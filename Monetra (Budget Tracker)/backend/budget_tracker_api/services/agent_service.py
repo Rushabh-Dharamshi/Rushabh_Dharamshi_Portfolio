@@ -2413,7 +2413,7 @@ class AgentService:
             "category": str(parsed.get("category") or "General").strip(),
             "description": str(parsed.get("description") or "Recurring reminder").strip(),
             "amount": round(float(amount), 2),
-            "entry_type": str(parsed.get("entry_type") or "expense").strip().lower(),
+            "entry_type": "expense",
             "frequency": str(parsed.get("frequency") or "monthly").strip().lower(),
             "start_date": str(parsed.get("start_date") or fallback_date).strip(),
             "end_date": str(parsed.get("end_date") or "").strip() or None,
@@ -2675,7 +2675,7 @@ class AgentService:
                 "type": "function",
                 "function": {
                     "name": "get_upcoming_recurring_items",
-                    "description": "Get upcoming recurring bills and income reminders.",
+                    "description": "Get upcoming recurring expense reminders.",
                     "parameters": {
                         "type": "object",
                         "properties": {

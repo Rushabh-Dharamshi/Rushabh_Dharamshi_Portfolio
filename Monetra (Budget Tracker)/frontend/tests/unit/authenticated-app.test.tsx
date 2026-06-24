@@ -5,6 +5,7 @@ import { AuthenticatedApp } from "@/components/authenticated-app";
 import { apiClient } from "@/lib/api-client";
 
 jest.mock("@/lib/api-client", () => ({
+  rememberExpectedUserId: jest.fn(),
   apiClient: {
     getAuthSession: jest.fn(),
     login: jest.fn(),

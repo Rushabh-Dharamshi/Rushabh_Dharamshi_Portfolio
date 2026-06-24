@@ -39,6 +39,10 @@ def register_request_guards(app: Flask) -> None:
         if app.config["LOGIN_REQUIRED"] and not is_logged_in():
             return jsonify({"error": "Login required."}), 401
 
+        session_conflict = _session_user_conflict_response()
+        if session_conflict is not None:
+            return session_conflict
+
         if app.config["READ_ONLY_MODE"] and request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             return jsonify({"error": "This deployment is running in read-only demo mode."}), 403
 
@@ -88,6 +92,30 @@ def log_in_user(username: str, user_id: int) -> None:
 
 def log_out_user() -> None:
     session.clear()
+
+
+def _session_user_conflict_response() -> Response | None:
+    expected_user_id = request.headers.get("X-Monetra-Expected-User-Id")
+    if not expected_user_id:
+        return None
+    try:
+        expected = int(expected_user_id)
+    except (TypeError, ValueError):
+        return None
+    actual = current_authenticated_user_id()
+    if actual is None or actual == expected:
+        return None
+    response = jsonify(
+        {
+            "error": (
+                "This browser tab is signed in to a different Monetra account than the active browser session. "
+                "Refresh this tab, or use an incognito/private window, another browser profile, or another browser "
+                "when testing multiple accounts at the same time."
+            )
+        }
+    )
+    response.status_code = 409
+    return response
 
 
 def _is_public_healthcheck(app: Flask, path: str) -> bool:

@@ -179,8 +179,8 @@ class RecurringService:
 
         if frequency not in {"weekly", "monthly"}:
             raise ValidationError("frequency must be weekly or monthly.")
-        if entry_type not in {"expense", "income"}:
-            raise ValidationError("entry_type must be expense or income.")
+        if entry_type != "expense":
+            raise ValidationError("recurring reminders only support expense type.")
 
         return {
             "category": category,

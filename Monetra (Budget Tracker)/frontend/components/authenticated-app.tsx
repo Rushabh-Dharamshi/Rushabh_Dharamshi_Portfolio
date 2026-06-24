@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 
 import { BudgetTrackerShell } from "@/components/budget-tracker-shell";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, rememberExpectedUserId } from "@/lib/api-client";
 import { AuthSessionResponse, MockEmailMessage } from "@/lib/types";
 
 const emptySession: AuthSessionResponse = {
@@ -46,8 +46,10 @@ export function AuthenticatedApp() {
     void (async () => {
       try {
         const currentSession = await apiClient.getAuthSession();
+        rememberExpectedUserId(currentSession.user_id);
         setSession(currentSession);
       } catch {
+        rememberExpectedUserId(null);
         setSession(emptySession);
       } finally {
         setIsLoading(false);
@@ -62,6 +64,7 @@ export function AuthenticatedApp() {
       setStatusMessage(null);
       setIsSubmitting(true);
       const nextSession = await apiClient.login(usernameDraft, passwordDraft);
+      rememberExpectedUserId(nextSession.user_id);
       setSession(nextSession);
       setPasswordDraft("");
     } catch (error) {
@@ -89,6 +92,7 @@ export function AuthenticatedApp() {
       setStatusMessage(null);
       setIsSubmitting(true);
       const nextSession = await apiClient.register(usernameDraft, emailDraft, passwordDraft);
+      rememberExpectedUserId(nextSession.user_id);
       setSession(nextSession);
       setPasswordDraft("");
       setConfirmPasswordDraft("");
@@ -170,6 +174,7 @@ export function AuthenticatedApp() {
       setStatusMessage(null);
       await apiClient.logout();
       const nextSession = await apiClient.getAuthSession();
+      rememberExpectedUserId(nextSession.user_id);
       setSession(nextSession);
     } catch (error) {
       setErrorMessage((error as Error).message);
@@ -187,6 +192,7 @@ export function AuthenticatedApp() {
       setErrorMessage(null);
       setStatusMessage(null);
       const result = await apiClient.deleteCurrentUser();
+      rememberExpectedUserId(null);
       setSession({
         ...emptySession,
         registered_user_count: result.registered_user_count,

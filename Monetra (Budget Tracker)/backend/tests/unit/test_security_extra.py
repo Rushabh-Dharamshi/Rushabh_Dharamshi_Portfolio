@@ -17,6 +17,11 @@ def make_app(**overrides):
     )
     app.config.update(overrides)
     security.register_request_guards(app)
+
+    @app.get("/api/private")
+    def private_route():
+        return {"ok": True}
+
     return app
 
 
@@ -54,3 +59,19 @@ def test_security_helpers_and_guards():
         unauthorized = security._basic_unauthorized()
         assert unauthorized.status_code == 401
         assert unauthorized.headers["WWW-Authenticate"] == 'Basic realm="Monetra Demo"'
+
+
+def test_expected_user_header_blocks_stale_browser_tabs():
+    app = make_app(LOGIN_REQUIRED=True)
+    client = app.test_client()
+
+    with client.session_transaction() as session:
+        session[security.AUTH_SESSION_KEY] = "CurrentUser"
+        session[security.AUTH_USER_ID_SESSION_KEY] = 4
+
+    stale_tab = client.get("/api/private", headers={"X-Monetra-Expected-User-Id": "3"})
+    current_tab = client.get("/api/private", headers={"X-Monetra-Expected-User-Id": "4"})
+
+    assert stale_tab.status_code == 409
+    assert "different Monetra account" in stale_tab.get_json()["error"]
+    assert current_tab.status_code == 200

@@ -229,7 +229,7 @@ export interface RecurringItemPayload {
   category: string;
   description: string;
   amount: number | string;
-  entry_type: "expense" | "income";
+  entry_type: "expense";
   frequency: "weekly" | "monthly";
   start_date: string;
   end_date?: string | null;

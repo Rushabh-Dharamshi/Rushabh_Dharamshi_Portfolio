@@ -179,7 +179,7 @@ describe("component branch coverage", () => {
     expect(screen.getByText("No recurring reminders are due today or in the next 7 days.")).toBeInTheDocument();
     expect(screen.getByText("No saved recurring reminders are scheduled ahead.")).toBeInTheDocument();
     expect(screen.getByText("Nothing has been marked as paid in this window yet.")).toBeInTheDocument();
-    expect(screen.getByText("No recurring purchases or income reminders created yet.")).toBeInTheDocument();
+    expect(screen.getByText("No recurring expense reminders created yet.")).toBeInTheDocument();
     expect(screen.getByText("Sending month-end report...")).toBeDisabled();
     expect(screen.getByText("No transactions available for the current month.")).toBeInTheDocument();
     expect(screen.getByText("Monthly trend data will appear once transactions are available.")).toBeInTheDocument();

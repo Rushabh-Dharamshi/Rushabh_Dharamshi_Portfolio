@@ -351,18 +351,38 @@ jobs:
           name: Smoke check << parameters.environment-name >>
           command: |
             set -euo pipefail
-            BASE_URL_VAR="<< parameters.base-url-env-var >>"
-            FRONTEND_URL_VAR="<< parameters.frontend-url-env-var >>"
-            BASE_URL="$(printenv "$BASE_URL_VAR" || true)"
-            FRONTEND_URL="$(printenv "$FRONTEND_URL_VAR" || true)"
+            HOST_VAR="<< parameters.host-env-var >>"
+            USER_VAR="<< parameters.user-env-var >>"
+            HOST="$(printenv "$HOST_VAR" || true)"
+            USER="$(printenv "$USER_VAR" || true)"
 
-            if [ -z "$BASE_URL" ]; then
-              echo "Missing smoke-test base URL for << parameters.environment-name >>." >&2
+            if [ -z "$HOST" ] || [ -z "$USER" ]; then
+              echo "Missing smoke-test SSH variables for << parameters.environment-name >>." >&2
               exit 1
             fi
 
-            cd ~/project
-            MONETRA_BASE_URL="$BASE_URL" MONETRA_FRONTEND_URL="$FRONTEND_URL" bash "Monetra (Budget Tracker)/deploy/smoke-test.sh"
+            ssh -i ~/.ssh/monetra_oracle_vm "$USER@$HOST" '
+              set -euo pipefail
+
+              for i in $(seq 1 24); do
+                if curl -fsS --connect-timeout 5 --max-time 15 http://localhost:3000/api/health; then
+                  echo "Monetra backend health is reachable through the frontend proxy."
+                  break
+                fi
+
+                if [ "$i" -eq 24 ]; then
+                  echo "Monetra health check did not pass inside the VM." >&2
+                  docker ps >&2 || true
+                  exit 1
+                fi
+
+                echo "Monetra is not ready yet. Retrying in 5s..."
+                sleep 5
+              done
+
+              curl -fsSI --connect-timeout 5 --max-time 15 http://localhost:3000 >/dev/null
+              echo "Monetra smoke checks passed inside the Oracle VM."
+            '
 
 workflows:
   monetra-ci:

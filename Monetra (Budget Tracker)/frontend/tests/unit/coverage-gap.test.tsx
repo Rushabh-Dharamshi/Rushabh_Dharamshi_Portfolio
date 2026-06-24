@@ -214,8 +214,7 @@ describe("frontend coverage gaps", () => {
     fireEvent.change(screen.getByDisplayValue("2026-04-23"), { target: { value: "2026-04-24" } });
     fireEvent.change(screen.getByDisplayValue("2026-06-23"), { target: { value: "2026-07-24" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "income" } });
-    fireEvent.change(screen.getAllByRole("combobox")[1], { target: { value: "weekly" } });
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "weekly" } });
 
     fireEvent.click(screen.getByText("Update reminder"));
     expect(onUpdate).toHaveBeenCalledWith(
@@ -227,7 +226,7 @@ describe("frontend coverage gaps", () => {
         start_date: "2026-04-24",
         end_date: "2026-07-24",
         frequency: "weekly",
-        entry_type: "income",
+        entry_type: "expense",
         active: false,
       }),
     );

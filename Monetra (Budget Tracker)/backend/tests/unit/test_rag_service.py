@@ -193,13 +193,19 @@ class FakeCollection:
 class FakeChromaClient:
     def __init__(self):
         self.collection = FakeCollection()
+        self.collections = {}
         self.deleted_collections = []
 
     def delete_collection(self, name):
         self.deleted_collections.append(name)
+        self.collections.pop(name, None)
 
     def get_or_create_collection(self, name, metadata=None):
-        return self.collection
+        if name == "monetra-finance-knowledge":
+            self.collections.setdefault(name, self.collection)
+            return self.collections[name]
+        self.collections.setdefault(name, FakeCollection())
+        return self.collections[name]
 
 
 @pytest.fixture()
@@ -239,6 +245,43 @@ def test_rag_service_reindexes_and_reports_status(rag_service):
     assert fake_client.deleted_collections == ["monetra-finance-knowledge"]
     assert status["indexed_at"] == result["indexed_at"]
     assert status["chunk_count"] == result["chunk_count"]
+
+
+def test_rag_service_scopes_chroma_collection_and_manifest_by_user(tmp_path):
+    fake_client = FakeChromaClient()
+    current_user_id = 7
+    service = RagService(
+        expense_service=StubExpenseService(),
+        recurring_service=StubRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "memory.json"),
+        persist_directory=tmp_path / "chroma",
+        manifest_path=tmp_path / "rag-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        user_id_provider=lambda: current_user_id,
+        chroma_client_factory=lambda path: fake_client,
+    )
+
+    first = service.reindex(force=True)
+    current_user_id = 8
+    second = service.reindex(force=True)
+
+    assert first["collection_name"] == "monetra-finance-knowledge_user_7"
+    assert second["collection_name"] == "monetra-finance-knowledge_user_8"
+    assert fake_client.deleted_collections == [
+        "monetra-finance-knowledge_user_7",
+        "monetra-finance-knowledge_user_8",
+    ]
+    assert (tmp_path / "rag-manifest.user-7.json").exists()
+    assert (tmp_path / "rag-manifest.user-8.json").exists()
 
 
 def test_rag_service_skips_reindex_when_signature_has_not_changed(rag_service):

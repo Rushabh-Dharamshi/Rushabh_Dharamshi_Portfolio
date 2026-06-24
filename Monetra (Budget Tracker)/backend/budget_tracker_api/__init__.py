@@ -169,6 +169,7 @@ def _register_services(app: Flask) -> None:
         chroma_http_host=app.config["CHROMA_HTTP_HOST"],
         chroma_http_port=app.config["CHROMA_HTTP_PORT"],
         chroma_http_ssl=app.config["CHROMA_HTTP_SSL"],
+        user_id_provider=user_id_provider,
     )
     agent_service = AgentService(
         ollama_client,

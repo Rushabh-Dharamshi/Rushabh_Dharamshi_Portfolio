@@ -146,6 +146,8 @@ def test_recurring_service_validation_and_crud_paths(monkeypatch):
         service.create_item({"category": "x", "description": "y", "amount": "1", "start_date": "2026-04-01", "frequency": "yearly", "entry_type": "expense"})
     with pytest.raises(ValidationError):
         service.create_item({"category": "x", "description": "y", "amount": "1", "start_date": "2026-04-01", "frequency": "monthly", "entry_type": "other"})
+    with pytest.raises(ValidationError, match="only support expense"):
+        service.create_item({"category": "x", "description": "y", "amount": "1", "start_date": "2026-04-01", "frequency": "monthly", "entry_type": "income"})
 
 
 def test_recurring_service_paid_and_calendar_branches(monkeypatch):

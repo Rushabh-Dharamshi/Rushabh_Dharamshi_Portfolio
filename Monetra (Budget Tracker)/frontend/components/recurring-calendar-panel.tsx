@@ -67,7 +67,7 @@ export function RecurringCalendarPanel({
       category: item.category,
       description: item.description,
       amount: item.amount.toString(),
-      entry_type: item.entry_type,
+      entry_type: "expense",
       frequency: item.frequency,
       start_date: item.start_date,
       end_date: item.end_date ?? "",
@@ -296,21 +296,7 @@ export function RecurringCalendarPanel({
                 onChange={(event) => setForm({ ...form, category: event.target.value })}
               />
             </label>
-            <label>
-              <span>Type</span>
-              <select
-                value={form.entry_type}
-                onChange={(event) =>
-                  setForm({
-                    ...form,
-                    entry_type: event.target.value as RecurringItemPayload["entry_type"],
-                  })
-                }
-              >
-                <option value="expense">Expense</option>
-                <option value="income">Income</option>
-              </select>
-            </label>
+            <input type="hidden" value="expense" readOnly />
             <label className="full-span">
               <span>Description</span>
               <input
@@ -438,7 +424,7 @@ export function RecurringCalendarPanel({
                 </span>
               </button>
             ))}
-            {!items.length ? <p className="muted">No recurring purchases or income reminders created yet.</p> : null}
+            {!items.length ? <p className="muted">No recurring expense reminders created yet.</p> : null}
           </div>
         </div>
       </div>

@@ -1,9 +1,10 @@
-import { apiClient } from "@/lib/api-client";
+import { apiClient, rememberExpectedUserId } from "@/lib/api-client";
 
 describe("apiClient additional coverage", () => {
   beforeEach(() => {
     (global.fetch as jest.Mock | undefined)?.mockReset?.();
     global.fetch = jest.fn();
+    window.sessionStorage.clear();
   });
 
   it("covers auth, settings, recurring, agent, email, and rag endpoints", async () => {
@@ -84,6 +85,24 @@ describe("apiClient additional coverage", () => {
 
     await expect(apiClient.startFinanceBriefingAgent("Send the report")).rejects.toThrow(
       "backend agent/email service",
+    );
+  });
+
+  it("sends the tab-scoped expected user id header when known", async () => {
+    rememberExpectedUserId(42);
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      headers: { get: () => "application/json" },
+      json: async () => ({ data: { status: "ok" } }),
+    });
+
+    await apiClient.getDashboard();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/dashboard",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-Monetra-Expected-User-Id": "42" }),
+      }),
     );
   });
 });

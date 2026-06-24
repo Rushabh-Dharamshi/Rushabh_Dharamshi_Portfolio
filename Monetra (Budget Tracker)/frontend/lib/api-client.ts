@@ -28,6 +28,7 @@ import {
 } from "@/lib/types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
+const EXPECTED_USER_ID_KEY = "monetra_expected_user_id";
 
 function logApiFailure(message: string, details: Record<string, unknown>) {
   console.error(`[Monetra API] ${message}`, details);
@@ -48,6 +49,27 @@ function networkErrorFor(path: string, error: unknown): Error | unknown {
   );
 }
 
+function expectedUserHeader(): Record<string, string> {
+  /* istanbul ignore next -- SSR never runs this browser-only client in unit tests. */
+  if (typeof window === "undefined") {
+    return {};
+  }
+  const expectedUserId = window.sessionStorage.getItem(EXPECTED_USER_ID_KEY);
+  return expectedUserId ? { "X-Monetra-Expected-User-Id": expectedUserId } : {};
+}
+
+export function rememberExpectedUserId(userId: number | null | undefined) {
+  /* istanbul ignore next -- SSR never runs this browser-only client in unit tests. */
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (typeof userId === "number" && Number.isFinite(userId)) {
+    window.sessionStorage.setItem(EXPECTED_USER_ID_KEY, String(userId));
+    return;
+  }
+  window.sessionStorage.removeItem(EXPECTED_USER_ID_KEY);
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const method = options?.method ?? "GET";
   const url = `${API_BASE_URL}${path}`;
@@ -59,6 +81,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
+        ...expectedUserHeader(),
         ...(options?.headers ?? {}),
       },
       cache: "no-store",
@@ -160,6 +183,7 @@ export const apiClient = {
         method: "POST",
         body: formData,
         credentials: "include",
+        headers: expectedUserHeader(),
       });
     } catch (error) {
       logApiFailure("Import request failed.", {
