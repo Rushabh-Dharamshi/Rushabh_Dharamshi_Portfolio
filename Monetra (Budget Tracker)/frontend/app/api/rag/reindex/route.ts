@@ -10,7 +10,7 @@ function backendUrl() {
   if (!proxyTarget) {
     throw new Error("API_PROXY_TARGET is not configured.");
   }
-  return `${proxyTarget.replace(/\/$/, "")}/api/rag/query`;
+  return `${proxyTarget.replace(/\/$/, "")}/api/rag/reindex`;
 }
 
 export async function POST(request: NextRequest) {
