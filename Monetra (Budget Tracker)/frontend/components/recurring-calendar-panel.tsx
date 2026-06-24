@@ -288,7 +288,7 @@ export function RecurringCalendarPanel({
           </div>
 
           <div className="form-grid recurring-form-grid">
-            <label>
+            <label className="recurring-field-category">
               <span>Category</span>
               <input
                 type="text"
@@ -297,7 +297,7 @@ export function RecurringCalendarPanel({
               />
             </label>
             <input type="hidden" value="expense" readOnly />
-            <label className="full-span">
+            <label className="full-span recurring-field-description">
               <span>Description</span>
               <input
                 type="text"
@@ -305,7 +305,7 @@ export function RecurringCalendarPanel({
                 onChange={(event) => setForm({ ...form, description: event.target.value })}
               />
             </label>
-            <label>
+            <label className="recurring-field-amount">
               <span>Amount (GBP)</span>
               <input
                 type="number"
@@ -315,7 +315,7 @@ export function RecurringCalendarPanel({
                 onChange={(event) => setForm({ ...form, amount: event.target.value })}
               />
             </label>
-            <label>
+            <label className="recurring-field-frequency">
               <span>Frequency</span>
               <select
                 value={form.frequency}
@@ -330,7 +330,7 @@ export function RecurringCalendarPanel({
                 <option value="monthly">Monthly</option>
               </select>
             </label>
-            <label>
+            <label className="recurring-field-start">
               <span>Start date (inclusive)</span>
               <input
                 type="date"
@@ -338,7 +338,7 @@ export function RecurringCalendarPanel({
                 onChange={(event) => setForm({ ...form, start_date: event.target.value })}
               />
             </label>
-            <label>
+            <label className="recurring-field-end">
               <span>End date (optional)</span>
               <input
                 type="date"
