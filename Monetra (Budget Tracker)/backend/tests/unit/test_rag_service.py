@@ -283,6 +283,9 @@ def test_rag_service_scopes_chroma_collection_and_manifest_by_user(tmp_path):
     assert (tmp_path / "rag-manifest.user-7.json").exists()
     assert (tmp_path / "rag-manifest.user-8.json").exists()
 
+    current_user_id = "not-a-user-id"
+    assert service._scope_key() == "user-1"
+
 
 def test_rag_service_skips_reindex_when_signature_has_not_changed(rag_service):
     service, _, _ = rag_service

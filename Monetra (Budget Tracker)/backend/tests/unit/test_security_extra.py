@@ -71,7 +71,9 @@ def test_expected_user_header_blocks_stale_browser_tabs():
 
     stale_tab = client.get("/api/private", headers={"X-Monetra-Expected-User-Id": "3"})
     current_tab = client.get("/api/private", headers={"X-Monetra-Expected-User-Id": "4"})
+    invalid_header = client.get("/api/private", headers={"X-Monetra-Expected-User-Id": "not-a-user-id"})
 
     assert stale_tab.status_code == 409
     assert "different Monetra account" in stale_tab.get_json()["error"]
     assert current_tab.status_code == 200
+    assert invalid_header.status_code == 200
