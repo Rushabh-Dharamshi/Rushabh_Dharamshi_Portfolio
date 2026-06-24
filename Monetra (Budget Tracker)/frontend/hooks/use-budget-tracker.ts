@@ -46,6 +46,10 @@ function currentMonthKey() {
   return new Date().toISOString().slice(0, 7);
 }
 
+function expenseDisplayId(expense: Expense) {
+  return expense.user_expense_id ?? expense.id;
+}
+
 /* istanbul ignore next */
 function shouldSkipAutomationBootstrap() {
   return process.env.NODE_ENV !== "test" && process.env.NEXT_PUBLIC_AUTOMATION_BOOTSTRAP_ENABLED !== "true";
@@ -349,7 +353,7 @@ export function useBudgetTracker() {
         ...form,
         amount: form.amount,
       });
-      setStatusMessage(`Expense #${created.id} added successfully.`);
+      setStatusMessage(`Expense #${expenseDisplayId(created)} added successfully.`);
       resetForm();
       await loadAllData();
       void refreshAutomationCenter("expense_created");
@@ -378,7 +382,7 @@ export function useBudgetTracker() {
         ...form,
         amount: form.amount,
       });
-      setStatusMessage(`Expense #${selectedExpense.id} updated successfully.`);
+      setStatusMessage(`Expense #${expenseDisplayId(selectedExpense)} updated successfully.`);
       resetForm();
       await loadAllData();
       void refreshAutomationCenter("expense_updated");
@@ -404,7 +408,7 @@ export function useBudgetTracker() {
     try {
       setErrorMessage(null);
       await apiClient.deleteExpense(selectedExpense.id);
-      setStatusMessage(`Expense #${selectedExpense.id} deleted successfully.`);
+      setStatusMessage(`Expense #${expenseDisplayId(selectedExpense)} deleted successfully.`);
       resetForm();
       await loadAllData();
       void refreshAutomationCenter("expense_deleted");
@@ -424,9 +428,13 @@ export function useBudgetTracker() {
 
     try {
       setErrorMessage(null);
-      const expense = await apiClient.searchExpenseById(Number(searchId));
+      const normalizedId = Number(searchId);
+      const expense = expenses.find((item) => expenseDisplayId(item) === normalizedId);
+      if (!expense) {
+        throw new Error(`Expense #${normalizedId} was not found for your account.`);
+      }
       setFilteredExpenses([expense]);
-      setStatusMessage(`Showing search result for expense #${expense.id}.`);
+      setStatusMessage(`Showing search result for expense #${expenseDisplayId(expense)}.`);
     } catch (error) {
       setFilteredExpenses([]);
       setStatusMessage(null);

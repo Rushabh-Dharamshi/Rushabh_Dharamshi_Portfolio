@@ -198,6 +198,7 @@ describe("presentational components", () => {
     const onSelect = jest.fn();
     const expenses: Array<{
       id: number;
+      user_expense_id?: number;
       date: string;
       category: string;
       description: string;
@@ -205,6 +206,7 @@ describe("presentational components", () => {
       entry_type: "expense" | "income";
     }> = Array.from({ length: 11 }, (_, index) => ({
       id: index + 1,
+      user_expense_id: index === 0 ? 101 : undefined,
       date: "2026-03-01",
       category: "Food",
       description: index === 0 ? "Groceries" : `Groceries ${index + 1}`,
@@ -247,6 +249,7 @@ describe("presentational components", () => {
     expect(screen.getByText("No expense records found.")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Clear filters"));
     expect(screen.getByText("12 visible")).toBeInTheDocument();
+    expect(screen.getByText("#101")).toBeInTheDocument();
 
     expect(onSearchIdChange).toHaveBeenCalled();
     expect(onSearch).toHaveBeenCalled();
@@ -254,7 +257,7 @@ describe("presentational components", () => {
     expect(onSelect).toHaveBeenCalled();
     expect(screen.getByText("Visible outflow")).toBeInTheDocument();
     expect(screen.getByText("Categories")).toBeInTheDocument();
-    expect(screen.getByText("#1")).toBeInTheDocument();
+    expect(screen.getByText("#101")).toBeInTheDocument();
     expect(screen.getByText("Groceries").closest(".expense-table-wrapper")).toHaveClass("expense-table-wrapper");
   });
 
@@ -548,8 +551,8 @@ describe("presentational components", () => {
     expect(screen.getByText("Average spend across the visible comparison periods.")).toBeInTheDocument();
     expect(screen.getByText("How the current period changed compared with the immediately previous period.")).toBeInTheDocument();
     expect(screen.getByText("Upcoming bills and frequent purchases")).toBeInTheDocument();
-    expect(screen.getByText("How transaction ID verification works.")).toBeInTheDocument();
-    expect(screen.getByText(/waiting for you to link a matching paid transaction ID/i)).toBeInTheDocument();
+    expect(screen.getByText("How expense number verification works.")).toBeInTheDocument();
+    expect(screen.getByText(/waiting for you to link a matching paid expense number/i)).toBeInTheDocument();
     expect(screen.getByText(/same type, amount, and category/i)).toBeInTheDocument();
     expect(screen.getByText(/Ticked means this reminder appears in upcoming schedules/i)).toBeInTheDocument();
     expect(onCreate).toHaveBeenCalled();

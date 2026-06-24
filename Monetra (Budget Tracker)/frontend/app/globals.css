@@ -1113,6 +1113,20 @@ tbody tr:hover,
 
 .recurring-form-grid {
   margin-top: 14px;
+  grid-template-columns: repeat(2, minmax(190px, 1fr));
+  column-gap: 18px;
+  row-gap: 16px;
+}
+
+.recurring-management .card-header {
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.recurring-management .card-header .button {
+  flex: 0 0 auto;
+  min-width: 74px;
+  white-space: nowrap;
 }
 
 .toggle-field {

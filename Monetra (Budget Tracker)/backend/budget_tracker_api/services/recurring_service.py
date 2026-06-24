@@ -48,7 +48,7 @@ class RecurringService:
             "item": item,
             "occurrence": self._repository.mark_occurrence_paid(item_id, occurrence_date, int(transaction["id"])),
             "transaction": transaction,
-            "message": f"Reminder marked as paid for this date using transaction #{transaction['id']}."
+            "message": f"Reminder marked as paid for this date using expense #{transaction.get('user_expense_id', transaction['id'])}."
         }
 
     def mark_occurrence_unpaid(self, item_id: int, payload: dict) -> dict:
@@ -126,6 +126,7 @@ class RecurringService:
                             "updated_at": linked_entry["updated_at"],
                             "is_paid": True,
                             "transaction_id": linked_entry.get("transaction_id"),
+                            "user_transaction_id": self._user_expense_id_for_transaction(linked_entry.get("transaction_id")),
                         }
                     )
                     due_date = self._next_due_date(due_date, item["frequency"])
@@ -213,7 +214,7 @@ class RecurringService:
         except (TypeError, ValueError) as exc:
             raise ValidationError("transaction_id must be a valid integer.") from exc
 
-        transaction = self._expense_service.get_expense(normalized_transaction_id)
+        transaction = self._expense_service.get_expense_by_user_expense_id(normalized_transaction_id)
         if transaction["entry_type"] != item["entry_type"]:
             raise ValidationError("The selected transaction type does not match this reminder.")
         if abs(float(transaction["amount"]) - float(item["amount"])) >= 0.01:
@@ -221,6 +222,15 @@ class RecurringService:
         if transaction["category"].strip().lower() != item["category"].strip().lower():
             raise ValidationError("The selected transaction category does not match this reminder.")
         return transaction
+
+    def _user_expense_id_for_transaction(self, transaction_id) -> int | None:
+        if transaction_id in (None, ""):
+            return None
+        try:
+            transaction = self._expense_service.get_expense(int(transaction_id))
+        except (NotFoundError, TypeError, ValueError):
+            return None
+        return transaction.get("user_expense_id", transaction.get("id"))
 
     @staticmethod
     def _first_due_on_or_after(raw_start_date: str, frequency: str, target_date: date) -> date:

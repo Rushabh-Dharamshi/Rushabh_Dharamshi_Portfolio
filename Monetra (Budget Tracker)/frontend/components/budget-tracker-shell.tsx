@@ -163,7 +163,7 @@ export function BudgetTrackerShell({ username = "Rushabh", onLogout, onDeleteAcc
           />
           <ExpenseForm
             form={tracker.form}
-            selectedExpenseId={tracker.selectedExpense?.id ?? null}
+            selectedExpenseId={tracker.selectedExpense?.user_expense_id ?? tracker.selectedExpense?.id ?? null}
             onChange={tracker.setForm}
             onCreate={tracker.createExpense}
             onUpdate={tracker.updateExpense}

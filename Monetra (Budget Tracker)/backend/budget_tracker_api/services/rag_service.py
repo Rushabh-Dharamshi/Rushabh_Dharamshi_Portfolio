@@ -1030,19 +1030,20 @@ class RagService:
             f"Transaction #{latest.get('id')} on {latest.get('date')}. Category {latest.get('category')}. "
             f"Description {latest.get('description')}. Cost: {cost}. Entry type expense."
         )
+        latest_display_id = latest.get("user_expense_id", latest.get("id"))
         return {
             "answer": (
-                f"The most recent expense is Transaction #{latest.get('id')} on {latest.get('date')}. "
+                f"The most recent expense is Transaction #{latest_display_id} on {latest.get('date')}. "
                 f"Category: {latest.get('category')}. Description: {latest.get('description')}. Cost: {cost}."
             ),
             "follow_up_questions": ["Do you want the largest expenses for the same month?"],
-            "sources": [self._structured_source(f"Transaction #{latest.get('id')}", "expense", f"expense::{latest.get('id')}", excerpt, {"date": latest.get("date"), "category": latest.get("category"), "entry_type": "expense"})],
+            "sources": [self._structured_source(f"Transaction #{latest_display_id}", "expense", f"expense::{latest.get('id')}", excerpt, {"date": latest.get("date"), "category": latest.get("category"), "entry_type": "expense", "user_expense_id": latest_display_id})],
             "tools_used": ["find_latest_expense"],
         }
 
     def _expense_id_answer(self, expense_id: int) -> dict:
         try:
-            expense = self._expense_service.get_expense(expense_id)
+            expense = self._expense_service.get_expense_by_user_expense_id(expense_id)
         except NotFoundError:
             answer = f"I could not find an expense with ID {expense_id} for your signed-in account."
             return {
@@ -1064,24 +1065,26 @@ class RagService:
         date_value = expense.get("date")
         category = expense.get("category")
         description = expense.get("description")
+        display_id = expense.get("user_expense_id", expense_id)
         excerpt = (
-            f"Expense ID {expense_id} on {date_value}. Category {category}. "
+            f"Expense ID {display_id} on {date_value}. Category {category}. "
             f"Description {description}. Cost: {cost}. Entry type expense."
         )
         return {
             "answer": (
-                f"Expense ID {expense_id} is {description}: {cost} on {date_value} "
+                f"Expense ID {display_id} is {description}: {cost} on {date_value} "
                 f"under {category}."
             ),
             "follow_up_questions": [],
             "sources": [
                 self._structured_source(
-                    f"Expense ID {expense_id}",
+                    f"Expense ID {display_id}",
                     "expense",
-                    f"expense::{expense_id}",
+                    f"expense::{expense.get('id', expense_id)}",
                     excerpt,
                     {
-                        "expense_id": expense_id,
+                        "expense_id": expense.get("id", expense_id),
+                        "user_expense_id": display_id,
                         "date": date_value,
                         "category": category,
                         "entry_type": "expense",

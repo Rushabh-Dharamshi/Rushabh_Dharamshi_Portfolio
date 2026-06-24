@@ -14,7 +14,7 @@ jest.mock("@/components/automation-center", () => ({
   ),
 }));
 jest.mock("@/components/dashboard-summary", () => ({ DashboardSummaryCards: () => <div>Summary cards mock</div> }));
-jest.mock("@/components/expense-form", () => ({ ExpenseForm: () => <div>Expense form mock</div> }));
+jest.mock("@/components/expense-form", () => ({ ExpenseForm: ({ selectedExpenseId }: { selectedExpenseId: number | null }) => <div>Expense form mock {selectedExpenseId ?? "none"}</div> }));
 jest.mock("@/components/operations-panel", () => ({ OperationsPanel: () => <div>Operations panel mock</div> }));
 jest.mock("@/components/recurring-calendar-panel", () => ({ RecurringCalendarPanel: () => <div>Recurring panel mock</div> }));
 jest.mock("@/components/ai-agent-panel", () => ({ AiAgentPanel: () => <div>AI panel mock</div> }));
@@ -167,5 +167,24 @@ describe("BudgetTrackerShell unit coverage", () => {
     render(<BudgetTrackerShell />);
 
     expect(screen.getByText("Automation center mock: month end close is running through the agent pipeline. Elapsed: 4s.")).toBeInTheDocument();
+  });
+
+  it("passes the account-local selected expense number into the edit form", () => {
+    mockUseBudgetTracker.mockReturnValue({
+      ...baseTracker,
+      selectedExpense: {
+        id: 44,
+        user_expense_id: 3,
+        date: "2026-06-01",
+        category: "Food",
+        description: "Lunch",
+        amount: 12,
+        entry_type: "expense",
+      },
+    });
+
+    render(<BudgetTrackerShell />);
+
+    expect(screen.getByText("Expense form mock 3")).toBeInTheDocument();
   });
 });

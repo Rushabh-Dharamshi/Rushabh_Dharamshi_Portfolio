@@ -452,7 +452,7 @@ describe("useBudgetTracker strict coverage", () => {
     seedHappyPath();
     mockApiClient.getSettings.mockResolvedValueOnce({ monthly_budget: 1050, monthly_income: 1500, income_month: null });
     mockApiClient.getDashboard.mockResolvedValueOnce({ ...baseDashboard, income_month: null });
-    mockApiClient.searchExpenseById.mockResolvedValueOnce({ ...expense, id: 88 });
+    mockApiClient.listExpenses.mockResolvedValueOnce([{ ...expense, id: 88, user_expense_id: 88 }]);
 
     const { result } = renderHook(() => useBudgetTracker());
     await waitFor(() => expect(result.current.isLoading).toBe(false));

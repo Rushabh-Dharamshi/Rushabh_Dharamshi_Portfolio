@@ -102,20 +102,20 @@ export function RecurringCalendarPanel({
             <article className="metric-card">
               <span>Open reminders</span>
               <strong>{calendar?.occurrences.length ?? 0}</strong>
-              <small>Upcoming reminder dates still waiting for you to link a matching paid transaction ID.</small>
+              <small>Upcoming reminder dates still waiting for you to link a matching paid expense number.</small>
             </article>
             <article className="metric-card">
               <span>Completed reminders</span>
               <strong>{calendar?.completed_occurrences.length ?? 0}</strong>
-              <small>Reminder occurrences already matched to a verified transaction ID.</small>
+              <small>Reminder occurrences already matched to a verified expense number.</small>
             </article>
           </div>
 
           <div className="message info verification-note">
-            <strong>How transaction ID verification works.</strong>
+            <strong>How expense number verification works.</strong>
             {" "}
             <span>
-              Monetra checks that the transaction ID exists in your account, has the same type, amount, and category as the reminder, and is not already linked to another paid reminder occurrence.
+              Monetra checks that the expense number exists in your account, has the same type, amount, and category as the reminder, and is not already linked to another paid reminder occurrence.
             </span>
           </div>
 
@@ -149,7 +149,7 @@ export function RecurringCalendarPanel({
                       type="number"
                       min="1"
                       inputMode="numeric"
-                      placeholder="Paid transaction id"
+                      placeholder="Paid expense #"
                       value={transactionDrafts[draftKey] ?? ""}
                       onChange={(event) =>
                         setTransactionDrafts((current) => ({
@@ -211,9 +211,9 @@ export function RecurringCalendarPanel({
                       <input
                         className="transaction-link-input"
                         type="number"
-                        min="1"
-                        inputMode="numeric"
-                        placeholder="Paid transaction id"
+                      min="1"
+                      inputMode="numeric"
+                        placeholder="Paid expense #"
                         value={transactionDrafts[draftKey] ?? ""}
                         onChange={(event) =>
                           setTransactionDrafts((current) => ({
@@ -260,7 +260,7 @@ export function RecurringCalendarPanel({
                     <strong>{occurrence.description}</strong>
                     <p>
                       {occurrence.category} | cleared for {occurrence.date}
-                      {occurrence.transaction_id ? ` | transaction #${occurrence.transaction_id}` : ""}
+                      {(occurrence.user_transaction_id ?? occurrence.transaction_id) ? ` | expense #${occurrence.user_transaction_id ?? occurrence.transaction_id}` : ""}
                     </p>
                   </div>
                   <button

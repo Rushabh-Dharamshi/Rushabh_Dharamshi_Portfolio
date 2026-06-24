@@ -25,6 +25,9 @@ class StubExpenseService:
                 return expense
         raise NotFoundError(f"Expense with id {expense_id} was not found.")
 
+    def get_expense_by_user_expense_id(self, user_expense_id):
+        return self.get_expense(user_expense_id)
+
 
 class StubRecurringService:
     def list_items(self):

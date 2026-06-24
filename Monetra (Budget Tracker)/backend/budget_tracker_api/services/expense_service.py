@@ -16,21 +16,31 @@ class ExpenseService:
         sort_direction: str = "desc",
         filters: dict | None = None,
     ) -> list[dict]:
-        expenses = [
+        expenses = self._with_user_expense_ids([
             expense.to_dict()
             for expense in self._repository.list_expenses(sort_direction, entry_type="expense")
-        ]
+        ])
         return self._apply_filters(expenses, filters or {})
 
     def get_expense(self, expense_id: int) -> dict:
         expense = self._repository.get_expense(expense_id)
         if expense is None or getattr(expense, "entry_type", "expense") != "expense":
             raise NotFoundError(f"Expense with id {expense_id} was not found.")
-        return expense.to_dict()
+        return self._decorate_expense(expense.to_dict())
+
+    def get_expense_by_user_expense_id(self, user_expense_id: int) -> dict:
+        try:
+            normalized_id = int(user_expense_id)
+        except (TypeError, ValueError) as exc:
+            raise NotFoundError(f"Expense with id {user_expense_id} was not found.") from exc
+        for expense in self._expense_dicts_with_user_expense_ids():
+            if expense["user_expense_id"] == normalized_id:
+                return expense
+        raise NotFoundError(f"Expense with id {user_expense_id} was not found.")
 
     def create_expense(self, payload: dict) -> dict:
         data = self._validate_payload(payload)
-        return self._repository.create_expense(data).to_dict()
+        return self._decorate_expense(self._repository.create_expense(data).to_dict())
 
     def update_expense(self, expense_id: int, payload: dict) -> dict:
         existing = self._repository.get_expense(expense_id)
@@ -40,7 +50,7 @@ class ExpenseService:
         expense = self._repository.update_expense(expense_id, data)
         if expense is None:
             raise NotFoundError(f"Expense with id {expense_id} was not found.")
-        return expense.to_dict()
+        return self._decorate_expense(expense.to_dict())
 
     def delete_expense(self, expense_id: int) -> None:
         existing = self._repository.get_expense(expense_id)
@@ -92,20 +102,52 @@ class ExpenseService:
         output = io.StringIO()
         writer = csv.writer(output)
         writer.writerow(["ID", "Date", "Category", "Description", "Amount", "Type"])
-        for expense in self._repository.list_expenses("desc", entry_type="expense"):
-            if not str(expense.date).startswith(month_key) or str(expense.date) > today.isoformat():
+        for expense in self._with_user_expense_ids(
+            [expense.to_dict() for expense in self._repository.list_expenses("desc", entry_type="expense")]
+        ):
+            if not str(expense["date"]).startswith(month_key) or str(expense["date"]) > today.isoformat():
                 continue
             writer.writerow(
                 [
-                    expense.id,
-                    expense.date,
-                    expense.category,
-                    expense.description,
-                    f"{expense.amount:.2f}",
+                    expense["user_expense_id"],
+                    expense["date"],
+                    expense["category"],
+                    expense["description"],
+                    f"{expense['amount']:.2f}",
                     "expense",
                 ]
             )
         return output.getvalue()
+
+    def _expense_dicts_with_user_expense_ids(self) -> list[dict]:
+        return self._with_user_expense_ids([
+            expense.to_dict()
+            for expense in self._repository.list_expenses("asc", entry_type="expense")
+        ])
+
+    def _decorate_expense(self, expense: dict) -> dict:
+        account_ids = {
+            item["id"]: item["user_expense_id"]
+            for item in self._expense_dicts_with_user_expense_ids()
+        }
+        return {
+            **expense,
+            "user_expense_id": account_ids.get(expense["id"], expense["id"]),
+        }
+
+    @staticmethod
+    def _with_user_expense_ids(expenses: list[dict]) -> list[dict]:
+        account_ids = {
+            expense["id"]: index + 1
+            for index, expense in enumerate(sorted(expenses, key=lambda item: int(item["id"])))
+        }
+        return [
+            {
+                **expense,
+                "user_expense_id": account_ids.get(expense["id"], expense["id"]),
+            }
+            for expense in expenses
+        ]
 
     def _validate_payload(self, payload: dict) -> dict:
         date = (payload.get("date") or "").strip()

@@ -217,8 +217,8 @@ describe("useBudgetTracker error and recurring paths", () => {
       await result.current.searchExpenseById();
     });
 
-    await waitFor(() => expect(result.current.errorMessage).toBe("Expense not found."));
-    expect(result.current.errorMessage).toBe("Expense not found.");
+    await waitFor(() => expect(result.current.errorMessage).toBe("Expense #999 was not found for your account."));
+    expect(result.current.errorMessage).toBe("Expense #999 was not found for your account.");
     expect(result.current.expenses).toEqual([]);
   });
 

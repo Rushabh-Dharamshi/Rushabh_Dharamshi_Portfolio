@@ -22,7 +22,7 @@ test("can add a new transaction", async ({ page }) => {
 test("can search and reset transaction records", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByPlaceholder("Search by ID").fill("1");
+  await page.getByPlaceholder("Search by expense #").fill("1");
   await page.getByRole("button", { name: "Search" }).click();
   await expect(page.getByText("Showing search result for expense #1.")).toBeVisible();
 

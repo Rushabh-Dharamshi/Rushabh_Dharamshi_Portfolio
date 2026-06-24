@@ -267,11 +267,11 @@ def test_recurring_occurrence_paid_and_restored(client):
             "amount": "700.00",
         },
     )
-    transaction_id = matching_transaction.get_json()["data"]["id"]
+    transaction_number = matching_transaction.get_json()["data"]["user_expense_id"]
 
     paid = client.post(
         "/api/recurring-items/1/occurrences/pay",
-        json={"occurrence_date": occurrence_date, "transaction_id": transaction_id},
+        json={"occurrence_date": occurrence_date, "transaction_id": transaction_number},
     )
     calendar_after_paid = client.get("/api/recurring-items/calendar?days=45")
     restored = client.post(
@@ -282,7 +282,7 @@ def test_recurring_occurrence_paid_and_restored(client):
 
     assert matching_transaction.status_code == 201
     assert paid.status_code == 200
-    assert paid.get_json()["data"]["message"] == f"Reminder marked as paid for this date using transaction #{transaction_id}."
+    assert paid.get_json()["data"]["message"] == f"Reminder marked as paid for this date using expense #{transaction_number}."
     assert all(
         not (
             item["recurring_item_id"] == 1

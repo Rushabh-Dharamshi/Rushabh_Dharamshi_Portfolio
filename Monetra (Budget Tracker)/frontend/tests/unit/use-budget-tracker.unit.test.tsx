@@ -264,7 +264,6 @@ describe("useBudgetTracker unit coverage", () => {
   });  it("surfaces validation and request errors for guarded actions", async () => {
     mockApiClient.listAgentWorkflows.mockResolvedValue([]);
     mockApiClient.runAutomationBootstrap.mockResolvedValue([]);
-    mockApiClient.searchExpenseById.mockRejectedValue(new Error("Expense not found."));
     mockApiClient.createExpense.mockRejectedValue(new Error("Create failed"));
     mockApiClient.sendUpcomingBillsEmailNow.mockRejectedValue(new Error("SMTP unavailable"));
 
@@ -289,7 +288,7 @@ describe("useBudgetTracker unit coverage", () => {
     await act(async () => {
       await result.current.searchExpenseById();
     });
-    expect(result.current.errorMessage).toBe("Expense not found.");
+    expect(result.current.errorMessage).toBe("Expense #999 was not found for your account.");
     expect(result.current.expenses).toEqual([]);
 
     await act(async () => {

@@ -30,7 +30,9 @@ class StubExpenseRepository:
 
     def create_expense(self, payload):
         self.created_payload = payload
-        return Expense(3, payload["date"], payload["category"], payload["description"], payload["amount"], payload.get("entry_type", "expense"))
+        expense = Expense(3, payload["date"], payload["category"], payload["description"], payload["amount"], payload.get("entry_type", "expense"))
+        self.rows.append(expense)
+        return expense
 
     def update_expense(self, expense_id, payload):
         self.updated_payload = (expense_id, payload)
@@ -62,12 +64,18 @@ def test_list_and_get_expense_only_surface_expense_records():
             "description": "Groceries",
             "amount": 20.0,
             "entry_type": "expense",
+            "user_expense_id": 1,
         }
     ]
     assert service.get_expense(1)["description"] == "Groceries"
+    assert service.get_expense_by_user_expense_id(1)["id"] == 1
 
     with pytest.raises(NotFoundError):
         service.get_expense(2)
+    with pytest.raises(NotFoundError):
+        service.get_expense_by_user_expense_id("bad")
+    with pytest.raises(NotFoundError):
+        service.get_expense_by_user_expense_id(404)
 
 
 def test_get_update_and_delete_raise_not_found():
@@ -119,6 +127,7 @@ def test_create_and_update_normalize_entry_type_to_expense():
     assert repository.created_payload["entry_type"] == "expense"
     assert repository.updated_payload[1]["entry_type"] == "expense"
     assert created["entry_type"] == "expense"
+    assert created["user_expense_id"] == 2
     assert updated["description"] == "Internet"
 
 

@@ -108,7 +108,7 @@ describe("component branch coverage", () => {
               { recurring_item_id: 2, date: "2026-04-23", category: "Salary", description: "Zoo Scholarship", amount: 800, entry_type: "income", frequency: "weekly", days_until_due: 3 },
             ],
             completed_occurrences: [
-              { recurring_item_id: 2, date: "2026-04-01", category: "Salary", description: "Scholarship", amount: 800, entry_type: "income", frequency: "weekly", days_until_due: 0, transaction_id: 77 },
+              { recurring_item_id: 2, date: "2026-04-01", category: "Salary", description: "Scholarship", amount: 800, entry_type: "income", frequency: "weekly", days_until_due: 0, transaction_id: 77, user_transaction_id: 7 },
             ],
           }}
           onCreate={onCreate}
@@ -125,7 +125,7 @@ describe("component branch coverage", () => {
     expect(screen.getByText("Upcoming reminders due soon")).toBeInTheDocument();
     expect(screen.getByText("All reminders")).toBeInTheDocument();
 
-    fireEvent.change(screen.getAllByPlaceholderText("Paid transaction id")[0], { target: { value: "55" } });
+    fireEvent.change(screen.getAllByPlaceholderText("Paid expense #")[0], { target: { value: "55" } });
     fireEvent.click(screen.getAllByText("Verify and mark paid")[0]);
     expect(onMarkPaid).toHaveBeenCalledWith(1, "2026-04-23", 55);
 
@@ -186,7 +186,7 @@ describe("component branch coverage", () => {
     expect(screen.getByText("Week 1")).toBeInTheDocument();
   });
 
-  it("marks all-reminder occurrences paid and ignores invalid transaction ids", () => {
+  it("marks all-reminder occurrences paid and ignores invalid expense numbers", () => {
     const onMarkPaid = jest.fn();
 
     render(
@@ -211,7 +211,7 @@ describe("component branch coverage", () => {
     fireEvent.click(screen.getByText("Verify and mark paid"));
     expect(onMarkPaid).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByPlaceholderText("Paid transaction id"), { target: { value: "99" } });
+    fireEvent.change(screen.getByPlaceholderText("Paid expense #"), { target: { value: "99" } });
     fireEvent.click(screen.getByText("Verify and mark paid"));
 
     expect(onMarkPaid).toHaveBeenCalledWith(9, "2026-07-15", 99);

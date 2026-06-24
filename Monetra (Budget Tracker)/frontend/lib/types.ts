@@ -69,6 +69,7 @@ export interface ClientFailurePayload {
 
 export interface Expense {
   id: number;
+  user_expense_id?: number;
   date: string;
   category: string;
   description: string;
@@ -215,6 +216,7 @@ export interface RecurringCalendarOccurrence {
   updated_at?: string;
   is_paid?: boolean;
   transaction_id?: number | null;
+  user_transaction_id?: number | null;
 }
 
 export interface RecurringCalendarResponse {

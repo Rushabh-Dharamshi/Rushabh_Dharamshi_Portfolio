@@ -68,6 +68,11 @@ class StubExpenseService:
         expense["id"] = expense_id
         return expense
 
+    def get_expense_by_user_expense_id(self, user_expense_id):
+        expense = self.get_expense(user_expense_id)
+        expense["user_expense_id"] = user_expense_id
+        return expense
+
 
 class FixedDate(date):
     @classmethod
@@ -180,6 +185,7 @@ def test_recurring_service_paid_and_calendar_branches(monkeypatch):
     assert any(item["description"] == "Salary" for item in calendar["occurrences"])
     assert any(item["description"] == "Bus pass" and item["date"] == "2026-03-27" for item in calendar["late_occurrences"])
     assert any(item["description"] == "Bus pass" and item["transaction_id"] == 8 for item in calendar["completed_occurrences"])
+    assert any(item["description"] == "Bus pass" and item["user_transaction_id"] == 8 for item in calendar["completed_occurrences"])
     assert all(item["description"] != "Dormant" for item in calendar["occurrences"])
     assert all(item["description"] != "Expired" for item in calendar["occurrences"])
 
@@ -217,3 +223,10 @@ def test_recurring_service_paid_validation_helpers():
     assert service._next_due_date(date(2026, 1, 31), "monthly") == date(2026, 2, 28)
     assert service._parse_optional_date(None) is None
     assert service._parse_optional_date("2026-04-01") == date(2026, 4, 1)
+    assert service._user_expense_id_for_transaction(None) is None
+
+    class MissingExpenseService(StubExpenseService):
+        def get_expense(self, expense_id):
+            raise NotFoundError("missing")
+
+    assert RecurringService(repository, MissingExpenseService())._user_expense_id_for_transaction(123) is None

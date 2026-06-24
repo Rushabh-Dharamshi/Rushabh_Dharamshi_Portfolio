@@ -71,7 +71,7 @@ export function ExpenseTable({
           <p className="eyebrow">Expenses</p>
           <h2>Expense records</h2>
           <p className="section-copy">
-            Select an expense row to edit it, or search by transaction ID when you need a precise expense record quickly.
+            Select an expense row to edit it, or search by the expense number shown in this table when you need a precise record quickly.
           </p>
         </div>
         <span className="status-pill status-within">{filteredExpenses.length} visible</span>
@@ -99,7 +99,7 @@ export function ExpenseTable({
       <div className="table-toolbar">
         <input
           type="number"
-          placeholder="Search by ID"
+          placeholder="Search by expense #"
           value={searchId}
           onChange={(event) => onSearchIdChange(event.target.value)}
         />
@@ -156,7 +156,7 @@ export function ExpenseTable({
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>Expense #</th>
               <th>Date</th>
               <th>Category</th>
               <th>Description</th>
@@ -170,7 +170,7 @@ export function ExpenseTable({
                 className={expense.id === selectedExpenseId ? "selected-row" : ""}
                 onClick={() => onSelect(expense)}
               >
-                <td><span className="record-id-pill">#{expense.id}</span></td>
+                <td><span className="record-id-pill">#{expense.user_expense_id ?? expense.id}</span></td>
                 <td>{expense.date}</td>
                 <td><span className="category-pill">{expense.category}</span></td>
                 <td>{expense.description}</td>
