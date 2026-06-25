@@ -1125,6 +1125,7 @@ tbody tr:hover,
     "actions actions";
   column-gap: 18px;
   row-gap: 16px;
+  max-width: min(100%, 520px);
 }
 
 .recurring-field-category {
@@ -1153,6 +1154,7 @@ tbody tr:hover,
 
 .recurring-form-grid .toggle-field {
   grid-area: active;
+  max-width: min(100%, 640px);
 }
 
 .recurring-form-grid .action-row {
@@ -1172,7 +1174,7 @@ tbody tr:hover,
 
 .toggle-field {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
@@ -1186,10 +1188,13 @@ tbody tr:hover,
 
 .toggle-field small {
   color: var(--muted);
+  display: block;
   font-size: 0.78rem;
   font-weight: 500;
   line-height: 1.35;
   max-width: 100%;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .toggle-field input {
