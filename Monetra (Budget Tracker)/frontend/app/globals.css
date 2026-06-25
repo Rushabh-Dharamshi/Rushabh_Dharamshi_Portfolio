@@ -1117,8 +1117,10 @@ tbody tr:hover,
   grid-template-areas:
     "category category"
     "description description"
-    "amount start"
-    "frequency end"
+    "amount amount"
+    "frequency frequency"
+    "start start"
+    "end end"
     "active active"
     "actions actions";
   column-gap: 18px;
