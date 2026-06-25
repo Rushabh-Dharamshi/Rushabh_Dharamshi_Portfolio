@@ -1,4 +1,5 @@
 import { LatencyReportResponse } from "@/lib/types";
+import { formatBackendTimestamp } from "@/lib/date-time";
 
 interface LatencyMonitorProps {
   report: LatencyReportResponse | null;
@@ -126,7 +127,7 @@ export function LatencyMonitor({ report, onRefresh }: LatencyMonitorProps) {
                 <div>
                   <strong>{record.method} {record.path}</strong>
                   <span>{endpointPurpose(record.method, record.path)}</span>
-                  <span>{new Date(record.timestamp).toLocaleString()} | {record.request_id.slice(0, 8)} | {shortStatusMeaning(record)}</span>
+                  <span>{formatBackendTimestamp(record.timestamp)} | {record.request_id.slice(0, 8)} | {shortStatusMeaning(record)}</span>
                 </div>
                 <div className="latency-record-metrics">
                   <span className="status-over">{record.status_code}</span>
@@ -177,7 +178,7 @@ export function LatencyMonitor({ report, onRefresh }: LatencyMonitorProps) {
                 <div>
                   <strong>{record.method} {record.path}</strong>
                   <span>{endpointPurpose(record.method, record.path)}</span>
-                  <span>{new Date(record.timestamp).toLocaleString()} | {record.request_id.slice(0, 8)} | {shortStatusMeaning(record)}</span>
+                  <span>{formatBackendTimestamp(record.timestamp)} | {record.request_id.slice(0, 8)} | {shortStatusMeaning(record)}</span>
                 </div>
                 <div className="latency-record-metrics">
                   <span className={record.ok ? "status-within" : "status-over"}>{record.status_code}</span>

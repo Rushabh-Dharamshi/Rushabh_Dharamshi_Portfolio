@@ -103,6 +103,7 @@ def _register_services(app: Flask) -> None:
         settings_service.get_monthly_budget,
         settings_service.get_monthly_income,
         app.config["GENERATED_REPORTS_DIR"],
+        app.config["LOG_TIMEZONE"],
     )
     recurring_service = RecurringService(recurring_repository, expense_service)
     savings_goal_service = SavingsGoalService(savings_goal_repository)

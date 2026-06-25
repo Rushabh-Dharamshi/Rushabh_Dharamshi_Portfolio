@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import matplotlib
 
@@ -38,6 +39,7 @@ class ReportContext:
     previous_month_key: str
     report_month_label: str
     previous_month_label: str
+    generated_at: datetime
     monthly_budget: float
     current_total: float
     previous_total: float
@@ -73,16 +75,23 @@ class ReportService:
         budget_provider: Callable[[str | None], float],
         income_provider: Callable[[str | None], float],
         output_dir: Path,
+        timezone_name: str = "Europe/London",
     ):
         self._repository = repository
         self._budget_provider = budget_provider
         self._income_provider = income_provider
         self._output_dir = output_dir
+        self._timezone_name = timezone_name or "Europe/London"
+        try:
+            self._timezone = ZoneInfo(self._timezone_name)
+        except ZoneInfoNotFoundError:
+            self._timezone_name = "Europe/London"
+            self._timezone = ZoneInfo(self._timezone_name)
 
     def generate_monthly_report(self, month_key: str | None = None) -> Path:
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
-        now = datetime.now()
+        now = self._now()
         report_date = self._resolve_report_date(month_key, now)
         context = self._build_context(report_date, generated_at=now)
         chart_paths = [
@@ -123,7 +132,7 @@ class ReportService:
         return datetime.strptime(str(month_key), "%Y-%m")
 
     def _build_context(self, now: datetime, generated_at: datetime | None = None) -> ReportContext:
-        generated_at = generated_at or datetime.now()
+        generated_at = generated_at or self._now()
         report_month_key = now.strftime("%Y-%m")
         previous_month_date = now.replace(day=1) - timedelta(days=1)
         previous_month_key = previous_month_date.strftime("%Y-%m")
@@ -190,6 +199,7 @@ class ReportService:
             previous_month_key=previous_month_key,
             report_month_label=now.strftime("%B %Y"),
             previous_month_label=previous_month_date.strftime("%B %Y"),
+            generated_at=generated_at,
             monthly_budget=round(monthly_budget, 2),
             current_total=current_total,
             previous_total=previous_total,
@@ -224,7 +234,7 @@ class ReportService:
             Paragraph("Budget Tracker Monthly Financial Report", styles["title"]),
             Spacer(1, 0.08 * inch),
             Paragraph(
-                f"Reporting period: {context.report_month_label} | Generated on {datetime.now().strftime('%d %B %Y %H:%M')}",
+                f"Reporting period: {context.report_month_label} | Generated on {context.generated_at.strftime('%d %B %Y %H:%M')} ({self._timezone_name})",
                 styles["subtitle"],
             ),
             Spacer(1, 0.22 * inch),
@@ -796,6 +806,9 @@ class ReportService:
             .replace("\n", "<br/>")
         )
         return Paragraph(escaped, style)
+
+    def _now(self) -> datetime:
+        return datetime.now(self._timezone)
 
     def _decorate_page(self, canvas, document) -> None:
         canvas.saveState()

@@ -3,7 +3,7 @@ import { formatBackendTimestamp } from "@/lib/date-time";
 describe("formatBackendTimestamp", () => {
   it("treats timezone-less backend timestamps as UTC", () => {
     const formatted = formatBackendTimestamp("2026-05-04T17:38:00");
-    const expected = new Date("2026-05-04T17:38:00Z").toLocaleString("en-GB");
+    const expected = new Date("2026-05-04T17:38:00Z").toLocaleString("en-GB", { timeZone: "Europe/London" });
 
     expect(formatted).toBe(expected);
   });

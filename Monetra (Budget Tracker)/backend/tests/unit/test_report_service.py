@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from budget_tracker_api.schemas import Expense
 from budget_tracker_api.services.report_service import ReportService
@@ -79,6 +80,34 @@ def test_build_context_returns_rich_metrics(tmp_path: Path):
     assert context.insights
     assert context.recommendations
     assert service._resolve_report_date("2026-05", datetime(2026, 6, 18)).strftime("%Y-%m") == "2026-05"
+
+
+def test_report_generation_uses_configured_timezone(tmp_path: Path):
+    service = ReportService(
+        StubReportRepository(),
+        lambda _month=None: 1050.0,
+        lambda _month=None: 1500.0,
+        tmp_path,
+        timezone_name="Europe/London",
+    )
+
+    generated_at = service._now()
+    context = service._build_context(generated_at)
+
+    assert generated_at.tzinfo == ZoneInfo("Europe/London")
+    assert context.generated_at.tzinfo == ZoneInfo("Europe/London")
+
+
+def test_report_generation_falls_back_to_london_for_invalid_timezone(tmp_path: Path):
+    service = ReportService(
+        StubReportRepository(),
+        lambda _month=None: 1050.0,
+        lambda _month=None: 1500.0,
+        tmp_path,
+        timezone_name="Not/AZone",
+    )
+
+    assert service._now().tzinfo == ZoneInfo("Europe/London")
 
 
 def test_generate_monthly_report_creates_detailed_pdf(tmp_path: Path):

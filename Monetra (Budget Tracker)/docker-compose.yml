@@ -26,6 +26,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://budget_user:budget_password@postgres:5432/budget_tracker}
       GENERATED_REPORTS_DIR: /app/generated_reports
       LOG_TIMEZONE: ${LOG_TIMEZONE:-Europe/London}
+      TZ: ${LOG_TIMEZONE:-Europe/London}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:7b}
       FASTMCP_PYTHON_EXECUTABLE: python

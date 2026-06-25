@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { BudgetTrackerShell } from "@/components/budget-tracker-shell";
 import { apiClient, rememberExpectedUserId } from "@/lib/api-client";
+import { formatBackendTimestamp } from "@/lib/date-time";
 import { AuthSessionResponse, MockEmailMessage } from "@/lib/types";
 
 const emptySession: AuthSessionResponse = {
@@ -246,7 +247,7 @@ export function AuthenticatedApp() {
               <article className="mock-email-card" key={message.id}>
                 <div className="mock-email-meta">
                   <strong>{message.subject}</strong>
-                  <span>{new Date(message.created_at).toLocaleString()}</span>
+                  <span>{formatBackendTimestamp(message.created_at)}</span>
                 </div>
                 <div className="mock-email-addresses">
                   <span>From {message.sender}</span>

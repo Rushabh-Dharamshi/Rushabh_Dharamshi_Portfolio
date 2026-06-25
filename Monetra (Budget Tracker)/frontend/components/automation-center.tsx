@@ -3,6 +3,7 @@
 import { AgentWorkflowDefinition, AgentWorkflowRun, RecurringCalendarResponse } from "@/lib/types";
 import { formatCurrency } from "@/lib/format";
 import { formatAgentOutput } from "@/lib/agent-output-format";
+import { formatBackendTimestamp } from "@/lib/date-time";
 
 interface AutomationCenterProps {
   workflows: AgentWorkflowDefinition[];
@@ -292,17 +293,7 @@ export function workflowStatusText(isRunning: boolean, latestRun: AgentWorkflowR
 }
 
 export function formatWorkflowDate(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsed);
+  return formatBackendTimestamp(value);
 }
 
 export function parseWorkflowTime(value: string): number {
