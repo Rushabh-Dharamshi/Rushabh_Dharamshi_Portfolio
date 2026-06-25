@@ -420,7 +420,7 @@ class ReportService:
             [
                 self._table_cell("Cash in", styles["table_label"]),
                 self._table_cell(f"GBP {context.current_income_total:.2f}", styles["table_value"]),
-                self._table_cell("Income recorded for this month from income transactions and monthly income settings.", styles["table_body"]),
+                self._table_cell("Income recorded for this month from the monthly income setting.", styles["table_body"]),
             ],
             [
                 self._table_cell("Net cash flow", styles["table_label"]),

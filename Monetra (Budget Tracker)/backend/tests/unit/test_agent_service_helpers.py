@@ -181,7 +181,7 @@ def test_agent_service_runtime_fallback_and_action_helpers(monkeypatch):
     created = service._run_expense_command("create expense", {"operation": "create", "entity": {"date": "2026-03-22", "category": "Travel", "description": "Tube", "amount": 6.4, "entry_type": "expense"}, "target": {}})
     updated = service._run_expense_command("update expense", {"operation": "update", "entity": {"date": "2026-03-20", "category": "Travel", "description": "Train pass", "amount": 81.0, "entry_type": "expense"}, "target": {"description": "Train pass", "category": "Travel"}})
     deleted = service._run_expense_command("delete expense", {"operation": "delete", "entity": {}, "target": {"description": "Train pass", "category": "Travel"}})
-    assert created["headline"] == "Transaction created"
+    assert created["headline"] == "Expense created"
     assert updated["headline"] == "Transaction updated"
     assert deleted["headline"] == "Transaction deleted"
     with pytest.raises(ValidationError):
@@ -367,7 +367,7 @@ def test_agent_service_remaining_parse_and_cfo_edges():
     expense_legacy = build_service(
         ollama=StubOllamaClient('{"domain":"expense","operation":"create","entity":{"date":"2026-03-22","category":"Travel","description":"Tube","amount":6.4,"entry_type":"expense"}}')
     )
-    assert expense_legacy._run_manual_action_command_legacy("add expense")["headline"] == "Transaction created"
+    assert expense_legacy._run_manual_action_command_legacy("add expense")["headline"] == "Expense created"
 
     with pytest.raises(ValidationError, match="invalid command object"):
         build_service(ollama=StubOllamaClient('[{"bad":"object"},"invalid"]'))._parse_manual_action_command("set budget")

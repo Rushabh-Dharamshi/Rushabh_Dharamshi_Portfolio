@@ -48,14 +48,6 @@ export function ExpenseTable({
   const visibleExpenseTotal = useMemo(
     () =>
       filteredExpenses
-        .filter((expense) => expense.entry_type === "expense")
-        .reduce((total, expense) => total + expense.amount, 0),
-    [filteredExpenses],
-  );
-  const visibleIncomeTotal = useMemo(
-    () =>
-      filteredExpenses
-        .filter((expense) => expense.entry_type === "income")
         .reduce((total, expense) => total + expense.amount, 0),
     [filteredExpenses],
   );
@@ -81,10 +73,6 @@ export function ExpenseTable({
         <article>
           <span>Visible outflow</span>
           <strong>{formatCurrency(visibleExpenseTotal)}</strong>
-        </article>
-        <article>
-          <span>Visible income</span>
-          <strong className="amount-positive">{formatCurrency(visibleIncomeTotal)}</strong>
         </article>
         <article>
           <span>Categories</span>
@@ -175,10 +163,7 @@ export function ExpenseTable({
                 <td><span className="category-pill">{expense.category}</span></td>
                 <td>{expense.description}</td>
                 <td>
-                  <span className={expense.entry_type === "income" ? "record-amount amount-positive" : "record-amount amount-negative"}>
-                    {expense.entry_type === "income" ? "+" : "-"}
-                    {formatCurrency(expense.amount)}
-                  </span>
+                  <span className="record-amount amount-negative">-{formatCurrency(expense.amount)}</span>
                 </td>
               </tr>
             ))}

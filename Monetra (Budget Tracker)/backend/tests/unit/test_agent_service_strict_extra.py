@@ -157,7 +157,6 @@ def test_agent_service_builtin_prompt_library_commands_are_direct_and_versatile(
         ("Set my monthly income to 2400 pounds.", "monthly_income_updated"),
         ("Set my monthly income for 2026-04 to 2400 pounds.", "monthly_income_updated"),
         ("Add an expense for Tube fare of 6.40 pounds today under Travel.", "expense_created"),
-        ("Add an income transaction for part-time work of 250 pounds on 2026-05-18 under Income.", "expense_created"),
         ("Update the Travel expense called Train pass to 81 pounds on 2026-03-20.", "expense_updated"),
         ("Delete the expense matching Train pass under Travel.", "expense_deleted"),
         ("Remove all expenses for June 2026.", "expense_deleted"),
@@ -179,7 +178,7 @@ def test_agent_service_builtin_prompt_library_commands_are_direct_and_versatile(
                 {"id": 1, "date": "2026-03-20", "category": "Travel", "description": "Train pass", "amount": 80.0, "entry_type": "expense"},
                 {"id": 2, "date": "2026-05-19", "category": "Food", "description": "Lunch", "amount": 9.0, "entry_type": "expense"},
                 {"id": 3, "date": "2026-06-05", "category": "Food", "description": "Groceries", "amount": 30.0, "entry_type": "expense"},
-                {"id": 4, "date": "2026-06-10", "category": "Income", "description": "Side work", "amount": 200.0, "entry_type": "income"},
+                {"id": 4, "date": "2026-06-10", "category": "Work", "description": "Notebook", "amount": 20.0, "entry_type": "expense"},
             ]
 
     def build_prompt_service():
@@ -201,6 +200,12 @@ def test_agent_service_builtin_prompt_library_commands_are_direct_and_versatile(
         service = build_prompt_service()
         result = service.run_finance_briefing({"task": prompt})
         assert result["action_result"]["type"] == expected_action_type, prompt
+
+    income_transaction_service = build_prompt_service()
+    with pytest.raises(ValidationError, match="monthly income settings"):
+        income_transaction_service.run_finance_briefing(
+            {"task": "Add an income transaction for part-time work of 250 pounds on 2026-05-18 under Income."}
+        )
 
     custom_rent_service = build_prompt_service()
     custom_rent_service.run_finance_briefing(

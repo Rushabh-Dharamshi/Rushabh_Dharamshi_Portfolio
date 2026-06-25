@@ -86,7 +86,7 @@ class FinanceMcpServer:
             },
             {
                 "name": "create_transaction",
-                "description": "Create a new transaction with date, category, description, amount, and entry_type.",
+                "description": "Create a new expense record with date, category, description, and amount. Income is recorded separately with set_monthly_income, not as a transaction.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -94,9 +94,8 @@ class FinanceMcpServer:
                         "category": {"type": "string"},
                         "description": {"type": "string"},
                         "amount": {"type": "number"},
-                        "entry_type": {"type": "string"},
                     },
-                    "required": ["date", "category", "description", "amount", "entry_type"],
+                    "required": ["date", "category", "description", "amount"],
                 },
             },
             {

@@ -663,8 +663,7 @@ class AgentService:
             }
 
         if re.search(r"\badd\s+an?\s+income\s+transaction\b", normalized):
-            created = self._parse_direct_transaction_create(task, entry_type="income")
-            return created
+            raise ValidationError("Income is recorded with monthly income settings, not as a transaction. Use 'Set my monthly income to ...' instead.")
 
         if re.search(r"\badd\s+an?\s+expense\b", normalized):
             created = self._parse_direct_transaction_create(task, entry_type="expense")
@@ -684,7 +683,7 @@ class AgentService:
 
         return None
 
-    def _parse_direct_transaction_create(self, task: str, entry_type: str) -> dict | None:
+    def _parse_direct_transaction_create(self, task: str, entry_type: str = "expense") -> dict | None:
         normalized = str(task or "").strip()
         amount_match = re.search(r"\bof\s+(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|£)?", normalized, flags=re.IGNORECASE)
         category_match = re.search(r"\bunder\s+(?P<category>[A-Za-z][A-Za-z\s&-]+?)\.?$", normalized, flags=re.IGNORECASE)
@@ -693,7 +692,7 @@ class AgentService:
             return None
 
         description = re.sub(
-            r"^add\s+an?\s+(?:income\s+transaction|expense)\s+for\s+",
+            r"^add\s+an?\s+expense\s+for\s+",
             "",
             normalized,
             flags=re.IGNORECASE,
@@ -701,17 +700,17 @@ class AgentService:
         description = re.split(r"\s+of\s+\d+(?:\.\d{1,2})?\s*(?:pounds|gbp|£)?", description, maxsplit=1, flags=re.IGNORECASE)[0]
         description = description.strip(" .") or "Transaction"
         date_value = date_match.group("date") if date_match else datetime.now().strftime("%Y-%m-%d")
-        category = (category_match.group("category") if category_match else ("Income" if entry_type == "income" else "General")).strip(" .")
+        category = (category_match.group("category") if category_match else "General").strip(" .")
         return {
             "domain": "expense",
             "operation": "create",
             "target": {},
             "entity": {
                 "date": date_value,
-                "category": category.title() if category.lower() != "income" else "Income",
+                "category": category.title(),
                 "description": description[:1].upper() + description[1:],
                 "amount": round(float(amount_match.group("amount")), 2),
-                "entry_type": entry_type,
+                "entry_type": "expense",
             },
             "reminder": None,
         }
@@ -1013,15 +1012,17 @@ class AgentService:
         )
 
     def _mcp_create_transaction(self, arguments: dict) -> dict:
+        entity = {**arguments, "entry_type": "expense"}
         return self._run_expense_command(
             "MCP tool: create transaction",
-            {"operation": "create", "entity": arguments, "target": {}},
+            {"operation": "create", "entity": entity, "target": {}},
         )
 
     def _mcp_update_transaction_by_match(self, arguments: dict) -> dict:
+        entity = {**(arguments.get("entity") or {}), "entry_type": "expense"}
         return self._run_expense_command(
             "MCP tool: update transaction",
-            {"operation": "update", "entity": arguments.get("entity") or {}, "target": arguments.get("target") or {}},
+            {"operation": "update", "entity": entity, "target": arguments.get("target") or {}},
         )
 
     def _mcp_delete_transaction_by_match(self, arguments: dict) -> dict:
@@ -1151,13 +1152,13 @@ class AgentService:
         if operation == "create":
             created = self._expense_service.create_expense(entity)
             return self._build_action_response(
-                headline="Transaction created",
-                summary=f"Created {created['entry_type']} transaction '{created['description']}' for GBP {float(created['amount']):.2f} on {created['date']}.",
-                email_subject="Transaction created",
-                email_draft=f"Created transaction {created['description']} for GBP {float(created['amount']):.2f}.",
+                headline="Expense created",
+                summary=f"Created expense '{created['description']}' for GBP {float(created['amount']):.2f} on {created['date']}.",
+                email_subject="Expense created",
+                email_draft=f"Created expense {created['description']} for GBP {float(created['amount']):.2f}.",
                 task=task,
                 action_type="expense_created",
-                action_message="Transaction created successfully.",
+                action_message="Expense created successfully.",
                 payload=created,
             )
 
@@ -1232,8 +1233,8 @@ class AgentService:
                         "Supported domains: settings, expense, recurring. "
                         "Supported operations: create, update, delete, replace. "
                         "For settings commands, return domain=settings, operation=update, setting_key=monthly_budget or monthly_income, numeric value, and optional month in YYYY-MM when the user names a month. "
-                        "For expense commands, return domain=expense, operation=create/update/delete, an entity object for the target transaction data, and an optional target object describing which existing transaction to update/delete. "
-                        "Expense entity keys: date, category, description, amount, entry_type. Use entry_type expense unless income is explicit. "
+                        "For expense commands, return domain=expense, operation=create/update/delete, an entity object for the target expense data, and an optional target object describing which existing expense to update/delete. "
+                        "Expense entity keys: date, category, description, amount. Never create income transactions; income is only recorded through monthly income settings. "
                         "For recurring reminder commands, return domain=recurring and the same recurring schema as before: operation plus reminder and/or target objects. "
                         "All money is in pounds sterling (GBP). Never use dollars or the $ symbol. "
                         "Understand prompts like: set my monthly budget to 1600 pounds; set my monthly income for 2026-04 to 2400 pounds; add an expense for Tube fare of 6.40 pounds today under travel; remove weekly utility bills and replace them with monthly utility bills of 24.51 pounds on the 23rd of each month. "
@@ -1296,6 +1297,8 @@ class AgentService:
             "entity": parsed.get("entity") or {},
             "reminder": reminder,
         }
+        if result["domain"] == "expense":
+            result["entity"]["entry_type"] = "expense"
         return result
 
     @staticmethod
@@ -1374,7 +1377,7 @@ class AgentService:
                             "Use operation=create, update, delete, or replace. "
                             "For create/update/replace, include a reminder object with keys: category, description, amount, entry_type, frequency, start_date, end_date, active. "
                             "For delete/replace, include a target object with any known keys from: category, description, amount, entry_type, frequency, start_date, end_date. "
-                            "Use entry_type expense unless the user explicitly asks for income. "
+                            "Always use entry_type expense; recurring income reminders are not supported. "
                             "The start_date is the exact first due date and is always inclusive. "
                             "If the user gives a bounded range, include end_date as the final included due date unless they explicitly say the end is exclusive. "
                             "If no start date is given for a new reminder, use today's date. "

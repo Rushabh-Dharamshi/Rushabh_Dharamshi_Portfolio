@@ -28,7 +28,6 @@ const guaranteedPromptGroups = [
     title: "Transactions",
     prompts: [
       "Add an expense for Tube fare of 6.40 pounds today under Travel.",
-      "Add an income transaction for part-time work of 250 pounds on 2026-05-18 under Income.",
       "Update the Travel expense called Train pass to 81 pounds on 2026-03-20.",
       "Delete the expense matching Train pass under Travel.",
       "Remove all expenses for June 2026.",

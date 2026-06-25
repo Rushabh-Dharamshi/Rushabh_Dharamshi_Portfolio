@@ -216,10 +216,10 @@ describe("presentational components", () => {
     expenses.push({
       id: 12,
       date: "2026-03-09",
-      category: "Income",
+      category: "Work",
       description: "Part-time work",
       amount: 125,
-      entry_type: "income" as const,
+      entry_type: "expense" as const,
     });
 
     render(
@@ -241,7 +241,7 @@ describe("presentational components", () => {
     fireEvent.change(screen.getByPlaceholderText("Filter description or category"), { target: { value: "part-time" } });
     expect(screen.getByText("1 visible")).toBeInTheDocument();
     expect(screen.getByText("Part-time work")).toBeInTheDocument();
-    expect(screen.getByText("+£125.00")).toBeInTheDocument();
+    expect(screen.getByText("-£125.00")).toBeInTheDocument();
     fireEvent.change(screen.getByDisplayValue("part-time"), { target: { value: "" } });
     fireEvent.change(screen.getByDisplayValue("All categories"), { target: { value: "Food" } });
     fireEvent.change(screen.getByLabelText("Filter start date"), { target: { value: "2026-03-02" } });

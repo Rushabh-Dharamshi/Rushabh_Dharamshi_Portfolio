@@ -632,8 +632,9 @@ def test_agent_service_can_create_transaction_from_prompt():
 
     result = service.run_finance_briefing({"task": "Add an expense for Tube fare of 6.40 pounds today under travel."})
 
-    assert result["headline"] == "Transaction created"
+    assert result["headline"] == "Expense created"
     assert result["action_result"]["type"] == "expense_created"
+    assert expense_service.created_payload["entry_type"] == "expense"
     assert expense_service.created_payload["description"] == "Tube fare"
 
 

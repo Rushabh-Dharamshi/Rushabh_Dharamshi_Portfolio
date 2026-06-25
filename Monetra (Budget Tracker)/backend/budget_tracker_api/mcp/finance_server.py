@@ -134,15 +134,15 @@ def create_transaction(date: str, category: str, description: str, amount: float
                 "category": category,
                 "description": description,
                 "amount": amount,
-                "entry_type": entry_type,
+                "entry_type": "expense",
             }
         )
         return {
-            "headline": "Transaction created",
-            "summary": f"Created {created['entry_type']} transaction '{created['description']}' for GBP {float(created['amount']):.2f} on {created['date']}.",
+            "headline": "Expense created",
+            "summary": f"Created expense '{created['description']}' for GBP {float(created['amount']):.2f} on {created['date']}.",
             "action_result": {
                 "type": "expense_created",
-                "message": "Transaction created successfully.",
+                "message": "Expense created successfully.",
                 "payload": created,
             },
         }
