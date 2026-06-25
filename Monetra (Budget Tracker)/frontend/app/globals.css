@@ -1113,19 +1113,33 @@ tbody tr:hover,
 
 .recurring-form-grid {
   margin-top: 14px;
-  grid-template-columns: repeat(2, minmax(190px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "category category"
-    "description description"
-    "amount amount"
-    "frequency frequency"
-    "start start"
-    "end end"
-    "active active"
-    "actions actions";
-  column-gap: 18px;
+    "category"
+    "description"
+    "amount"
+    "frequency"
+    "start"
+    "end"
+    "active"
+    "actions";
   row-gap: 16px;
-  max-width: min(100%, 520px);
+  max-width: 100%;
+}
+
+.recurring-form-grid label {
+  max-width: min(100%, 380px);
+}
+
+.recurring-form-grid .recurring-field-description {
+  max-width: min(100%, 460px);
+}
+
+.recurring-form-grid input:not([type="checkbox"]),
+.recurring-form-grid select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .recurring-field-category {
@@ -1154,7 +1168,7 @@ tbody tr:hover,
 
 .recurring-form-grid .toggle-field {
   grid-area: active;
-  max-width: min(100%, 640px);
+  max-width: 100%;
 }
 
 .recurring-form-grid .action-row {
@@ -1173,17 +1187,18 @@ tbody tr:hover,
 }
 
 .toggle-field {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 14px;
 }
 
 .toggle-field span {
   display: grid;
   gap: 4px;
-  flex: 1;
   min-width: 0;
+  max-width: 100%;
+  white-space: normal;
 }
 
 .toggle-field small {
@@ -1193,7 +1208,8 @@ tbody tr:hover,
   font-weight: 500;
   line-height: 1.35;
   max-width: 100%;
-  overflow-wrap: normal;
+  white-space: normal;
+  overflow-wrap: anywhere;
   word-break: normal;
 }
 
