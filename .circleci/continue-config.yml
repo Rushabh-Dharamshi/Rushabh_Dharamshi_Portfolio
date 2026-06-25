@@ -438,28 +438,13 @@ workflows:
           filters:
             branches:
               only: main
-      - monetra-deploy-oracle:
-          name: monetra-deploy-staging
-          environment-name: staging
-          host-env-var: STAGING_ORACLE_VM_HOST
-          user-env-var: STAGING_ORACLE_VM_USER
-          ssh-key-env-var: STAGING_ORACLE_VM_SSH_KEY_B64
-          app-dir-env-var: STAGING_MONETRA_APP_DIR
-          base-url-env-var: STAGING_MONETRA_BASE_URL
-          frontend-url-env-var: STAGING_MONETRA_FRONTEND_URL
-          remote-env-file: Monetra (Budget Tracker)/.env
+      - hold-production-deploy:
+          type: approval
           requires:
             - monetra-system-build
             - monetra-frontend-e2e
             - monetra-dummy-load-tests
             - monetra-chaos-smoke
-          filters:
-            branches:
-              only: main
-      - hold-production-deploy:
-          type: approval
-          requires:
-            - monetra-deploy-staging
           filters:
             branches:
               only: main

@@ -4,6 +4,8 @@ Use this folder to create the production Oracle VM and its network from Terrafor
 
 Production is intentionally separate from staging. It creates its own VCN, subnet, security list, public IP, and VM state.
 
+If your Oracle tenancy only allows one `2 OCPU / 12 GB` A1 VM, terminate staging and permanently delete its boot volume before applying this production stack.
+
 ## What This Creates
 
 - Oracle A1 Flex production VM
@@ -55,7 +57,7 @@ powershell -ExecutionPolicy Bypass -File "..\..\..\scripts\oracle-terraform-retr
 Terraform prints the public IP and SSH command. Then production deployment should be handled by CircleCI:
 
 ```text
-tests -> build -> deploy staging -> smoke test staging -> manual approval -> deploy production -> smoke test production
+tests -> build -> E2E -> reliability checks -> manual approval -> deploy production -> smoke test production
 ```
 
 Terraform creates infrastructure. CircleCI deploys the Monetra app.

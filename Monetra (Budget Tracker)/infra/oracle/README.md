@@ -13,10 +13,12 @@ It creates:
 - public IP
 - first-boot Docker setup through cloud-init
 
-Staging and production use separate Terraform states:
+Staging and production can use separate Terraform states:
 
 - `environments/staging`
 - `environments/production`
+
+If your Oracle tenancy only allows one `2 OCPU / 12 GB` A1 VM, use the production environment after staging has been validated, then terminate staging and delete its boot volume. In that setup, CircleCI should deploy only to production after the manual approval gate.
 
 ## Prerequisites
 
@@ -65,7 +67,7 @@ terraform plan
 terraform apply
 ```
 
-Production should be created only after staging is working.
+Production should be created only after staging is working. If you cannot run staging and production together, terminate staging first and confirm its boot volume has been deleted.
 
 ## Retry Capacity Automatically
 
