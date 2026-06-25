@@ -55,14 +55,30 @@ Expense payload:
 }
 ```
 
-## Savings Goals
+## Piggy Bank
+
+Piggy bank values are included in:
+
+- `GET /dashboard`
+
+The piggy bank is calculated from cumulative monthly cash flow:
+
+```text
+monthly income - monthly expenses
+```
+
+Positive months increase the cumulative piggy bank balance. Negative months reduce it.
+
+## Legacy Savings Goal Routes
+
+These backend routes are retained for compatibility, but the current user-facing product uses the piggy bank feature instead of the old savings-goal panel.
 
 - `GET /savings-goals`
 - `POST /savings-goals`
 - `PUT /savings-goals/{id}`
 - `DELETE /savings-goals/{id}`
 
-Savings goal payload:
+Legacy savings goal payload:
 
 ```json
 {

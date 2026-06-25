@@ -49,14 +49,14 @@ npm.cmd run test:bdd
 
 ## Load and Dummy-User Testing
 
-Use `load-tests/k6/monetra-load.js` against a local or staging API. The scenarios are intentionally rigorous and cover:
+Use `load-tests/k6/monetra-load.js` against a local API or a planned non-production clone. The scenarios are intentionally rigorous and cover:
 
 - auth lifecycle: register, session check, logout, login, forgot password response
-- full finance journey: income, expenses, budget, monthly income, savings goals, recurring payments, dashboard, analytics, CSV export
+- full finance journey: income, expenses, budget, monthly income, piggy bank carryover, recurring payments, dashboard, analytics, CSV export
 - user isolation: one user cannot list or fetch another user's transaction
 - read concurrency: many dashboard and analytics requests at once
 - write concurrency: repeated budget updates
-- negative paths: invalid transactions, invalid savings goals, invalid recurring items, unauthenticated access, wrong password
+- negative paths: invalid transactions, invalid recurring items, unauthenticated access, wrong password
 - AI/reporting resilience: PDF report, RAG reindex/query, and agent briefing behavior
 
 The k6 suite enforces thresholds for check pass rate, business failures, data isolation failures, unexpected statuses, and API latency.
@@ -65,7 +65,7 @@ Detailed guide: `docs/DUMMY_USER_LOAD_TESTING.md`.
 
 ## Latency Baselines
 
-Use `scripts/measure-latency.ps1` to record lightweight request latency for local, staging, and production environments.
+Use `scripts/measure-latency.ps1` to record lightweight request latency for local and production environments.
 
 Local:
 
@@ -74,14 +74,6 @@ cd "Monetra (Budget Tracker)"
 $env:MONETRA_LATENCY_USERNAME="your-test-username"
 $env:MONETRA_LATENCY_PASSWORD="your-test-password"
 powershell -ExecutionPolicy Bypass -File scripts\measure-latency.ps1 -Environment local -BaseUrl http://localhost:8000 -Iterations 20
-```
-
-Staging:
-
-```powershell
-$env:MONETRA_LATENCY_USERNAME="your-staging-test-username"
-$env:MONETRA_LATENCY_PASSWORD="your-staging-test-password"
-powershell -ExecutionPolicy Bypass -File scripts\measure-latency.ps1 -Environment staging -BaseUrl https://your-staging-api.example.com -Iterations 20
 ```
 
 Production:
@@ -115,5 +107,9 @@ CircleCI runs:
 - TypeScript checks
 - backend Docker build
 - frontend Docker build
+- Playwright E2E
+- dummy/load checks
+- controlled chaos smoke checks
+- production deployment after manual approval
 
-Production deployment should add environment-specific deploy and post-deployment smoke jobs.
+Production deployment is defined in `.circleci/continue-config.yml` and deploys over SSH to the Oracle VM.

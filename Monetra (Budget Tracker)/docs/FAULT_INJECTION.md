@@ -1,6 +1,6 @@
 # Fault-Injection Notes
 
-Use these only in local or staging environments.
+Use these only in local or planned non-production environments.
 
 ## Plain-English Summary
 
@@ -12,7 +12,7 @@ Examples:
 - temporarily stop PostgreSQL to see if errors are logged
 - make SMTP invalid to test email failure handling
 
-Do this only in local or staging. Do not intentionally break production.
+Do this only in local or planned non-production environments. Do not intentionally break production.
 
 ## Scenarios
 
@@ -29,7 +29,7 @@ Do this only in local or staging. Do not intentionally break production.
 
 Use:
 
-> Implemented fault-injection tests in a controlled staging environment to validate failure handling and recovery.
+> Implemented fault-injection tests in a controlled non-production environment to validate failure handling and recovery.
 
 Avoid:
 
@@ -47,7 +47,7 @@ Avoid:
 
 ## Automated Local Drills
 
-Run these only against local or staging stacks:
+Run these only against local or planned non-production stacks:
 
 ```powershell
 cd "Monetra (Budget Tracker)"

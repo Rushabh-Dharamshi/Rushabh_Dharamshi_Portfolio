@@ -10,7 +10,7 @@ Use it to answer:
 
 - what features Monetra already has
 - where the evidence is in the repo
-- what remains before a true production deployment
+- what remains before longer-term production hardening
 
 This file is useful for portfolio review, interview preparation, and planning the next production-readiness work.
 
@@ -24,7 +24,7 @@ This file is useful for portfolio review, interview preparation, and planning th
 | Done | Category-based spending | category analytics and dashboard cards |
 | Done | Recurring payments | `/api/recurring-items` |
 | Done | Payment reminders | recurring calendar, paid/unpaid occurrence verification |
-| Done | Savings goals | `/api/savings-goals` and dashboard panel |
+| Done | Piggy bank carryover | dashboard piggy bank panel and cumulative cash-flow calculation |
 | Done | Transaction search/filtering | ID search plus category/text/date filters |
 | Done | Monthly financial summary | `/api/dashboard`, `/api/reports/monthly` |
 | Done | Input validation and error handling | service-layer validation and API error handlers |
@@ -69,11 +69,12 @@ This file is useful for portfolio review, interview preparation, and planning th
 | Done | Agentic AI/RAG | Ollama, LangGraph, FastMCP, Chroma RAG |
 | Done | Testing | pytest, Jest, RTL, Playwright, Cucumber, tsc |
 | Done | Dummy/load testing | `load-tests/k6/monetra-load.js` |
-| Done | CI/CD gates | CircleCI backend/frontend/build jobs |
-| Done | Docker setup | `docker-compose.yml` |
+| Done | CI/CD gates | CircleCI backend/frontend/build/E2E/load/chaos/deploy jobs |
+| Done | Docker setup | `docker-compose.yml` on Oracle production VM |
+| Done | Infrastructure as Code | production Oracle VM, VCN, subnet, route table, security list, and public IP via Terraform |
 | Done | Observability | logs, health endpoint, latency logs, fault notes |
 | Done | Documentation | `docs/` |
 
 ## Production Caveat
 
-This repo is production-style and deployment-ready, but a real production deployment still needs environment-specific secrets, domain/TLS setup, hosted PostgreSQL or managed backups, SMTP credentials, Ollama/model hosting strategy, and a rollback target.
+Monetra has been deployed through a staging-to-production path (first deployed to a staging environment, then to production). Remaining hardening work includes a custom domain, TLS termination, managed backups, stricter SSH CIDR rules, rollback automation, and longer-running production monitoring.

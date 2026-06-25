@@ -19,9 +19,11 @@
 
 Monetra is a full-stack personal finance platform for expense tracking, recurring payment management, KPI analytics, PDF reporting, predictive forecasting, and local agentic AI workflows. It combines a `Next.js + React + TypeScript` frontend with a `Flask + PostgreSQL` backend and a local `Ollama` runtime for AI-assisted finance operations.
 
+(First deployed to a staging environment, then to production.)
+
 ## Start Here
 
-If you are new to this project, start with [docs/START_HERE.md](docs/START_HERE.md). It explains the safest order to run, test, stage, and deploy Monetra.
+If you are new to this project, start with [docs/START_HERE.md](docs/START_HERE.md). It explains the safest order to run, test, and deploy Monetra.
 
 In simple terms, Monetra has four main parts:
 
@@ -37,8 +39,8 @@ Recommended order:
 3. Check the core finance features.
 4. Run automated tests.
 5. Run dummy-user/load tests.
-6. Deploy to staging.
-7. Approve production deployment only after staging passes.
+6. Create/update the production Oracle VM with Terraform.
+7. Approve production deployment in CircleCI only after all automated gates pass.
 
 ## 🌈 Highlights
 
@@ -50,7 +52,7 @@ Recommended order:
 - 📄 Multi-section PDF reporting with generated insights and summaries
 - ✉️ Automated month-end and upcoming-bills email workflows
 - 🧪 Strict testing with `100%` frontend and backend coverage
-- 🧪 Dummy-user and load-test scenarios for staging-style validation
+- 🧪 Dummy-user and load-test scenarios for production-style validation
 
 ## ✨ Core Features
 
@@ -61,7 +63,7 @@ Recommended order:
 - ❤️ Financial health insights: spend velocity, runway, recent activity, and pulse metrics
 - ☁️ Word cloud generation: prominent spend descriptions and top-category emphasis
 - 🔁 Recurring payments: schedule planning, due-date tracking, pay/unpay flows, and calendar views
-- 🎯 Savings goals: per-user savings targets with progress and remaining-balance tracking
+- 🐷 Piggy bank: cumulative monthly cash-flow carryover across months
 - 🤖 AI finance assistant: workflow planning, execution, verification, memory, and retries
 - 🧾 Reporting engine: PDF financial reports with charts, commentary, and highlights
 - 📬 Email automation: month-end close and upcoming-bills notifications
@@ -76,7 +78,7 @@ You do not need to understand every tool to run the app. The short version is:
 - `PostgreSQL` stores the finance data.
 - `Docker Compose` starts the app services together.
 - `Ollama` runs local AI models.
-- `CircleCI` runs tests and, later, deployment.
+- `CircleCI` runs tests, reliability checks, and production deployment after manual approval.
 
 ### 🎨 Frontend
 
@@ -386,12 +388,11 @@ The LLM is used when the question needs natural language interpretation, such as
 - 🔹 `POST /api/recurring-items/<id>/occurrences/pay`
 - 🔹 `POST /api/recurring-items/<id>/occurrences/unpay`
 
-### 🎯 Savings Goals
+### 🐷 Piggy Bank
 
-- 🔹 `GET /api/savings-goals`
-- 🔹 `POST /api/savings-goals`
-- 🔹 `PUT /api/savings-goals/<id>`
-- 🔹 `DELETE /api/savings-goals/<id>`
+- Piggy bank values are returned through `GET /api/dashboard`.
+- Positive monthly cash flow increases the piggy bank.
+- Negative monthly cash flow reduces the cumulative piggy bank balance.
 
 ### 🤖 Agents / Automation
 
@@ -501,7 +502,7 @@ Demo users can view simulated reset-code and report emails from the **Forgot pas
 4. Add an income transaction and an expense transaction.
 5. Update the monthly budget and income.
 6. Create a recurring payment.
-7. Create a savings goal.
+7. Review the piggy bank carryover value.
 8. Generate the monthly report.
 9. Reindex RAG and ask a finance question.
 10. Run an agent workflow.
@@ -553,7 +554,7 @@ Then run:
 powershell -ExecutionPolicy Bypass -File scripts\measure-latency.ps1 -Environment local -BaseUrl http://localhost:8000 -Iterations 20 -UserCredentialCsv .\latency-users.local.csv
 ```
 
-The script writes raw CSV, summary CSV, summary JSON, Markdown, and HTML reports to `latency-results/`. Each user/run gets a `report_id`, and every API call gets a `request_id` with timestamp, endpoint, status code, and latency. Use the same script later with your staging or production URL to compare environments. If you skip credentials, public endpoints such as `/api/health` still work, but protected endpoints may return `401`.
+The script writes raw CSV, summary CSV, summary JSON, Markdown, and HTML reports to `latency-results/`. Each user/run gets a `report_id`, and every API call gets a `request_id` with timestamp, endpoint, status code, and latency. Use the same script later with your production URL to compare environments. If you skip credentials, public endpoints such as `/api/health` still work, but protected endpoints may return `401`.
 
 ### Manual Dev Mode
 
@@ -663,7 +664,7 @@ powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill P
 - `docs/LOCAL_VALIDATION_RUNBOOK.md` gives the local-first test path before Oracle VM deployment
 - `docs/DUMMY_USER_LOAD_TESTING.md` explains the rigorous fake-user concurrency and latency test suite
 - `docs/TESTING_STRATEGY.md` explains backend, frontend, E2E, load, and CI gates
-- `docs/FAULT_INJECTION.md` lists controlled staging failure scenarios and expected behavior
+- `docs/FAULT_INJECTION.md` lists controlled local/non-production failure scenarios and expected behavior
 
 ## 📝 Notes
 

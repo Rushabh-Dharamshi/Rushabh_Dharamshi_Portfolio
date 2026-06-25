@@ -2,6 +2,8 @@
 
 This folder lets you create Monetra Oracle Cloud VMs without clicking through the OCI console.
 
+(First deployed to a staging environment, then to production.)
+
 It creates:
 
 - VCN
@@ -51,7 +53,7 @@ terraform plan
 terraform apply
 ```
 
-Production should be created only after staging is working. If your tenancy only allows one `2 OCPU / 12 GB` A1 VM, terminate staging first and confirm its boot volume has been deleted.
+Production should be created only after staging or local validation has passed. If your tenancy only allows one `2 OCPU / 12 GB` A1 VM, terminate any old VM first and confirm its boot volume has been deleted.
 
 ## Retry Capacity Automatically
 

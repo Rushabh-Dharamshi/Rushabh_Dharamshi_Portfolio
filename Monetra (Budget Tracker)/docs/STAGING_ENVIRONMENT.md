@@ -1,6 +1,10 @@
 # Staging Environment Values
 
-Staging should behave like production but use controlled data, controlled email recipients, and a separate database.
+This document records the staging setup used before production.
+
+(First deployed to a staging environment, then to production.)
+
+The current Oracle/Terraform setup is production-only, but these values remain useful if a temporary staging clone is recreated later. Staging should behave like production but use controlled data, controlled email recipients, and a separate database.
 
 ## Files To Prepare On The Oracle VM
 

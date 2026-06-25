@@ -4,13 +4,13 @@ Use this runbook before creating the Oracle VM account or enabling deployment in
 
 ## Plain-English Summary
 
-This document is your local testing checklist. It helps you prove the app works on your laptop before you spend time setting up Oracle VM, staging, production, and CircleCI deployment.
+This document is your local testing checklist. It helps you prove the app works on your laptop before you spend time setting up the Oracle production VM and CircleCI deployment.
 
 Use fake users and fake finance data while following this guide.
 
 ## Goal
 
-Validate Monetra locally as a production-style system before staging and production deployment.
+Validate Monetra locally as a production-style system before production deployment.
 
 ## What You Need Before Starting
 
@@ -84,7 +84,7 @@ Use a test account and verify:
 3. Use forgot/reset password in local fallback mode or with SMTP configured.
 4. Add income and expense transactions.
 5. Filter/search transactions.
-6. Create and update a savings goal.
+6. Review piggy bank carryover after income and expense changes.
 7. Create recurring reminders.
 8. Mark recurring occurrences paid/unpaid.
 9. Update budget and monthly income.
@@ -138,15 +138,7 @@ powershell -ExecutionPolicy Bypass -File scripts\measure-latency.ps1 -Environmen
 
 The script saves raw request timings and summary percentiles under `latency-results/`.
 
-Later, use the same script against staging:
-
-```powershell
-$env:MONETRA_LATENCY_USERNAME="your-staging-test-username"
-$env:MONETRA_LATENCY_PASSWORD="your-staging-test-password"
-powershell -ExecutionPolicy Bypass -File scripts\measure-latency.ps1 -Environment staging -BaseUrl https://your-staging-api.example.com -Iterations 20
-```
-
-And production:
+Later, use the same script against production:
 
 ```powershell
 $env:MONETRA_LATENCY_USERNAME="your-production-smoke-username"
@@ -165,7 +157,7 @@ cd "Monetra (Budget Tracker)"
 powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill ChaosSmoke
 ```
 
-The outage drills are for staging after you are comfortable with the stack:
+Run outage drills only in local or a planned non-production clone:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill ChromaOutage
@@ -178,11 +170,9 @@ Create the Oracle VM only after local validation passes.
 
 You will need:
 
-- one staging VM or staging deployment target
-- one production VM or production deployment target
-- Docker and Docker Compose on each VM
-- Monetra repo cloned on each VM
-- `.env.staging` on staging
+- one production VM
+- Docker and Docker Compose on the VM
+- Monetra repo cloned on the VM
 - `.env.production` on production
 - DNS or public IP URLs
 - SSH keys for CircleCI
@@ -202,8 +192,8 @@ Deployment flow:
 
 ```text
 tests/builds/E2E
--> staging deploy
--> staging smoke checks
+-> dummy/load checks
+-> controlled chaos smoke checks
 -> manual approval
 -> production deploy
 -> production smoke checks

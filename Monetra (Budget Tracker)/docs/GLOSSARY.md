@@ -8,7 +8,7 @@ This file explains common words used in the Monetra documentation.
 | --- | --- |
 | Frontend | The part of the app you see in the browser. Monetra uses Next.js and React. |
 | Backend | The server that stores data, validates requests, generates reports, and runs AI workflows. Monetra uses Flask. |
-| Database | The place where users, expenses, budgets, recurring payments, and savings goals are stored. Monetra uses PostgreSQL. |
+| Database | The place where users, expenses, budgets, recurring payments, piggy bank inputs, reports, and automation records are stored. Monetra uses PostgreSQL. |
 | API | A set of URLs the frontend calls to ask the backend to do something. |
 | Health check | A simple URL that confirms the backend is running. |
 | Docker | A tool for running the app services in repeatable containers. |

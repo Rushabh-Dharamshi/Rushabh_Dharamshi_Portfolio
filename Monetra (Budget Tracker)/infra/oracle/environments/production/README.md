@@ -2,6 +2,8 @@
 
 Use this folder to create the production Oracle VM and its network from Terraform.
 
+(First deployed to a staging environment, then to production.)
+
 Production creates its own VCN, subnet, security list, public IP, and VM state.
 
 If your Oracle tenancy only allows one `2 OCPU / 12 GB` A1 VM, terminate staging and permanently delete its boot volume before applying this production stack.

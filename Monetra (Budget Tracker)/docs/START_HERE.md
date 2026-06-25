@@ -2,6 +2,8 @@
 
 This guide explains Monetra in plain English and points you to the right document for each task.
 
+(First deployed to a staging environment, then to production.)
+
 ## What Monetra Is
 
 Monetra is a personal finance web app. You can use it to:
@@ -10,11 +12,11 @@ Monetra is a personal finance web app. You can use it to:
 - add income and expenses
 - track spending by category
 - manage recurring payments
-- create savings goals
+- review piggy bank carryover
 - generate monthly reports
 - ask AI questions about your finances
 - test the app with dummy users before deployment
-- deploy later to staging and production
+- deploy to the Oracle production VM through CircleCI
 
 ## The Safest Order To Work
 
@@ -24,14 +26,14 @@ Follow this order:
 2. Test the main features manually.
 3. Run automated backend and frontend tests.
 4. Run dummy-user/load tests.
-5. Run controlled chaos checks locally or in staging.
+5. Run controlled chaos checks locally or through CI.
 6. Create an Oracle VM account.
-7. Deploy to staging first.
-8. Run staging smoke checks.
+7. Create the production VM with Terraform.
+8. Configure production environment variables on the VM and in CircleCI.
 9. Approve production deployment.
-10. Deploy to production.
+10. Run production smoke checks.
 
-Do not skip staging. Staging is where you practice fixing deployment, data, latency, logging, and reliability issues before production.
+Staging was used to validate the first Oracle deployment. The current setup keeps one production Oracle VM and uses automated gates plus manual approval before deployment.
 
 ## Which Document Should I Read?
 
@@ -77,7 +79,7 @@ You should be able to:
 - add an expense transaction
 - create a budget
 - create a recurring payment
-- create a savings goal
+- review the piggy bank balance
 - generate a PDF report
 - reindex RAG
 - ask the AI a finance question
@@ -87,5 +89,5 @@ You should be able to:
 
 - Keep real passwords and API keys in `backend/.env`; never commit them.
 - Use fake users and fake finance data for testing.
-- Run chaos/failure drills in local or staging only.
-- Production deployment should happen only after tests and staging checks pass.
+- Run destructive chaos/failure drills only in local or planned non-production environments.
+- Production deployment should happen only after tests, reliability checks, and manual approval pass.

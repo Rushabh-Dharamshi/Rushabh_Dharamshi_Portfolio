@@ -6,6 +6,8 @@ packages:
   - git
   - curl
   - ca-certificates
+  - dnf-plugins-core
+  - zstd
 
 write_files:
   - path: /etc/profile.d/monetra.sh
@@ -14,7 +16,8 @@ write_files:
       export MONETRA_APP_DIR="${app_dir}"
 
 runcmd:
-  - dnf install -y docker docker-compose-plugin
+  - dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+  - dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   - systemctl enable --now docker
   - usermod -aG docker ${app_user}
   - mkdir -p ${app_dir}
@@ -28,6 +31,13 @@ runcmd:
   - firewall-cmd --reload || true
 %{ if install_ollama ~}
   - curl -fsSL https://ollama.com/install.sh | sh
+  - mkdir -p /etc/systemd/system/ollama.service.d
+  - |
+    cat >/etc/systemd/system/ollama.service.d/override.conf <<'EOF'
+    [Service]
+    Environment="OLLAMA_HOST=0.0.0.0:11434"
+    EOF
+  - systemctl daemon-reload
   - systemctl enable --now ollama || true
 %{ for model in ollama_models ~}
   - ollama pull ${model} || true

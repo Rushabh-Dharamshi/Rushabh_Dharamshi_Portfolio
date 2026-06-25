@@ -12,7 +12,7 @@ It is designed to answer:
 - does each user only see their own finance data?
 - can users create income and expenses?
 - can users update budgets and monthly income?
-- do savings goals work under repeated use?
+- does piggy bank carryover remain correct under repeated use?
 - do recurring payments work under repeated use?
 - do dashboards stay responsive under concurrent reads?
 - do invalid inputs get rejected correctly?
@@ -25,11 +25,11 @@ It is designed to answer:
 | Scenario | What It Checks |
 | --- | --- |
 | `auth_lifecycle` | register, session check, logout, login, forgot-password response |
-| `end_to_end_finance_journeys` | income, expenses, budget, income settings, savings goals, recurring payments, dashboard, analytics, CSV export |
+| `end_to_end_finance_journeys` | income, expenses, budget, income settings, piggy bank carryover, recurring payments, dashboard, analytics, CSV export |
 | `user_isolation_probes` | one user cannot list or fetch another user's transaction |
 | `concurrent_dashboard_reads` | many users repeatedly reading dashboard and analytics endpoints |
 | `concurrent_budget_updates` | repeated budget writes under concurrent pressure |
-| `invalid_and_security_inputs` | invalid transactions, invalid savings goals, invalid recurring items, wrong password, unauthenticated access |
+| `invalid_and_security_inputs` | invalid transactions, invalid recurring items, wrong password, unauthenticated access |
 | `reports_rag_and_agent_resilience` | monthly report, RAG reindex/query, AI finance briefing behavior, and manual email dispatch |
 
 ## Email Safety Model
@@ -131,10 +131,10 @@ In strict AI mode:
 
 ## Custom Target
 
-To test staging later:
+To test a planned non-production clone or a controlled production window:
 
 ```powershell
-docker compose --profile load run --rm -e MONETRA_BASE_URL=https://staging.example.com load-test-runner
+docker compose --profile load run --rm -e MONETRA_BASE_URL=http://<target_host>:3000 load-test-runner
 ```
 
 ## How To Interpret Results
@@ -159,5 +159,5 @@ Bad result:
 
 - Use fake users and fake finance data.
 - Use fake email addresses such as `user001@monetra.test`.
-- Run this locally or against staging.
+- Run this locally or against a planned non-production clone by default.
 - Do not run heavy load tests against production unless you intentionally planned a controlled production load test.

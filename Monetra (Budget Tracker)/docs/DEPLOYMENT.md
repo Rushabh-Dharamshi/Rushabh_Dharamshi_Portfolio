@@ -4,16 +4,18 @@
 
 Deployment means running Monetra somewhere other than your development laptop.
 
+(First deployed to a staging environment, then to production.)
+
 The safe path is:
 
 1. Run locally.
 2. Test locally.
-3. Deploy to staging.
-4. Run staging smoke checks.
-5. Manually approve production.
+3. Run CI quality gates.
+4. Build and validate the production VM with Terraform.
+5. Manually approve production in CircleCI.
 6. Deploy to production.
 
-Staging should look like production but use fake users and fake data.
+Staging was used to validate the first Oracle deployment. The current repository is configured for one production Oracle VM.
 
 ## Local Production-Style Stack
 
@@ -37,7 +39,7 @@ Email delivery has three safe modes:
 
 | Mode | Purpose | Delivery behavior |
 | --- | --- | --- |
-| `EMAIL_MODE=hybrid` | Local/staging testing with owned Gmail accounts plus fake demo users | Sends allowlisted recipients through SMTP, simulates configured fake domains, blocks everything else |
+| `EMAIL_MODE=hybrid` | Local or production smoke testing with owned Gmail accounts plus fake demo users | Sends allowlisted recipients through SMTP, simulates configured fake domains, blocks everything else |
 | `EMAIL_MODE=real` | Gmail smoke tests and production SMTP | Sends only to allowlisted recipients |
 | `EMAIL_MODE=mock` | Dummy users, load tests, CI, fault testing | Records simulated sends and opens no SMTP connection |
 
@@ -69,9 +71,9 @@ Email environment guidance:
 | Developer Gmail and fake-user screenshots | `EMAIL_MODE=hybrid` with Gmail SMTP, your four-account allowlist, and `EMAIL_MOCK_DOMAINS=monetra.test,example.test` |
 | Developer Gmail smoke tests only | `EMAIL_MODE=real` with Gmail SMTP and your four-account allowlist |
 | CI | `EMAIL_MODE=mock` |
-| Staging dummy/load tests | `EMAIL_MODE=mock` with `@monetra.test` users |
-| Production smoke test | `EMAIL_MODE=real` with your main Gmail allowlisted |
-| Production | `EMAIL_MODE=real` with real SMTP credentials and a deliberate recipient allowlist |
+| Dummy/load tests | `EMAIL_MODE=mock` with `@monetra.test` users |
+| Production smoke test | `EMAIL_MODE=hybrid` with your Gmail allowlist and fake demo domains |
+| Production | `EMAIL_MODE=hybrid` or `EMAIL_MODE=real` with real SMTP credentials and a deliberate recipient allowlist |
 
 ## Migration Strategy
 
@@ -90,19 +92,19 @@ python scripts/migrate_sqlite_to_postgres.py
 4. Load dashboard.
 5. Generate monthly report.
 6. Run RAG status check.
-7. Trigger a manual month-end email in a staging environment.
+7. Trigger a manual month-end email only to an allowlisted address or a demo mock inbox.
 
 Automated CI/CD smoke checks are defined in `deploy/smoke-test.sh`.
 
-## Staging Before Production
+## Production Deployment
 
-Use staging as the first deployment target. The CircleCI workflow deploys to staging after tests and Docker builds pass, runs smoke checks, waits for manual approval, then deploys to production.
+The current CircleCI workflow runs tests, Docker builds, E2E checks, dummy/load checks, and controlled chaos smoke checks. Production deployment then waits for the manual `hold-production-deploy` approval.
 
 See `docs/ORACLE_VM_CICD.md` for the required Oracle VM and CircleCI environment variables.
 
-Before creating the Oracle VM or enabling deploys, complete `docs/LOCAL_VALIDATION_RUNBOOK.md`.
+Before creating or changing the Oracle VM, complete `docs/LOCAL_VALIDATION_RUNBOOK.md`.
 
-Staging environment templates are provided in `.env.staging.example`, `backend/.env.staging.example`, and `frontend/.env.staging.example`. Fill these on the Oracle VM before starting Docker. See `docs/STAGING_ENVIRONMENT.md`.
+Production infrastructure is created from `infra/oracle/environments/production`. The production VM needs `/opt/monetra/.env.production` and `Monetra (Budget Tracker)/backend/.env` before CircleCI deployment.
 
 ## Rollback Notes
 
