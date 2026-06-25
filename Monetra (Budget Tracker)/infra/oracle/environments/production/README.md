@@ -2,7 +2,7 @@
 
 Use this folder to create the production Oracle VM and its network from Terraform.
 
-Production is intentionally separate from staging. It creates its own VCN, subnet, security list, public IP, and VM state.
+Production creates its own VCN, subnet, security list, public IP, and VM state.
 
 If your Oracle tenancy only allows one `2 OCPU / 12 GB` A1 VM, terminate staging and permanently delete its boot volume before applying this production stack.
 
@@ -49,7 +49,7 @@ terraform apply
 If Oracle reports `Out of host capacity`, try another availability domain or run the retry helper:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "..\..\..\scripts\oracle-terraform-retry.ps1" -Environment production
+powershell -ExecutionPolicy Bypass -File "..\..\..\scripts\oracle-production-terraform-retry.ps1" -IUnderstandFreeTierLimits
 ```
 
 ## After Terraform Succeeds

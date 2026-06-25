@@ -1,7 +1,4 @@
 param(
-    [ValidateSet("staging", "production")]
-    [string]$Environment = "staging",
-
     [int]$MaxAttempts = 72,
 
     [int]$SleepSeconds = 600
@@ -10,7 +7,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
-$TerraformDir = Join-Path $RepoRoot "infra\oracle\environments\$Environment"
+$Environment = "production"
+$TerraformDir = Join-Path $RepoRoot "infra\oracle\environments\production"
 
 if (-not (Test-Path $TerraformDir)) {
     throw "Terraform environment folder not found: $TerraformDir"
@@ -29,7 +27,7 @@ try {
         Write-Host $text
 
         if ($exitCode -eq 0) {
-            Write-Host "SUCCESS: Terraform created or updated the $Environment infrastructure."
+            Write-Host "SUCCESS: Terraform created or updated the production infrastructure."
             break
         }
 

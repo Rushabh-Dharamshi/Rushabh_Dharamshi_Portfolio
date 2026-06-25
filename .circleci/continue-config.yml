@@ -294,7 +294,7 @@ jobs:
     parameters:
       environment-name:
         type: enum
-        enum: ["staging", "production"]
+        enum: ["production"]
       host-env-var:
         type: string
       user-env-var:
