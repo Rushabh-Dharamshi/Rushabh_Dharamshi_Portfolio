@@ -113,6 +113,7 @@ describe("frontend coverage gaps", () => {
     const onCreate = jest.fn();
     const onUpdate = jest.fn();
     const onDelete = jest.fn();
+    const onMarkUnpaid = jest.fn();
 
     const { container } = render(
       <>
@@ -208,13 +209,38 @@ describe("frontend coverage gaps", () => {
                 days_until_due: 5,
               },
             ],
-            completed_occurrences: [],
+            completed_occurrences: [
+              {
+                recurring_item_id: 14,
+                date: "2026-04-10",
+                category: "Food",
+                description: "One-time lunch",
+                amount: 7,
+                entry_type: "expense",
+                frequency: "once",
+                days_until_due: 0,
+                transaction_id: 99,
+                user_transaction_id: 9,
+              },
+              {
+                recurring_item_id: 12,
+                date: "2026-04-05",
+                category: "Food",
+                description: "Weekly pay",
+                amount: 250,
+                entry_type: "expense",
+                frequency: "weekly",
+                days_until_due: 0,
+                transaction_id: null,
+                user_transaction_id: null,
+              },
+            ],
           }}
           onCreate={onCreate}
           onUpdate={onUpdate}
           onDelete={onDelete}
           onMarkPaid={jest.fn()}
-          onMarkUnpaid={jest.fn()}
+          onMarkUnpaid={onMarkUnpaid}
         />
       </>,
     );
@@ -275,6 +301,12 @@ describe("frontend coverage gaps", () => {
     expect(allReminderRows.some((value) => value.includes("Past one-time fare"))).toBe(false);
     expect(allReminderRows.some((value) => value.includes("June 2026") && value.includes("Long-term rent"))).toBe(true);
     expect(allReminderRows.some((value) => value.includes("February 2027") && value.includes("Weekly pay"))).toBe(true);
+    expect(container.querySelector(".recurring-reminder-list")?.textContent).not.toContain("One-time lunch");
+    expect(screen.getAllByRole("combobox")[0]).not.toHaveTextContent("One-time");
+    expect(allReminderRows.find((value) => value.includes("One-time lunch"))).toContain("Verified expense #9");
+    expect(allReminderRows.find((value) => value.includes("April 2026") && value.includes("Weekly pay"))).toContain("Verified");
+    fireEvent.click(screen.getAllByText("Restore reminder")[0]);
+    expect(onMarkUnpaid).toHaveBeenCalledWith(12, "2026-04-05");
     expect(screen.getAllByText(/one-time/i).length).toBeGreaterThanOrEqual(2);
     expect(container.textContent).toContain("250.00");
   });

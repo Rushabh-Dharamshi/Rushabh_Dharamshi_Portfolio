@@ -43,6 +43,17 @@ export function RecurringCalendarPanel({
   const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
   const [transactionDrafts, setTransactionDrafts] = useState<Record<string, string>>({});
   const monthBreakdown = useMemo(() => buildReminderMonthBreakdown(items, calendar?.window_start), [items, calendar?.window_start]);
+  const recurringItems = useMemo(() => items.filter((item) => item.frequency !== "once"), [items]);
+  const completedOccurrenceMap = useMemo(() => {
+    const completed = new Map<string, number | null>();
+    (calendar?.completed_occurrences ?? []).forEach((occurrence) => {
+      completed.set(
+        occurrenceKey(occurrence.recurring_item_id, occurrence.date),
+        occurrence.user_transaction_id ?? occurrence.transaction_id ?? null,
+      );
+    });
+    return completed;
+  }, [calendar?.completed_occurrences]);
   const nextWeekOccurrences = useMemo(
     () =>
       (calendar?.occurrences ?? [])
@@ -189,6 +200,8 @@ export function RecurringCalendarPanel({
             <div className="bounded-reminder-list all-reminder-list">
               {allReminderOccurrences.map((occurrence) => {
                 const draftKey = occurrenceKey(occurrence.recurring_item_id, occurrence.date);
+                const completedExpenseId = completedOccurrenceMap.get(draftKey);
+                const isCompleted = completedOccurrenceMap.has(draftKey);
                 return (
                   <article
                     key={`${occurrence.monthLabel}-${occurrence.recurring_item_id}-${occurrence.date}`}
@@ -202,33 +215,50 @@ export function RecurringCalendarPanel({
                     </div>
                     <div className="activity-item-actions recurring-payment-actions">
                       <span>-{formatCurrency(occurrence.amount)}</span>
-                      <input
-                        className="transaction-link-input"
-                        type="number"
-                      min="1"
-                      inputMode="numeric"
-                        placeholder="Paid expense #"
-                        value={transactionDrafts[draftKey] ?? ""}
-                        onChange={(event) =>
-                          setTransactionDrafts((current) => ({
-                            ...current,
-                            [draftKey]: event.target.value,
-                          }))
-                        }
-                      />
-                      <button
-                        className="button button-secondary"
-                        type="button"
-                        onClick={() => {
-                          const transactionId = Number(transactionDrafts[draftKey]);
-                          if (!Number.isFinite(transactionId) || transactionId <= 0) {
-                            return;
-                          }
-                          onMarkPaid(occurrence.recurring_item_id, occurrence.date, transactionId);
-                        }}
-                      >
-                        Verify and mark paid
-                      </button>
+                      {isCompleted ? (
+                        <>
+                          <span className="status-pill status-within">
+                            Verified{completedExpenseId ? ` expense #${completedExpenseId}` : ""}
+                          </span>
+                          <button
+                            className="button button-ghost"
+                            type="button"
+                            onClick={() => onMarkUnpaid(occurrence.recurring_item_id, occurrence.date)}
+                          >
+                            Restore reminder
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <input
+                            className="transaction-link-input"
+                            type="number"
+                            min="1"
+                            inputMode="numeric"
+                            placeholder="Paid expense #"
+                            value={transactionDrafts[draftKey] ?? ""}
+                            onChange={(event) =>
+                              setTransactionDrafts((current) => ({
+                                ...current,
+                                [draftKey]: event.target.value,
+                              }))
+                            }
+                          />
+                          <button
+                            className="button button-secondary"
+                            type="button"
+                            onClick={() => {
+                              const transactionId = Number(transactionDrafts[draftKey]);
+                              if (!Number.isFinite(transactionId) || transactionId <= 0) {
+                                return;
+                              }
+                              onMarkPaid(occurrence.recurring_item_id, occurrence.date, transactionId);
+                            }}
+                          >
+                            Verify and mark paid
+                          </button>
+                        </>
+                      )}
                     </div>
                   </article>
                 );
@@ -320,7 +350,6 @@ export function RecurringCalendarPanel({
                   })
                 }
               >
-                <option value="once">One-time</option>
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
               </select>
@@ -397,10 +426,10 @@ export function RecurringCalendarPanel({
 
           <div className="card-header recurring-reminders-header">
             <h3>Recurring reminders</h3>
-            <span className="muted">{items.length} saved</span>
+            <span className="muted">{recurringItems.length} saved</span>
           </div>
           <div className="bar-list recurring-reminder-list">
-            {items.map((item) => (
+            {recurringItems.map((item) => (
               <button
                 key={item.id}
                 className="recurring-item-row"
@@ -416,7 +445,7 @@ export function RecurringCalendarPanel({
                 <span>-{formatCurrency(item.amount)}</span>
               </button>
             ))}
-            {!items.length ? <p className="muted">No recurring expense reminders created yet.</p> : null}
+            {!recurringItems.length ? <p className="muted">No recurring expense reminders created yet.</p> : null}
           </div>
         </div>
       </div>

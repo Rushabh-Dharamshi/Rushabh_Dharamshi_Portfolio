@@ -129,7 +129,7 @@ describe("component branch coverage", () => {
     fireEvent.click(screen.getAllByText("Verify and mark paid")[0]);
     expect(onMarkPaid).toHaveBeenCalledWith(1, "2026-04-23", 55);
 
-    fireEvent.click(screen.getByText("Restore reminder"));
+    fireEvent.click(screen.getAllByText("Restore reminder")[1]);
     expect(onMarkUnpaid).toHaveBeenCalledWith(2, "2026-04-01");
 
     fireEvent.click(screen.getByText("Add reminder"));
