@@ -37,6 +37,7 @@ const guaranteedPromptGroups = [
   {
     title: "Recurring reminders",
     prompts: [
+      "Add a one-time reminder for subway of 7 pounds today under Food.",
       "Set a monthly reminder for university house rent on the 23rd of every month from April 2026 to June 2026 inclusive at 452.74 pounds.",
       "Add a weekly reminder for rent of 850 pounds starting 2026-03-27.",
       "Replace weekly utility bills with monthly utility bills of 24.51 pounds on the 23rd of each month.",

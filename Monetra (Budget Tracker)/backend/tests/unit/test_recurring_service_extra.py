@@ -190,6 +190,45 @@ def test_recurring_service_paid_and_calendar_branches(monkeypatch):
     assert all(item["description"] != "Expired" for item in calendar["occurrences"])
 
 
+def test_recurring_service_once_reminders_are_single_occurrences(monkeypatch):
+    monkeypatch.setattr("budget_tracker_api.services.recurring_service.date", FixedDate)
+    paid_entry = {
+        "recurring_item_id": 11,
+        "occurrence_date": "2026-03-29",
+        "updated_at": "2026-03-29T09:00:00Z",
+        "transaction_id": 11,
+    }
+    repository = StubRecurringRepository(
+        [
+            build_item(id=10, description="Late subway", frequency="once", start_date="2026-03-28", end_date="2026-03-28"),
+            build_item(id=11, description="Paid subway", frequency="once", start_date="2026-03-29", end_date="2026-03-29"),
+            build_item(id=12, description="Future subway", frequency="once", start_date="2026-03-30", end_date=None),
+        ]
+    )
+    repository.paid = {(11, "2026-03-29")}
+    repository.paid_entries = [paid_entry]
+    service = RecurringService(repository, StubExpenseService({"id": 11, "entry_type": "expense", "amount": 20.0, "category": "Travel"}))
+
+    created = service.create_item({
+        "category": "Food",
+        "description": "Subway",
+        "amount": "7",
+        "entry_type": "expense",
+        "frequency": "once",
+        "start_date": "2026-04-02",
+        "end_date": "",
+        "active": True,
+    })
+    assert created["end_date"] == "2026-04-02"
+
+    calendar = service.upcoming_calendar(7)
+
+    assert [item["description"] for item in calendar["late_occurrences"]] == ["Late subway"]
+    assert [item["description"] for item in calendar["occurrences"]] == ["Future subway"]
+    assert [item["description"] for item in calendar["completed_occurrences"]] == ["Paid subway"]
+    assert RecurringService._first_due_on_or_after("2026-03-28", "once", date(2026, 4, 1)) == date(2026, 3, 28)
+
+
 def test_recurring_service_paid_validation_helpers():
     repository = StubRecurringRepository([build_item()])
     expense_service = StubExpenseService()

@@ -91,7 +91,7 @@ export function RecurringCalendarPanel({
           <p className="eyebrow">Recurring planner</p>
           <h2>Upcoming bills and frequent purchases</h2>
           <p className="section-copy">
-            Track repeating travel, rent, subscriptions, and regular income so upcoming cash movement is visible before it hits the ledger.
+            Track one-time and repeating expenses so upcoming cash movement is visible before it hits the ledger.
           </p>
         </div>
       </div>
@@ -136,14 +136,11 @@ export function RecurringCalendarPanel({
                   <div>
                     <strong>{occurrence.description}</strong>
                     <p>
-                      {occurrence.category} | {occurrence.frequency} | due in {occurrence.days_until_due} day{occurrence.days_until_due === 1 ? "" : "s"}
+                      {occurrence.category} | {frequencyLabel(occurrence.frequency)} | due in {occurrence.days_until_due} day{occurrence.days_until_due === 1 ? "" : "s"}
                     </p>
                   </div>
                   <div className="activity-item-actions recurring-payment-actions">
-                    <span className={occurrence.entry_type === "income" ? "amount-positive" : ""}>
-                      {occurrence.entry_type === "income" ? "+" : "-"}
-                      {formatCurrency(occurrence.amount)}
-                    </span>
+                    <span>-{formatCurrency(occurrence.amount)}</span>
                     <input
                       className="transaction-link-input"
                       type="number"
@@ -200,14 +197,11 @@ export function RecurringCalendarPanel({
                     <div>
                       <strong>{occurrence.description}</strong>
                       <p>
-                        {occurrence.monthLabel} | {occurrence.category} | {occurrence.frequency} | due {occurrence.date}
+                        {occurrence.monthLabel} | {occurrence.category} | {frequencyLabel(occurrence.frequency)} | due {occurrence.date}
                       </p>
                     </div>
                     <div className="activity-item-actions recurring-payment-actions">
-                      <span className={occurrence.entry_type === "income" ? "amount-positive" : ""}>
-                        {occurrence.entry_type === "income" ? "+" : "-"}
-                        {formatCurrency(occurrence.amount)}
-                      </span>
+                      <span>-{formatCurrency(occurrence.amount)}</span>
                       <input
                         className="transaction-link-input"
                         type="number"
@@ -326,6 +320,7 @@ export function RecurringCalendarPanel({
                   })
                 }
               >
+                <option value="once">One-time</option>
                 <option value="weekly">Weekly</option>
                 <option value="monthly">Monthly</option>
               </select>
@@ -415,13 +410,10 @@ export function RecurringCalendarPanel({
                 <div>
                   <strong>{item.description}</strong>
                   <p>
-                    {item.category} | {item.frequency} | starts {item.start_date}{item.end_date ? ` | ends ${item.end_date}` : ""}
+                    {item.category} | {frequencyLabel(item.frequency)} | starts {item.start_date}{item.end_date ? ` | ends ${item.end_date}` : ""}
                   </p>
                 </div>
-                <span className={item.entry_type === "income" ? "amount-positive" : ""}>
-                  {item.entry_type === "income" ? "+" : "-"}
-                  {formatCurrency(item.amount)}
-                </span>
+                <span>-{formatCurrency(item.amount)}</span>
               </button>
             ))}
             {!items.length ? <p className="muted">No recurring expense reminders created yet.</p> : null}
@@ -438,8 +430,8 @@ type ReminderBreakdownOccurrence = {
   category: string;
   description: string;
   amount: number;
-  entry_type: "expense" | "income";
-  frequency: "weekly" | "monthly";
+  entry_type: "expense";
+  frequency: "once" | "weekly" | "monthly";
 };
 
 function buildReminderMonthBreakdown(items: RecurringItem[], rawAnchorDate?: string) {
@@ -499,6 +491,9 @@ function buildReminderMonthBreakdown(items: RecurringItem[], rawAnchorDate?: str
 
 function enumerateReminderOccurrences(item: RecurringItem, anchorDate: Date, horizonEnd: Date) {
   const startDate = parseLocalDate(item.start_date);
+  if (item.frequency === "once") {
+    return startDate >= stripTime(anchorDate) && startDate <= horizonEnd ? [startDate] : [];
+  }
   const effectiveEndDate = item.end_date ? parseLocalDate(item.end_date) : horizonEnd;
   const finalDate = effectiveEndDate < horizonEnd ? effectiveEndDate : horizonEnd;
   const occurrences: Date[] = [];
@@ -533,6 +528,13 @@ function nextDueDate(currentDueDate: Date, frequency: "weekly" | "monthly") {
   const nextMonthStart = new Date(year, month + 1, 1);
   const nextMonthEnd = endOfMonth(nextMonthStart);
   return new Date(nextMonthStart.getFullYear(), nextMonthStart.getMonth(), Math.min(targetDay, nextMonthEnd.getDate()));
+}
+
+function frequencyLabel(frequency: RecurringItem["frequency"]) {
+  if (frequency === "once") {
+    return "one-time";
+  }
+  return frequency;
 }
 
 function addMonths(value: Date, monthCount: number) {

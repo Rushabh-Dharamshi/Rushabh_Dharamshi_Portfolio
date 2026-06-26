@@ -140,10 +140,10 @@ describe("frontend coverage gaps", () => {
             },
             {
               id: 12,
-              category: "Income",
+              category: "Food",
               description: "Weekly pay",
               amount: 250,
-              entry_type: "income",
+              entry_type: "expense",
               frequency: "weekly",
               start_date: "2026-04-05",
               end_date: "",
@@ -159,6 +159,28 @@ describe("frontend coverage gaps", () => {
               start_date: "2026-04-01",
               end_date: "",
               active: false,
+            },
+            {
+              id: 14,
+              category: "Food",
+              description: "One-time lunch",
+              amount: 7,
+              entry_type: "expense",
+              frequency: "once",
+              start_date: "2026-04-10",
+              end_date: "2026-04-10",
+              active: true,
+            },
+            {
+              id: 15,
+              category: "Travel",
+              description: "Past one-time fare",
+              amount: 4,
+              entry_type: "expense",
+              frequency: "once",
+              start_date: "2026-03-01",
+              end_date: "2026-03-01",
+              active: true,
             },
           ]}
           calendar={{
@@ -178,10 +200,10 @@ describe("frontend coverage gaps", () => {
               {
                 recurring_item_id: 12,
                 date: "2026-04-05",
-                category: "Income",
+                category: "Food",
                 description: "Weekly pay",
                 amount: 250,
-                entry_type: "income",
+                entry_type: "expense",
                 frequency: "weekly",
                 days_until_due: 5,
               },
@@ -249,9 +271,12 @@ describe("frontend coverage gaps", () => {
 
     const allReminderRows = Array.from(container.querySelectorAll(".month-breakdown-row")).map((node) => node.textContent ?? "");
     expect(allReminderRows.some((value) => value.includes("April 2026") && value.includes("Long-term rent"))).toBe(true);
+    expect(allReminderRows.some((value) => value.includes("April 2026") && value.includes("One-time lunch"))).toBe(true);
+    expect(allReminderRows.some((value) => value.includes("Past one-time fare"))).toBe(false);
     expect(allReminderRows.some((value) => value.includes("June 2026") && value.includes("Long-term rent"))).toBe(true);
     expect(allReminderRows.some((value) => value.includes("February 2027") && value.includes("Weekly pay"))).toBe(true);
-    expect(screen.getAllByText((_, element) => !!element?.textContent && element.textContent.includes("250.00") && element.className.includes("amount-positive")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/one-time/i).length).toBeGreaterThanOrEqual(2);
+    expect(container.textContent).toContain("250.00");
   });
 
   it("covers KPI legends, donut segments, trend lines, and weekly percentages", () => {

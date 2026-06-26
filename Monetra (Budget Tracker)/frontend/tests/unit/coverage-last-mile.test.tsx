@@ -369,7 +369,6 @@ describe("last-mile frontend coverage", () => {
           late_occurrences: [
             { recurring_item_id: 3, date: "2026-06-10", category: "Bills", description: "A late bill", amount: 10, entry_type: "expense", frequency: "monthly", days_until_due: -8 },
             { recurring_item_id: 1, date: "2026-06-10", category: "Bills", description: "Late bill", amount: 12.5, entry_type: "expense", frequency: "monthly", days_until_due: -8 },
-            { recurring_item_id: 2, date: "2026-06-11", category: "Income", description: "Late income", amount: 12.5, entry_type: "income", frequency: "monthly", days_until_due: -7 },
           ],
         }}
         activeWorkflowName="month_end_close"
@@ -380,7 +379,6 @@ describe("last-mile frontend coverage", () => {
 
     expect(screen.getByText("Late bill: £12.50 due 2026-06-10")).toBeInTheDocument();
     expect(screen.getByText(/A late bill:/)).toBeInTheDocument();
-    expect(screen.queryByText(/Late income/)).not.toBeInTheDocument();
     expect(screen.getByText(/The workflow is gathering finance context/i)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open report" })).toHaveAttribute("href", "/api/reports/monthly");
     fireEvent.click(screen.getByRole("button", { name: /Unknown flow/i }));

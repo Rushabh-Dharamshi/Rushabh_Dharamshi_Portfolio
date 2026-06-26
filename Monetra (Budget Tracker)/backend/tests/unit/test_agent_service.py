@@ -419,6 +419,57 @@ def test_agent_service_can_create_a_recurring_reminder_from_prompt():
     assert recurring_service.created_payload["description"] == "Rent"
 
 
+def test_agent_service_can_create_one_time_reminder_from_prompt():
+    repository = FakeAgentRunRepository()
+
+    class RecordingRecurringService(FakeRecurringService):
+        def __init__(self):
+            self.created_payload = None
+
+        def create_item(self, payload):
+            self.created_payload = payload
+            return {"id": 19, **payload}
+
+    recurring_service = RecordingRecurringService()
+    service = AgentService(
+        FakeOllamaClient(),
+        FakeAnalyticsService(),
+        FakePredictionService(),
+        recurring_service,
+        FakeReportService(),
+        FakeExpenseService(),
+        FakeSettingsService(),
+        repository,
+    )
+
+    result = service.run_finance_briefing(
+        {"task": "Add a reminder for subway of 7 pounds today under Food."}
+    )
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    assert result["headline"] == "Recurring reminder created"
+    assert result["action_result"]["type"] == "recurring_item_created"
+    assert recurring_service.created_payload == {
+        "category": "Food",
+        "description": "Subway",
+        "amount": 7.0,
+        "entry_type": "expense",
+        "frequency": "once",
+        "start_date": today,
+        "end_date": today,
+        "active": True,
+    }
+    parsed_range = service._parse_direct_recurring_command(
+        "Add a reminder for subway of 7 pounds from 2026-06-26 to 2026-06-26 under Food."
+    )
+    assert parsed_range is not None
+    assert parsed_range["reminder"]["frequency"] == "once"
+    assert parsed_range["reminder"]["start_date"] == "2026-06-26"
+    assert service._parse_direct_recurring_command(
+        "Add a reminder for subway of 7 pounds from 2026-06-26 to 2026-06-27 under Food."
+    ) is None
+
+
 def test_agent_service_updates_existing_weekly_reminder_and_normalizes_next_monday():
     repository = FakeAgentRunRepository()
 

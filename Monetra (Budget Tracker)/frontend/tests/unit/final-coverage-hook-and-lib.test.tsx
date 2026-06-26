@@ -140,7 +140,7 @@ describe("final hook, api client, and comparison coverage", () => {
     mockApiClient.getAgentWorkflowJob
       .mockResolvedValueOnce({ id: "refresh-job", status: "queued", workflow_name: "month_end_close", task: "run", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: null })
       .mockResolvedValueOnce({ id: "refresh-job", status: "completed", workflow_name: "month_end_close", task: "run", created_at: "2026-03-21T10:00:00Z", started_at: null, completed_at: null, error: null, result: { id: 99, workflow_name: "month_end_close", workflow_label: "Month-end close", status: "completed", headline: "Refresh", summary: "done", risk_level: "low", recommended_actions: [], automated_actions: [], email_subject: "Refresh", email_draft: "Refresh", task: "run", model: "qwen", tools_used: [] } });
-    mockApiClient.runAutomationRefresh.mockResolvedValueOnce([{ id: "refresh-job", workflow_name: "month_end_close" }]);
+    mockApiClient.runAutomationRefresh.mockClear();
 
     const { result } = renderHook(() => useBudgetTracker());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -161,7 +161,8 @@ describe("final hook, api client, and comparison coverage", () => {
       await jest.advanceTimersByTimeAsync(2500);
       await promise;
     });
-    expect(result.current.statusMessage).toBe("Background automation refresh completed. Dashboard labels, reports, AI context, and automation history are up to date.");
+    expect(result.current.statusMessage).toBe("Expense #2 added successfully.");
+    expect(mockApiClient.runAutomationRefresh).not.toHaveBeenCalled();
   });
 
   it("covers month-income fallback, finance briefing fallback error, and import string errors", async () => {
@@ -259,9 +260,8 @@ describe("final hook, api client, and comparison coverage", () => {
     });
   });
 
-  it("covers create-expense lock return and automation-refresh already-running guard", async () => {
+  it("covers create-expense lock return without launching automation refresh", async () => {
     let resolveCreateExpense: (value: { id: number }) => void = () => undefined;
-    let resolveAutomationRefresh: (value: never[]) => void = () => undefined;
     mockApiClient.createExpense
       .mockReturnValueOnce(
         new Promise((resolve) => {
@@ -269,11 +269,7 @@ describe("final hook, api client, and comparison coverage", () => {
         }),
       )
       .mockResolvedValueOnce({ id: 3 });
-    mockApiClient.runAutomationRefresh.mockReturnValueOnce(
-      new Promise((resolve) => {
-        resolveAutomationRefresh = resolve;
-      }),
-    );
+    mockApiClient.runAutomationRefresh.mockClear();
 
     const { result } = renderHook(() => useBudgetTracker());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -298,11 +294,7 @@ describe("final hook, api client, and comparison coverage", () => {
       await createExpenseBeforeRefreshState();
     });
     expect(mockApiClient.createExpense).toHaveBeenCalledTimes(2);
-    expect(mockApiClient.runAutomationRefresh).toHaveBeenCalledTimes(1);
-
-    await act(async () => {
-      resolveAutomationRefresh([]);
-    });
+    expect(mockApiClient.runAutomationRefresh).not.toHaveBeenCalled();
   });
 
   it("covers all-upcoming email dispatch status and API branch", async () => {
@@ -374,7 +366,7 @@ describe("final hook, api client, and comparison coverage", () => {
     await act(async () => {
       await result.current.runFinanceBriefingAgent();
     });
-    expect(mockApiClient.runAutomationRefresh).toHaveBeenCalledWith("expense_updated");
+    expect(mockApiClient.runAutomationRefresh).not.toHaveBeenCalled();
 
     await act(async () => {
       await result.current.runAutomationWorkflow("month_end_close");

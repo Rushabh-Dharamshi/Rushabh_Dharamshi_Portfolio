@@ -767,6 +767,36 @@ class AgentService:
         if "reminder" not in lowered and "utility bills" not in lowered and "rent" not in lowered:
             return None
 
+        one_time_match = re.search(
+            r"\badd\s+(?:a\s+)?(?:(?:one[-\s]?time|one[-\s]?off|once)\s+)?reminder\s+for\s+(?P<description>.+?)\s+of\s+(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|Â£)?(?:\s+(?:(?:for|on|due|starting|from)\s+)?(?P<date>today|20\d{2}-\d{2}-\d{2}))?(?:\s+to\s+(?P<end_date>20\d{2}-\d{2}-\d{2}))?(?:\s+(?:under|in)\s+(?P<category>[A-Za-z][A-Za-z\s&-]+?))?\.?$",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if one_time_match:
+            raw_date = (one_time_match.group("date") or "").strip().lower()
+            start_date = datetime.now().strftime("%Y-%m-%d") if raw_date in {"", "today"} else raw_date
+            end_date = (one_time_match.group("end_date") or "").strip()
+            if end_date and end_date != start_date:
+                return None
+            return {
+                "domain": "recurring",
+                "operation": "create",
+                "target": {},
+                "entity": {},
+                "reminder": self._parse_reminder_payload(
+                    {
+                        "category": (one_time_match.group("category") or "General").strip(" .").title(),
+                        "description": one_time_match.group("description").strip(" .").title(),
+                        "amount": one_time_match.group("amount"),
+                        "entry_type": "expense",
+                        "frequency": "once",
+                        "start_date": start_date,
+                        "active": True,
+                    },
+                    datetime.now().strftime("%Y-%m-%d"),
+                ),
+            }
+
         if lowered.startswith("set a monthly reminder for university house rent"):
             amount = self._extract_money_amount(normalized, preferred_prefixes=("at", "for", "of", "to"))
             if amount is None:
@@ -1375,9 +1405,10 @@ class AgentService:
                             "You are a finance automation agent for recurring reminders. "
                             "Extract the user's intent and return JSON only. "
                             "Use operation=create, update, delete, or replace. "
-                            "For create/update/replace, include a reminder object with keys: category, description, amount, entry_type, frequency, start_date, end_date, active. "
-                            "For delete/replace, include a target object with any known keys from: category, description, amount, entry_type, frequency, start_date, end_date. "
-                            "Always use entry_type expense; recurring income reminders are not supported. "
+                        "For create/update/replace, include a reminder object with keys: category, description, amount, entry_type, frequency, start_date, end_date, active. "
+                        "For delete/replace, include a target object with any known keys from: category, description, amount, entry_type, frequency, start_date, end_date. "
+                        "Use frequency once for one-time or one-off reminders. Use weekly or monthly only when the user asks for a repeated schedule. "
+                        "Always use entry_type expense; recurring income reminders are not supported. "
                             "The start_date is the exact first due date and is always inclusive. "
                             "If the user gives a bounded range, include end_date as the final included due date unless they explicitly say the end is exclusive. "
                             "If no start date is given for a new reminder, use today's date. "
@@ -2411,13 +2442,16 @@ class AgentService:
         amount = parsed.get("amount")
         if amount in (None, ""):
             raise ValidationError("The reminder request must include an amount.")
+        frequency = str(parsed.get("frequency") or "monthly").strip().lower()
+        if frequency in {"one-time", "one time", "one-off", "one off", "single", "once"}:
+            frequency = "once"
 
         return {
             "category": str(parsed.get("category") or "General").strip(),
             "description": str(parsed.get("description") or "Recurring reminder").strip(),
             "amount": round(float(amount), 2),
             "entry_type": "expense",
-            "frequency": str(parsed.get("frequency") or "monthly").strip().lower(),
+            "frequency": frequency,
             "start_date": str(parsed.get("start_date") or fallback_date).strip(),
             "end_date": str(parsed.get("end_date") or "").strip() or None,
             "active": bool(parsed.get("active", True)),
@@ -2517,6 +2551,12 @@ class AgentService:
         explicit_end_date: str | None,
     ) -> dict:
         start_date = self._resolve_start_date_from_task(task, fallback_start_date)
+        if frequency == "once":
+            return {
+                "start_date": start_date,
+                "end_date": start_date,
+            }
+
         month_range = self._extract_month_range(task)
         if month_range and frequency == "monthly":
             target_day = self._extract_day_of_month(task)

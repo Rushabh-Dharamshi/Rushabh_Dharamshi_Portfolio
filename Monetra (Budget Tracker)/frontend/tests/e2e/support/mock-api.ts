@@ -14,8 +14,8 @@ export type MockRecurringRow = {
   category: string;
   description: string;
   amount: number;
-  entry_type: "expense" | "income";
-  frequency: "weekly" | "monthly";
+  entry_type: "expense";
+  frequency: "once" | "weekly" | "monthly";
   start_date: string;
   active: boolean;
 };

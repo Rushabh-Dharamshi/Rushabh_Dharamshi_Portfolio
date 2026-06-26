@@ -121,7 +121,7 @@ class FinanceMcpServer:
             },
             {
                 "name": "create_recurring_reminder",
-                "description": "Create a recurring reminder with category, description, amount, entry_type, frequency, start_date, optional end_date, and active.",
+                "description": "Create an expense reminder with category, description, amount, entry_type, frequency, start_date, optional end_date, and active. Frequency can be once, weekly, or monthly.",
                 "input_schema": {
                     "type": "object",
                     "properties": {

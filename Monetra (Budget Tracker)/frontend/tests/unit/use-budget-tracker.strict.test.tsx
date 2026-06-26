@@ -181,11 +181,11 @@ describe("useBudgetTracker strict coverage", () => {
     });
     expect(result.current.expenses).toHaveLength(1);
 
-    mockApiClient.runAutomationRefresh.mockRejectedValueOnce(new Error("refresh failed"));
     await act(async () => {
       await result.current.createExpense();
     });
-    expect(automationErrorSpy).toHaveBeenCalledWith("[Monetra Automation] Automatic workflow refresh failed.", expect.any(Error));
+    expect(mockApiClient.runAutomationRefresh).not.toHaveBeenCalled();
+    expect(automationErrorSpy).not.toHaveBeenCalledWith("[Monetra Automation] Automatic workflow refresh failed.", expect.any(Error));
 
     act(() => {
       result.current.selectExpense(expense);

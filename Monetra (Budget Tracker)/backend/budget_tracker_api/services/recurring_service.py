@@ -101,9 +101,13 @@ class RecurringService:
                             "days_until_due": (overdue_date - today).days,
                         }
                     )
+                if item["frequency"] == "once":
+                    break
                 overdue_date = self._next_due_date(overdue_date, item["frequency"])
 
             due_date = self._first_due_on_or_after(item["start_date"], item["frequency"], today)
+            if item["frequency"] == "once" and due_date < today:
+                continue
             if item_end_date and due_date > item_end_date:
                 continue
             while due_date <= window_end_date and (item_end_date is None or due_date <= item_end_date):
@@ -129,9 +133,13 @@ class RecurringService:
                             "user_transaction_id": self._user_expense_id_for_transaction(linked_entry.get("transaction_id")),
                         }
                     )
+                    if item["frequency"] == "once":
+                        break
                     due_date = self._next_due_date(due_date, item["frequency"])
                     continue
                 occurrences.append(occurrence_payload)
+                if item["frequency"] == "once":
+                    break
                 due_date = self._next_due_date(due_date, item["frequency"])
 
         occurrences.sort(key=lambda item: (item["date"], item["description"], item["recurring_item_id"]))
@@ -178,10 +186,12 @@ class RecurringService:
         except (TypeError, ValueError) as exc:
             raise ValidationError("amount must be numeric.") from exc
 
-        if frequency not in {"weekly", "monthly"}:
-            raise ValidationError("frequency must be weekly or monthly.")
+        if frequency not in {"once", "weekly", "monthly"}:
+            raise ValidationError("frequency must be once, weekly, or monthly.")
         if entry_type != "expense":
             raise ValidationError("recurring reminders only support expense type.")
+        if frequency == "once":
+            end_date = start_date
 
         return {
             "category": category,
@@ -235,6 +245,8 @@ class RecurringService:
     @staticmethod
     def _first_due_on_or_after(raw_start_date: str, frequency: str, target_date: date) -> date:
         due_date = datetime.strptime(raw_start_date, "%Y-%m-%d").date()
+        if frequency == "once":
+            return due_date
         while due_date < target_date:
             due_date = RecurringService._next_due_date(due_date, frequency)
         return due_date

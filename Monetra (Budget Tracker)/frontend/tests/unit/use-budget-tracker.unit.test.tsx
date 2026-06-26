@@ -185,7 +185,7 @@ describe("useBudgetTracker unit coverage", () => {
     expect(result.current.ragStatus?.chunk_count).toBeGreaterThanOrEqual(36);
     expect(mockApiClient.reindexRag).toHaveBeenCalledWith(true);
     expect(mockApiClient.sendMonthEndEmailNow).toHaveBeenCalled();
-    expect(mockApiClient.runAutomationRefresh).toHaveBeenCalled();
+    expect(mockApiClient.runAutomationRefresh).not.toHaveBeenCalled();
   });
 
 

@@ -55,10 +55,6 @@ function shouldSkipAutomationBootstrap() {
   return process.env.NODE_ENV !== "test" && process.env.NEXT_PUBLIC_AUTOMATION_BOOTSTRAP_ENABLED !== "true";
 }
 
-function shouldRefreshAutomationAfterAgentAction(actionType: string) {
-  return !["month_end_email_sent", "upcoming_bills_email_sent", "upcoming_bills_email_skipped"].includes(actionType);
-}
-
 type EmailDispatchId = "upcoming_bills_email" | "all_upcoming_bills_email" | "month_end_email";
 
 export function monthFromAgentAction(result: AgentBriefingResponse): string | undefined {
@@ -143,9 +139,8 @@ export function useBudgetTracker() {
   const [activeWorkflowName, setActiveWorkflowName] = useState<string | null>(null);
   const [activeEmailDispatchId, setActiveEmailDispatchId] = useState<string | null>(null);
   const [activeOperationLabel, setActiveOperationLabel] = useState<string | null>(null);
-  const [isAutomationRefreshing, setIsAutomationRefreshing] = useState(false);
+  const isAutomationRefreshing = false;
   const activeOperationRef = useRef<string | null>(null);
-  const automationRefreshRef = useRef(false);
   const [searchId, setSearchId] = useState("");
   const [budgetDraft, setBudgetDraft] = useState("");
   const [incomeDraft, setIncomeDraft] = useState("");
@@ -356,7 +351,6 @@ export function useBudgetTracker() {
       setStatusMessage(`Expense #${expenseDisplayId(created)} added successfully.`);
       resetForm();
       await loadAllData();
-      void refreshAutomationCenter("expense_created");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -385,7 +379,6 @@ export function useBudgetTracker() {
       setStatusMessage(`Expense #${expenseDisplayId(selectedExpense)} updated successfully.`);
       resetForm();
       await loadAllData();
-      void refreshAutomationCenter("expense_updated");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -411,7 +404,6 @@ export function useBudgetTracker() {
       setStatusMessage(`Expense #${expenseDisplayId(selectedExpense)} deleted successfully.`);
       resetForm();
       await loadAllData();
-      void refreshAutomationCenter("expense_deleted");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -448,35 +440,6 @@ export function useBudgetTracker() {
     setStatusMessage("Showing all records.");
   }
 
-  async function refreshAutomationCenter(eventType: string) {
-    if (automationRefreshRef.current) {
-      return;
-    }
-    try {
-      if (typeof apiClient.runAutomationRefresh !== "function") {
-        return;
-      }
-      automationRefreshRef.current = true;
-      setIsAutomationRefreshing(true);
-      const jobs = await apiClient.runAutomationRefresh(eventType);
-      if (!jobs.length) {
-        return;
-      }
-      setStatusMessage("Dashboard data is already refreshed. Background workflows are syncing reports, AI context, and automation history with the latest saved data...");
-      const startedAt = Date.now();
-      await Promise.all(
-        jobs.map((job) => waitForWorkflowRun(job.id, job.workflow_name, startedAt))
-      );
-      const refreshedRuns = await apiClient.listAgentRuns();
-      setAgentRuns(refreshedRuns);
-      setStatusMessage("Background automation refresh completed. Dashboard labels, reports, AI context, and automation history are up to date.");
-    } catch (error) {
-      console.error("[Monetra Automation] Automatic workflow refresh failed.", error);
-    } finally {
-      automationRefreshRef.current = false;
-      setIsAutomationRefreshing(false);
-    }
-  }
   async function importExpenses(file: File) {
     const operationLabel = "Import transactions";
     if (!beginExclusiveOperation(operationLabel)) {
@@ -489,7 +452,6 @@ export function useBudgetTracker() {
         `Imported ${result.imported_rows} rows and skipped ${result.skipped_rows}.`,
       );
       await loadAllData();
-      void refreshAutomationCenter("expenses_imported");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -540,7 +502,6 @@ export function useBudgetTracker() {
       setIncomeMonthDraft(budgetMonth);
       setStatusMessage(`Monthly budget updated to GBP ${result.monthly_budget.toFixed(2)} for ${budgetMonth}.`);
       await loadAllData(budgetMonth);
-      void refreshAutomationCenter("monthly_budget_updated");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -561,7 +522,6 @@ export function useBudgetTracker() {
       setIncomeMonthDraft(result.income_month ?? incomeMonthDraft);
       setStatusMessage(`Monthly income updated to GBP ${result.monthly_income.toFixed(2)} for ${result.income_month ?? incomeMonthDraft}.`);
       await loadAllData(result.income_month ?? incomeMonthDraft);
-      void refreshAutomationCenter("monthly_income_updated");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -580,7 +540,6 @@ export function useBudgetTracker() {
       const created = await apiClient.createRecurringItem(payload);
       setStatusMessage(`Recurring item #${created.id} created successfully.`);
       await loadAllData();
-      void refreshAutomationCenter("recurring_item_created");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -599,7 +558,6 @@ export function useBudgetTracker() {
       await apiClient.updateRecurringItem(itemId, payload);
       setStatusMessage(`Recurring item #${itemId} updated successfully.`);
       await loadAllData();
-      void refreshAutomationCenter("recurring_item_updated");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -618,7 +576,6 @@ export function useBudgetTracker() {
       await apiClient.deleteRecurringItem(itemId);
       setStatusMessage(`Recurring item #${itemId} deleted successfully.`);
       await loadAllData();
-      void refreshAutomationCenter("recurring_item_deleted");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -637,7 +594,6 @@ export function useBudgetTracker() {
       const result = await apiClient.markRecurringOccurrencePaid(itemId, occurrenceDate, transactionId);
       setStatusMessage(result.message);
       await loadAllData();
-      void refreshAutomationCenter("recurring_occurrence_paid");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -656,7 +612,6 @@ export function useBudgetTracker() {
       const result = await apiClient.markRecurringOccurrenceUnpaid(itemId, occurrenceDate);
       setStatusMessage(result.message);
       await loadAllData();
-      void refreshAutomationCenter("recurring_occurrence_unpaid");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -705,7 +660,6 @@ export function useBudgetTracker() {
       const created = await apiClient.createSavingsGoal(payload);
       setStatusMessage(`Savings goal #${created.id} created successfully.`);
       await loadAllData();
-      void refreshAutomationCenter("savings_goal_created");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -724,7 +678,6 @@ export function useBudgetTracker() {
       await apiClient.updateSavingsGoal(goalId, payload);
       setStatusMessage(`Savings goal #${goalId} updated successfully.`);
       await loadAllData();
-      void refreshAutomationCenter("savings_goal_updated");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -743,7 +696,6 @@ export function useBudgetTracker() {
       await apiClient.deleteSavingsGoal(goalId);
       setStatusMessage(`Savings goal #${goalId} deleted successfully.`);
       await loadAllData();
-      void refreshAutomationCenter("savings_goal_deleted");
     } catch (error) {
       setStatusMessage(null);
       setErrorMessage((error as Error).message);
@@ -796,12 +748,8 @@ export function useBudgetTracker() {
           : null;
       if (actionType) {
         await loadAllData(monthFromAgentAction(result));
-        if (shouldRefreshAutomationAfterAgentAction(actionType)) {
-          void refreshAutomationCenter(actionType);
-        } else {
-          const refreshedRuns = await apiClient.listAgentRuns();
-          setAgentRuns(refreshedRuns);
-        }
+        const refreshedRuns = await apiClient.listAgentRuns();
+        setAgentRuns(refreshedRuns);
       }
       setStatusMessage(`AI briefing generated with ${result.tools_used.length} tool calls.`);
     } catch (error) {

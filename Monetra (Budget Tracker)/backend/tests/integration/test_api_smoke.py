@@ -101,7 +101,7 @@ def test_partition_invalid_budget_and_recurring_payloads_return_validation_error
     assert invalid_income.status_code == 400
     assert invalid_income.get_json()["error"] == "monthly_income must be greater than zero."
     assert invalid_recurring.status_code == 400
-    assert invalid_recurring.get_json()["error"] == "frequency must be weekly or monthly."
+    assert invalid_recurring.get_json()["error"] == "frequency must be once, weekly, or monthly."
 
 
 def test_smoke_agent_workflows_and_run_history(client, app):

@@ -197,8 +197,8 @@ export interface RecurringItem {
   category: string;
   description: string;
   amount: number;
-  entry_type: "expense" | "income";
-  frequency: "weekly" | "monthly";
+  entry_type: "expense";
+  frequency: "once" | "weekly" | "monthly";
   start_date: string;
   end_date?: string | null;
   active: boolean;
@@ -210,8 +210,8 @@ export interface RecurringCalendarOccurrence {
   category: string;
   description: string;
   amount: number;
-  entry_type: "expense" | "income";
-  frequency: "weekly" | "monthly";
+  entry_type: "expense";
+  frequency: "once" | "weekly" | "monthly";
   days_until_due: number;
   updated_at?: string;
   is_paid?: boolean;
@@ -232,7 +232,7 @@ export interface RecurringItemPayload {
   description: string;
   amount: number | string;
   entry_type: "expense";
-  frequency: "weekly" | "monthly";
+  frequency: "once" | "weekly" | "monthly";
   start_date: string;
   end_date?: string | null;
   active: boolean;

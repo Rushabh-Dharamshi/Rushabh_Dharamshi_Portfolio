@@ -98,17 +98,17 @@ describe("component branch coverage", () => {
         <RecurringCalendarPanel
           items={[
             { id: 1, category: "Rent", description: "University House Rent", amount: 452.74, entry_type: "expense", frequency: "monthly", start_date: "2026-04-23", end_date: "2026-06-23", active: true },
-            { id: 2, category: "Salary", description: "Scholarship", amount: 800, entry_type: "income", frequency: "weekly", start_date: "2026-04-01", end_date: "", active: true },
+            { id: 2, category: "Education", description: "Scholarship forms", amount: 80, entry_type: "expense", frequency: "weekly", start_date: "2026-04-01", end_date: "", active: true },
           ]}
           calendar={{
             window_start: "2026-03-31",
             window_end: "2026-05-04",
             occurrences: [
               { recurring_item_id: 1, date: "2026-04-23", category: "Rent", description: "University House Rent", amount: 452.74, entry_type: "expense", frequency: "monthly", days_until_due: 3 },
-              { recurring_item_id: 2, date: "2026-04-23", category: "Salary", description: "Zoo Scholarship", amount: 800, entry_type: "income", frequency: "weekly", days_until_due: 3 },
+              { recurring_item_id: 2, date: "2026-04-23", category: "Education", description: "Zoo forms", amount: 80, entry_type: "expense", frequency: "weekly", days_until_due: 3 },
             ],
             completed_occurrences: [
-              { recurring_item_id: 2, date: "2026-04-01", category: "Salary", description: "Scholarship", amount: 800, entry_type: "income", frequency: "weekly", days_until_due: 0, transaction_id: 77, user_transaction_id: 7 },
+              { recurring_item_id: 2, date: "2026-04-01", category: "Education", description: "Scholarship forms", amount: 80, entry_type: "expense", frequency: "weekly", days_until_due: 0, transaction_id: 77, user_transaction_id: 7 },
             ],
           }}
           onCreate={onCreate}

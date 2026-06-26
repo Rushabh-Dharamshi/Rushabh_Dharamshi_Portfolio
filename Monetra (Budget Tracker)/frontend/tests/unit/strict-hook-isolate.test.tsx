@@ -107,7 +107,7 @@ describe("frontend strict hook isolate coverage", () => {
     await actLocal(async () => {
       await result.current.runFinanceBriefingAgent();
     });
-    expect(mockApiClient.runAutomationRefresh).toHaveBeenCalledWith("expense_updated");
+    expect(mockApiClient.runAutomationRefresh).not.toHaveBeenCalled();
 
     await actLocal(async () => {
       await result.current.runAutomationWorkflow("month_end_close");
