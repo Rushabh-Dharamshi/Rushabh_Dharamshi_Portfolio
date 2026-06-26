@@ -1211,6 +1211,7 @@ class RagService:
                 item
                 for item in calendar.get("occurrences", [])
                 if item.get("entry_type") == "expense" and int(item.get("days_until_due") or 0) <= 7
+                and item.get("frequency") in {"weekly", "monthly"}
             ]
             label = "Recurring reminders due next week"
             tools_used = ["get_recurring_reminders_due_next_week"]
@@ -1219,6 +1220,7 @@ class RagService:
                 item
                 for item in self._recurring_service.list_items()
                 if item.get("active") and item.get("entry_type") == "expense"
+                and item.get("frequency") in {"weekly", "monthly"}
             ]
             label = "Recurring reminders"
             tools_used = ["list_recurring_reminders"]
@@ -1247,7 +1249,12 @@ class RagService:
                     "recurring_occurrence" if item.get("date") else "recurring",
                     document_id,
                     f"{item.get('description')} {due_text}. Category {item.get('category')}. Frequency {item.get('frequency')}. Cost: {cost}.",
-                    {"category": item.get("category"), "date": item.get("date") or item.get("start_date"), "entry_type": item.get("entry_type")},
+                    {
+                        "category": item.get("category"),
+                        "date": item.get("date") or item.get("start_date"),
+                        "entry_type": item.get("entry_type"),
+                        "frequency": item.get("frequency"),
+                    },
                 )
             )
         return {

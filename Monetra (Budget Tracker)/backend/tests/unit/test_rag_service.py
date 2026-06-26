@@ -817,6 +817,59 @@ def test_rag_service_structured_answer_empty_and_next_week_edges(tmp_path):
     assert next_week["sources"][0]["doc_type"] == "recurring_occurrence"
 
 
+def test_rag_service_recurring_reminder_answers_exclude_one_time_reminders(tmp_path):
+    class MixedRecurringService(StubRecurringService):
+        def list_items(self):
+            return [
+                {"id": 21, "category": "Food", "description": "Papa Johns", "amount": 13.0, "entry_type": "expense", "frequency": "once", "start_date": "2026-06-26", "end_date": "2026-06-26", "active": True},
+                {"id": 22, "category": "Food", "description": "Subway", "amount": 7.0, "entry_type": "expense", "frequency": "once", "start_date": "2026-06-27", "end_date": "2026-06-27", "active": True},
+                {"id": 23, "category": "Housing", "description": "University House Rent", "amount": 452.74, "entry_type": "expense", "frequency": "monthly", "start_date": "2026-07-23", "end_date": "2026-08-23", "active": True},
+            ]
+
+        def upcoming_calendar(self, days):
+            return {
+                "window_start": "2026-06-27",
+                "window_end": "2026-07-04",
+                "occurrences": [
+                    {"recurring_item_id": 22, "date": "2026-06-27", "category": "Food", "description": "Subway", "amount": 7.0, "entry_type": "expense", "frequency": "once", "days_until_due": 0},
+                    {"recurring_item_id": 24, "date": "2026-06-29", "category": "Subscription", "description": "Music Subscription", "amount": 10.99, "entry_type": "expense", "frequency": "weekly", "days_until_due": 2},
+                ],
+                "completed_occurrences": [],
+            }
+
+    service = RagService(
+        expense_service=StubExpenseService(),
+        recurring_service=MixedRecurringService(),
+        analytics_service=StubAnalyticsService(),
+        prediction_service=StubPredictionService(),
+        settings_service=StubSettingsService(),
+        agent_run_repository=StubAgentRunRepository(),
+        embedding_client=StubEmbeddingClient(),
+        answer_client=StubAnswerClient(),
+        memory_service=AgentMemoryService(tmp_path / "mixed-recurring-memory.json"),
+        persist_directory=tmp_path / "mixed-recurring-chroma",
+        manifest_path=tmp_path / "mixed-recurring-manifest.json",
+        collection_name="monetra-finance-knowledge",
+        chunk_size=120,
+        chunk_overlap=20,
+        top_k=4,
+        chroma_client_factory=lambda path: FakeChromaClient(),
+    )
+
+    recurring = service.answer_question("Any recurring reminders I have?")
+
+    assert "University House Rent" in recurring["answer"]
+    assert "Papa Johns" not in recurring["answer"]
+    assert "Subway" not in recurring["answer"]
+    assert all(source["metadata"].get("frequency") != "once" for source in recurring["sources"])
+
+    next_week = service.answer_question("Which recurring reminders are due next week?")
+
+    assert "Music Subscription" in next_week["answer"]
+    assert "Subway" not in next_week["answer"]
+    assert all(source["metadata"].get("frequency") != "once" for source in next_week["sources"])
+
+
 def test_rag_service_next_payment_due_uses_earliest_recurring_occurrence(tmp_path):
     class MultipleUpcomingRecurringService(StubRecurringService):
         def upcoming_calendar(self, days):
