@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
@@ -78,6 +78,12 @@ class FixedDate(date):
     @classmethod
     def today(cls):
         return cls(2026, 3, 29)
+
+
+class FixedLondonDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return cls(2026, 6, 27, 0, 30, tzinfo=tz)
 
 
 def build_item(**overrides):
@@ -227,6 +233,33 @@ def test_recurring_service_once_reminders_are_single_occurrences(monkeypatch):
     assert [item["description"] for item in calendar["occurrences"]] == ["Future subway"]
     assert [item["description"] for item in calendar["completed_occurrences"]] == ["Paid subway"]
     assert RecurringService._first_due_on_or_after("2026-03-28", "once", date(2026, 4, 1)) == date(2026, 3, 28)
+
+
+def test_recurring_service_calendar_uses_configured_timezone(monkeypatch):
+    monkeypatch.setattr("budget_tracker_api.services.recurring_service.datetime", FixedLondonDateTime)
+    repository = StubRecurringRepository(
+        [
+            build_item(id=20, description="Papa Johns", category="Food", amount=13.0, frequency="once", start_date="2026-06-26", end_date="2026-06-26"),
+            build_item(id=21, description="Subway", category="Food", amount=7.0, frequency="once", start_date="2026-06-27", end_date="2026-06-27"),
+        ]
+    )
+    service = RecurringService(repository, StubExpenseService(), timezone_name="Europe/London")
+
+    calendar = service.upcoming_calendar(7)
+
+    assert calendar["window_start"] == "2026-06-27"
+    assert [item["description"] for item in calendar["late_occurrences"]] == ["Papa Johns"]
+    assert calendar["late_occurrences"][0]["days_until_due"] == -1
+    assert [item["description"] for item in calendar["occurrences"]] == ["Subway"]
+    assert calendar["occurrences"][0]["days_until_due"] == 0
+
+
+def test_recurring_service_calendar_falls_back_for_invalid_timezone(monkeypatch):
+    monkeypatch.setattr("budget_tracker_api.services.recurring_service.date", FixedDate)
+    repository = StubRecurringRepository([build_item()])
+    service = RecurringService(repository, StubExpenseService(), timezone_name="Invalid/Zone")
+
+    assert service.upcoming_calendar(1)["window_start"] == "2026-03-29"
 
 
 def test_recurring_service_paid_validation_helpers():

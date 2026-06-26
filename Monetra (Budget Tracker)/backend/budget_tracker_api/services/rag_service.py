@@ -1744,6 +1744,8 @@ class RagService:
         }
         for item in recurring_calendar.get("occurrences", []):
             occurrence_map[(item.get("recurring_item_id"), item.get("date"))] = dict(item, is_paid=False)
+        for item in recurring_calendar.get("late_occurrences", []):
+            occurrence_map[(item.get("recurring_item_id"), item.get("date"))] = dict(item, is_paid=False)
         for item in recurring_calendar.get("completed_occurrences", []):
             occurrence_map[(item.get("recurring_item_id"), item.get("date"))] = dict(item, is_paid=True)
         all_occurrences = sorted(

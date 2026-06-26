@@ -177,6 +177,7 @@ describe("component branch coverage", () => {
     );
 
     expect(screen.getByText("No recurring reminders are due today or in the next 7 days.")).toBeInTheDocument();
+    expect(screen.getByText("No late reminders need attention.")).toBeInTheDocument();
     expect(screen.getByText("No saved recurring reminders are scheduled ahead.")).toBeInTheDocument();
     expect(screen.getByText("Nothing has been marked as paid in this window yet.")).toBeInTheDocument();
     expect(screen.getByText("No recurring expense reminders created yet.")).toBeInTheDocument();

@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from budget_tracker_api.errors import NotFoundError, ValidationError
 from budget_tracker_api.repositories.recurring_repository import RecurringRepository
@@ -6,9 +7,10 @@ from budget_tracker_api.services.expense_service import ExpenseService
 
 
 class RecurringService:
-    def __init__(self, repository: RecurringRepository, expense_service: ExpenseService):
+    def __init__(self, repository: RecurringRepository, expense_service: ExpenseService, timezone_name: str | None = None):
         self._repository = repository
         self._expense_service = expense_service
+        self._timezone_name = str(timezone_name or "").strip()
 
     def list_items(self) -> list[dict]:
         return self._repository.list_items()
@@ -62,7 +64,7 @@ class RecurringService:
 
     def upcoming_calendar(self, days_ahead: int = 35) -> dict:
         horizon = max(1, min(int(days_ahead), 90))
-        today = date.today()
+        today = self._today()
         current_month_start = today.replace(day=1)
         window_end_date = today + timedelta(days=horizon - 1)
         items = self._repository.list_items()
@@ -267,3 +269,11 @@ class RecurringService:
         if not raw_date:
             return None
         return datetime.strptime(raw_date, "%Y-%m-%d").date()
+
+    def _today(self) -> date:
+        if not self._timezone_name:
+            return date.today()
+        try:
+            return datetime.now(ZoneInfo(self._timezone_name)).date()
+        except ZoneInfoNotFoundError:
+            return date.today()

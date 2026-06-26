@@ -105,7 +105,7 @@ def _register_services(app: Flask) -> None:
         app.config["GENERATED_REPORTS_DIR"],
         app.config["LOG_TIMEZONE"],
     )
-    recurring_service = RecurringService(recurring_repository, expense_service)
+    recurring_service = RecurringService(recurring_repository, expense_service, app.config["LOG_TIMEZONE"])
     savings_goal_service = SavingsGoalService(savings_goal_repository)
     latency_service = LatencyService(latency_repository)
     ollama_client = OllamaClient(

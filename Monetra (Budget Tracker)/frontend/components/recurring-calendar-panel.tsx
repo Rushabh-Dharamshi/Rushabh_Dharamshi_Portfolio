@@ -61,6 +61,13 @@ export function RecurringCalendarPanel({
         .sort((left, right) => left.days_until_due - right.days_until_due || left.description.localeCompare(right.description)),
     [calendar?.occurrences],
   );
+  const lateOccurrences = useMemo(
+    () =>
+      (calendar?.late_occurrences ?? []).sort(
+        (left, right) => left.date.localeCompare(right.date) || left.description.localeCompare(right.description),
+      ),
+    [calendar?.late_occurrences],
+  );
   const allReminderOccurrences = useMemo(
     () =>
       monthBreakdown.months.flatMap((month) =>
@@ -128,6 +135,66 @@ export function RecurringCalendarPanel({
             <span>
               Monetra checks that the expense number exists in your account, has the same type, amount, and category as the reminder, and is not already linked to another paid reminder occurrence.
             </span>
+          </div>
+
+          <div className="upcoming-list reminder-list-section late-reminder-section">
+            <div className="card-header">
+              <h3>Late reminders</h3>
+              <span className="muted">{lateOccurrences.length} overdue</span>
+            </div>
+            <p className="muted">Unpaid reminders before today stay visible here until you verify or restore them.</p>
+            <div className="bounded-reminder-list late-reminder-list">
+              {lateOccurrences.map((occurrence) => {
+                const draftKey = occurrenceKey(occurrence.recurring_item_id, occurrence.date);
+                const daysLate = Math.abs(occurrence.days_until_due);
+                return (
+                  <article
+                    key={`late-${occurrence.recurring_item_id}-${occurrence.date}-${occurrence.description}`}
+                    className="activity-item"
+                  >
+                    <div>
+                      <strong>{occurrence.description}</strong>
+                      <p>
+                        {occurrence.category} | {frequencyLabel(occurrence.frequency)} | due {occurrence.date} ({daysLate} day{daysLate === 1 ? "" : "s"} late)
+                      </p>
+                    </div>
+                    <div className="activity-item-actions recurring-payment-actions">
+                      <span>-{formatCurrency(occurrence.amount)}</span>
+                      <input
+                        className="transaction-link-input"
+                        type="number"
+                        min="1"
+                        inputMode="numeric"
+                        placeholder="Paid expense #"
+                        value={transactionDrafts[draftKey] ?? ""}
+                        onChange={(event) =>
+                          setTransactionDrafts((current) => ({
+                            ...current,
+                            [draftKey]: event.target.value,
+                          }))
+                        }
+                      />
+                      <button
+                        className="button button-secondary"
+                        type="button"
+                        onClick={() => {
+                          const transactionId = Number(transactionDrafts[draftKey]);
+                          if (!Number.isFinite(transactionId) || transactionId <= 0) {
+                            return;
+                          }
+                          onMarkPaid(occurrence.recurring_item_id, occurrence.date, transactionId);
+                        }}
+                      >
+                        Verify and mark paid
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            {!lateOccurrences.length ? (
+              <p className="muted">No late reminders need attention.</p>
+            ) : null}
           </div>
 
           <div className="upcoming-list reminder-list-section">

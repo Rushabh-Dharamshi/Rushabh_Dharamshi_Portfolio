@@ -113,6 +113,7 @@ describe("frontend coverage gaps", () => {
     const onCreate = jest.fn();
     const onUpdate = jest.fn();
     const onDelete = jest.fn();
+    const onMarkPaid = jest.fn();
     const onMarkUnpaid = jest.fn();
 
     const { container } = render(
@@ -209,6 +210,28 @@ describe("frontend coverage gaps", () => {
                 days_until_due: 5,
               },
             ],
+            late_occurrences: [
+              {
+                recurring_item_id: 15,
+                date: "2026-03-01",
+                category: "Travel",
+                description: "Past one-time fare",
+                amount: 4,
+                entry_type: "expense",
+                frequency: "once",
+                days_until_due: -1,
+              },
+              {
+                recurring_item_id: 16,
+                date: "2026-03-01",
+                category: "Food",
+                description: "Z past one-time snack",
+                amount: 5,
+                entry_type: "expense",
+                frequency: "once",
+                days_until_due: -30,
+              },
+            ],
             completed_occurrences: [
               {
                 recurring_item_id: 14,
@@ -239,7 +262,7 @@ describe("frontend coverage gaps", () => {
           onCreate={onCreate}
           onUpdate={onUpdate}
           onDelete={onDelete}
-          onMarkPaid={jest.fn()}
+          onMarkPaid={onMarkPaid}
           onMarkUnpaid={onMarkUnpaid}
         />
       </>,
@@ -299,6 +322,13 @@ describe("frontend coverage gaps", () => {
     expect(allReminderRows.some((value) => value.includes("April 2026") && value.includes("Long-term rent"))).toBe(true);
     expect(allReminderRows.some((value) => value.includes("April 2026") && value.includes("One-time lunch"))).toBe(true);
     expect(allReminderRows.some((value) => value.includes("Past one-time fare"))).toBe(false);
+    expect(screen.getByText("Late reminders")).toBeInTheDocument();
+    expect(screen.getByText(/Past one-time fare/)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText("Verify and mark paid")[0]);
+    expect(onMarkPaid).not.toHaveBeenCalled();
+    fireEvent.change(screen.getAllByPlaceholderText("Paid expense #")[0], { target: { value: "4" } });
+    fireEvent.click(screen.getAllByText("Verify and mark paid")[0]);
+    expect(onMarkPaid).toHaveBeenCalledWith(15, "2026-03-01", 4);
     expect(allReminderRows.some((value) => value.includes("June 2026") && value.includes("Long-term rent"))).toBe(true);
     expect(allReminderRows.some((value) => value.includes("February 2027") && value.includes("Weekly pay"))).toBe(true);
     expect(container.querySelector(".recurring-reminder-list")?.textContent).not.toContain("One-time lunch");
