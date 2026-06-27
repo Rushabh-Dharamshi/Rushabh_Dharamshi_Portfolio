@@ -788,6 +788,7 @@ def test_rag_service_structured_answer_empty_and_next_week_edges(tmp_path):
     )
     assert "could not find" in empty_service.answer_question("latest expense")["answer"]
     assert "none found" in empty_service.answer_question("recurring reminders")["answer"]
+    assert "do not have any unverified" in empty_service.answer_question("all reminders that are due?")["answer"]
     assert "GBP 0.00" in empty_service.answer_question("total groceries in May 2026")["answer"]
     assert empty_service._structured_answer("general finance health") is None
     assert empty_service._matching_category("unknown category", []) is None
@@ -834,7 +835,12 @@ def test_rag_service_recurring_reminder_answers_exclude_one_time_reminders(tmp_p
                     {"recurring_item_id": 22, "date": "2026-06-27", "category": "Food", "description": "Subway", "amount": 7.0, "entry_type": "expense", "frequency": "once", "days_until_due": 0},
                     {"recurring_item_id": 24, "date": "2026-06-29", "category": "Subscription", "description": "Music Subscription", "amount": 10.99, "entry_type": "expense", "frequency": "weekly", "days_until_due": 2},
                 ],
-                "completed_occurrences": [],
+                "late_occurrences": [
+                    {"recurring_item_id": 21, "date": "2026-06-26", "category": "Food", "description": "Papa Johns", "amount": 13.0, "entry_type": "expense", "frequency": "once", "days_until_due": -1},
+                ],
+                "completed_occurrences": [
+                    {"recurring_item_id": 25, "date": "2026-06-27", "category": "Food", "description": "Verified Coffee", "amount": 3.5, "entry_type": "expense", "frequency": "once", "days_until_due": 0, "transaction_id": 9},
+                ],
             }
 
     service = RagService(
@@ -868,6 +874,17 @@ def test_rag_service_recurring_reminder_answers_exclude_one_time_reminders(tmp_p
     assert "Music Subscription" in next_week["answer"]
     assert "Subway" not in next_week["answer"]
     assert all(source["metadata"].get("frequency") != "once" for source in next_week["sources"])
+
+    due = service.answer_question("All reminders that are due?")
+
+    assert "3 unverified reminder occurrences" in due["answer"]
+    assert "Papa Johns" in due["answer"]
+    assert "1 day late" in due["answer"]
+    assert "Subway" in due["answer"]
+    assert "due today" in due["answer"]
+    assert "Music Subscription" in due["answer"]
+    assert "Verified Coffee" not in due["answer"]
+    assert all(source["doc_type"] == "recurring_due_occurrence" for source in due["sources"])
 
 
 def test_rag_service_next_payment_due_uses_earliest_recurring_occurrence(tmp_path):

@@ -293,6 +293,8 @@ class RagService:
             return self._next_payment_due_answer()
         if self._is_late_reminder_question(normalized):
             return self._late_reminder_answer()
+        if self._is_due_reminder_question(normalized):
+            return self._due_reminder_answer()
         if self._is_recurring_reminder_question(normalized):
             return self._recurring_reminder_answer(normalized)
         if self._is_spending_total_question(normalized):
@@ -1264,6 +1266,76 @@ class RagService:
             "tools_used": tools_used,
         }
 
+    def _due_reminder_answer(self) -> dict:
+        calendar = self._recurring_service.upcoming_calendar(90)
+        reminders = [
+            item
+            for item in [*calendar.get("late_occurrences", []), *calendar.get("occurrences", [])]
+            if item.get("entry_type") == "expense"
+        ]
+        if not reminders:
+            return {
+                "answer": "You do not have any unverified reminder occurrences in the current reminder window.",
+                "follow_up_questions": [],
+                "sources": [
+                    self._structured_source(
+                        "Unverified reminders",
+                        "recurring_due_search",
+                        "recurring-due-search::none",
+                        "No unverified expense reminder occurrences were found in the current reminder window.",
+                    )
+                ],
+                "tools_used": ["get_unverified_due_reminders"],
+            }
+
+        sorted_reminders = sorted(
+            reminders,
+            key=lambda value: (
+                int(value.get("days_until_due") or 0),
+                str(value.get("date") or ""),
+                str(value.get("description") or ""),
+                str(value.get("recurring_item_id") or value.get("id") or ""),
+            ),
+        )
+        plural = "" if len(sorted_reminders) == 1 else "s"
+        lines = [f"You have {len(sorted_reminders)} unverified reminder occurrence{plural}:"]
+        sources = []
+        for item in sorted_reminders:
+            due_date = item.get("date")
+            days_until_due = int(item.get("days_until_due") or 0)
+            if days_until_due < 0:
+                days_late = abs(days_until_due)
+                status = f"{days_late} day{'' if days_late == 1 else 's'} late"
+            elif days_until_due == 0:
+                status = "due today"
+            else:
+                status = f"due in {days_until_due} day{'' if days_until_due == 1 else 's'}"
+            description = item.get("description") or "Reminder"
+            cost = self._format_gbp(item.get("amount"))
+            frequency = self._frequency_label(item.get("frequency"))
+            lines.append(f"- {description}: {item.get('category')} | {frequency} | {cost} | due {due_date} ({status}).")
+            sources.append(
+                self._structured_source(
+                    str(description),
+                    "recurring_due_occurrence",
+                    f"recurring-due-occurrence::{item.get('recurring_item_id') or item.get('id')}::{due_date}",
+                    f"{description}: unverified reminder. Category {item.get('category')}. Due date {due_date}. Status {status}. Cost: {cost}.",
+                    {
+                        "category": item.get("category"),
+                        "date": due_date,
+                        "entry_type": item.get("entry_type"),
+                        "frequency": item.get("frequency"),
+                        "status": "unverified",
+                    },
+                )
+            )
+        return {
+            "answer": "\n".join(lines),
+            "follow_up_questions": [],
+            "sources": sources,
+            "tools_used": ["get_unverified_due_reminders"],
+        }
+
     def _late_reminder_answer(self) -> dict:
         calendar = self._recurring_service.upcoming_calendar(35)
         reminders = [
@@ -1411,6 +1483,16 @@ class RagService:
         return any(term in question for term in ("recurring reminder", "recurring reminders", "subscriptions", "subscription", "upcoming reminders"))
 
     @staticmethod
+    def _is_due_reminder_question(question: str) -> bool:
+        if "recurring reminder" in question or "recurring reminders" in question:
+            return False
+        return "reminder" in question and (
+            "unverified" in question
+            or "unpaid" in question
+            or ("due" in question and any(term in question for term in ("all", "any", "which", "what")))
+        )
+
+    @staticmethod
     def _is_late_reminder_question(question: str) -> bool:
         return any(
             term in question
@@ -1531,6 +1613,13 @@ class RagService:
         except (TypeError, ValueError):
             amount = 0.0
         return f"GBP {amount:.2f}"
+
+    @staticmethod
+    def _frequency_label(value: object) -> str:
+        frequency = str(value or "").strip().lower()
+        if frequency == "once":
+            return "one-time"
+        return frequency or "unknown"
 
     @staticmethod
     def _as_float(value: object) -> float:
