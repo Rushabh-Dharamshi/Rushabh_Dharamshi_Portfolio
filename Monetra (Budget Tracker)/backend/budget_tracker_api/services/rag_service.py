@@ -293,8 +293,12 @@ class RagService:
             return self._next_payment_due_answer()
         if self._is_late_reminder_question(normalized):
             return self._late_reminder_answer()
+        if self._is_completed_reminder_question(normalized):
+            return self._completed_reminder_answer(normalized)
         if self._is_due_reminder_question(normalized):
-            return self._due_reminder_answer()
+            return self._due_reminder_answer(normalized)
+        if self._is_all_reminders_question(normalized):
+            return self._all_reminders_answer(normalized)
         if self._is_recurring_reminder_question(normalized):
             return self._recurring_reminder_answer(normalized)
         if self._is_spending_total_question(normalized):
@@ -1207,6 +1211,51 @@ class RagService:
         }
 
     def _recurring_reminder_answer(self, normalized_question: str) -> dict | None:
+        target_date = self._extract_requested_date(normalized_question)
+        if target_date is None and "due" in normalized_question and self._has_explicit_date_phrase(normalized_question):
+            return {
+                "answer": "Recurring reminders due on the requested date: none found in the structured recurring reminder data.",
+                "follow_up_questions": [],
+                "sources": [self._structured_source("Recurring reminders due on requested date", "recurring_occurrence_search", "recurring-occurrence-search::invalid-date", "No recurring reminder occurrences were found for the requested date.")],
+                "tools_used": ["get_recurring_reminders_due_on_date"],
+            }
+        if target_date is not None and "due" in normalized_question:
+            reminders = self._recurring_rule_occurrences_on_date(target_date)
+            label = f"Recurring reminders due on {target_date.isoformat()}"
+            if not reminders:
+                return {
+                    "answer": f"{label}: none found in the structured recurring reminder data.",
+                    "follow_up_questions": [],
+                    "sources": [self._structured_source(label, "recurring_occurrence_search", f"recurring-occurrence-search::{target_date.isoformat()}", f"No recurring reminder occurrences were found due on {target_date.isoformat()}.")],
+                    "tools_used": ["get_recurring_reminders_due_on_date"],
+                }
+            lines = [f"{label}:"]
+            sources = []
+            for item in reminders:
+                cost = self._format_gbp(item.get("amount"))
+                frequency = self._frequency_label(item.get("frequency"))
+                lines.append(f"- {item.get('description')}: {item.get('category')} | {frequency} | {cost}.")
+                sources.append(
+                    self._structured_source(
+                        str(item.get("description") or "Recurring reminder"),
+                        "recurring_occurrence",
+                        f"recurring-occurrence::{item.get('recurring_item_id')}::{target_date.isoformat()}",
+                        f"{item.get('description')} is due on {target_date.isoformat()}. Category {item.get('category')}. Frequency {item.get('frequency')}. Cost: {cost}.",
+                        {
+                            "category": item.get("category"),
+                            "date": target_date.isoformat(),
+                            "entry_type": item.get("entry_type"),
+                            "frequency": item.get("frequency"),
+                        },
+                    )
+                )
+            return {
+                "answer": "\n".join(lines),
+                "follow_up_questions": [],
+                "sources": sources,
+                "tools_used": ["get_recurring_reminders_due_on_date"],
+            }
+
         if "next week" in normalized_question or "7 days" in normalized_question:
             calendar = self._recurring_service.upcoming_calendar(7)
             reminders = [
@@ -1266,23 +1315,39 @@ class RagService:
             "tools_used": tools_used,
         }
 
-    def _due_reminder_answer(self) -> dict:
+    def _due_reminder_answer(self, normalized_question: str) -> dict:
         calendar = self._recurring_service.upcoming_calendar(90)
-        reminders = [
-            item
-            for item in [*calendar.get("late_occurrences", []), *calendar.get("occurrences", [])]
-            if item.get("entry_type") == "expense"
-        ]
-        if not reminders:
+        target_date = self._extract_requested_date(normalized_question, calendar)
+        if target_date is None and self._has_explicit_date_phrase(normalized_question):
             return {
-                "answer": "You do not have any unverified reminder occurrences in the current reminder window.",
+                "answer": "You do not have any unverified reminder occurrences on the requested date.",
                 "follow_up_questions": [],
                 "sources": [
                     self._structured_source(
                         "Unverified reminders",
                         "recurring_due_search",
-                        "recurring-due-search::none",
-                        "No unverified expense reminder occurrences were found in the current reminder window.",
+                        "recurring-due-search::invalid-date",
+                        "No unverified expense reminder occurrences were found for the requested date.",
+                    )
+                ],
+                "tools_used": ["get_unverified_due_reminders"],
+            }
+        reminders = [
+            item
+            for item in [*calendar.get("late_occurrences", []), *calendar.get("occurrences", [])]
+            if item.get("entry_type") == "expense" and (target_date is None or item.get("date") == target_date.isoformat())
+        ]
+        if not reminders:
+            window_text = f" on {target_date.isoformat()}" if target_date else " in the current reminder window"
+            return {
+                "answer": f"You do not have any unverified reminder occurrences{window_text}.",
+                "follow_up_questions": [],
+                "sources": [
+                    self._structured_source(
+                        "Unverified reminders",
+                        "recurring_due_search",
+                        f"recurring-due-search::{target_date.isoformat() if target_date else 'current-window'}",
+                        f"No unverified expense reminder occurrences were found{window_text}.",
                     )
                 ],
                 "tools_used": ["get_unverified_due_reminders"],
@@ -1298,7 +1363,10 @@ class RagService:
             ),
         )
         plural = "" if len(sorted_reminders) == 1 else "s"
-        lines = [f"You have {len(sorted_reminders)} unverified reminder occurrence{plural}:"]
+        if target_date is None:
+            lines = [f"You have {len(sorted_reminders)} unverified reminder occurrence{plural}:"]
+        else:
+            lines = [f"You have {len(sorted_reminders)} unverified reminder occurrence{plural} due on {target_date.isoformat()}:"]
         sources = []
         for item in sorted_reminders:
             due_date = item.get("date")
@@ -1334,6 +1402,86 @@ class RagService:
             "follow_up_questions": [],
             "sources": sources,
             "tools_used": ["get_unverified_due_reminders"],
+        }
+
+    def _completed_reminder_answer(self, normalized_question: str) -> dict:
+        calendar = self._recurring_service.upcoming_calendar(90)
+        target_date = self._extract_requested_date(normalized_question, calendar)
+        reminders = [
+            item
+            for item in calendar.get("completed_occurrences", [])
+            if item.get("entry_type") == "expense" and (target_date is None or item.get("date") == target_date.isoformat())
+        ]
+        if not reminders:
+            window_text = f" on {target_date.isoformat()}" if target_date else " in the current reminder window"
+            return {
+                "answer": f"You do not have any completed reminder occurrences{window_text}.",
+                "follow_up_questions": [],
+                "sources": [
+                    self._structured_source(
+                        "Completed reminders",
+                        "recurring_completed_search",
+                        f"recurring-completed-search::{target_date.isoformat() if target_date else 'current-window'}",
+                        f"No completed expense reminder occurrences were found{window_text}.",
+                    )
+                ],
+                "tools_used": ["get_completed_reminders"],
+            }
+
+        sorted_reminders = sorted(
+            reminders,
+            key=lambda value: (
+                str(value.get("date") or ""),
+                str(value.get("description") or ""),
+                str(value.get("recurring_item_id") or value.get("id") or ""),
+            ),
+        )
+        plural = "" if len(sorted_reminders) == 1 else "s"
+        if target_date is None:
+            lines = [f"You have {len(sorted_reminders)} completed reminder occurrence{plural}:"]
+        else:
+            lines = [f"You have {len(sorted_reminders)} completed reminder occurrence{plural} on {target_date.isoformat()}:"]
+        sources = []
+        for item in sorted_reminders:
+            due_date = item.get("date")
+            description = item.get("description") or "Reminder"
+            cost = self._format_gbp(item.get("amount"))
+            frequency = self._frequency_label(item.get("frequency"))
+            transaction_id = item.get("user_transaction_id") or item.get("transaction_id")
+            transaction_text = f" | expense #{transaction_id}" if transaction_id else ""
+            lines.append(f"- {description}: {item.get('category')} | {frequency} | {cost} | completed for {due_date}{transaction_text}.")
+            sources.append(
+                self._structured_source(
+                    str(description),
+                    "recurring_completed_occurrence",
+                    f"recurring-completed-occurrence::{item.get('recurring_item_id') or item.get('id')}::{due_date}",
+                    f"{description}: completed reminder. Category {item.get('category')}. Due date {due_date}. Cost: {cost}.",
+                    {
+                        "category": item.get("category"),
+                        "date": due_date,
+                        "entry_type": item.get("entry_type"),
+                        "frequency": item.get("frequency"),
+                        "status": "completed",
+                    },
+                )
+            )
+        return {
+            "answer": "\n".join(lines),
+            "follow_up_questions": [],
+            "sources": sources,
+            "tools_used": ["get_completed_reminders"],
+        }
+
+    def _all_reminders_answer(self, normalized_question: str) -> dict:
+        due = self._due_reminder_answer(normalized_question)
+        completed = self._completed_reminder_answer(normalized_question)
+        due_lines = str(due.get("answer") or "").splitlines()
+        completed_lines = str(completed.get("answer") or "").splitlines()
+        return {
+            "answer": "\n".join(["All reminders:", "Due/unverified:", *due_lines, "Completed:", *completed_lines]),
+            "follow_up_questions": [],
+            "sources": [*due.get("sources", []), *completed.get("sources", [])],
+            "tools_used": ["get_unverified_due_reminders", "get_completed_reminders"],
         }
 
     def _late_reminder_answer(self) -> dict:
@@ -1483,6 +1631,17 @@ class RagService:
         return any(term in question for term in ("recurring reminder", "recurring reminders", "subscriptions", "subscription", "upcoming reminders"))
 
     @staticmethod
+    def _is_completed_reminder_question(question: str) -> bool:
+        return "reminder" in question and any(term in question for term in ("completed", "verified", "paid"))
+
+    @staticmethod
+    def _is_all_reminders_question(question: str) -> bool:
+        normalized = str(question or "").strip().lower().rstrip(" ?")
+        if normalized not in {"all reminders", "all reminder", "show all reminders", "list all reminders"}:
+            return False
+        return True
+
+    @staticmethod
     def _is_due_reminder_question(question: str) -> bool:
         if "recurring reminder" in question or "recurring reminders" in question:
             return False
@@ -1613,6 +1772,110 @@ class RagService:
         except (TypeError, ValueError):
             amount = 0.0
         return f"GBP {amount:.2f}"
+
+    def _recurring_rule_occurrences_on_date(self, target_date: date) -> list[dict]:
+        occurrences = []
+        for item in self._recurring_service.list_items():
+            if not item.get("active") or item.get("entry_type") != "expense":
+                continue
+            frequency = str(item.get("frequency") or "").lower()
+            if frequency not in {"weekly", "monthly"}:
+                continue
+            start_date = self._parse_date(item.get("start_date"))
+            if start_date is None or target_date < start_date:
+                continue
+            end_date = self._parse_date(item.get("end_date"))
+            if end_date is not None and target_date > end_date:
+                continue
+            due_date = start_date
+            while due_date < target_date:
+                due_date = self._next_recurring_due_date(due_date, frequency)
+            if due_date == target_date:
+                occurrences.append(
+                    {
+                        "recurring_item_id": item.get("id"),
+                        "date": target_date.isoformat(),
+                        "category": item.get("category"),
+                        "description": item.get("description"),
+                        "amount": item.get("amount"),
+                        "entry_type": item.get("entry_type"),
+                        "frequency": frequency,
+                        "days_until_due": (target_date - date.today()).days,
+                    }
+                )
+        return sorted(occurrences, key=lambda value: (str(value.get("description") or ""), str(value.get("recurring_item_id") or "")))
+
+    @staticmethod
+    def _extract_requested_date(question: str, calendar: dict | None = None) -> date | None:
+        normalized = str(question or "").lower()
+        base_date = RagService._parse_date((calendar or {}).get("window_start")) or date.today()
+        if "today" in normalized:
+            return base_date
+        if "tomorrow" in normalized:
+            return base_date + timedelta(days=1)
+
+        iso_match = re.search(r"\b(20\d{2})-(0[1-9]|1[0-2])-([0-2]\d|3[01])\b", normalized)
+        if iso_match:
+            return RagService._parse_date(iso_match.group(0))
+
+        slash_match = re.search(r"\b([0-2]?\d|3[01])[/-](0?\d|1[0-2])[/-](20\d{2})\b", normalized)
+        if slash_match:
+            day, month, year = (int(part) for part in slash_match.groups())
+            try:
+                return date(year, month, day)
+            except ValueError:
+                return None
+
+        month_names = {
+            "january": 1,
+            "february": 2,
+            "march": 3,
+            "april": 4,
+            "may": 5,
+            "june": 6,
+            "july": 7,
+            "august": 8,
+            "september": 9,
+            "october": 10,
+            "november": 11,
+            "december": 12,
+        }
+        month_pattern = "|".join(month_names)
+        day_first = re.search(rf"\b([0-2]?\d|3[01])(?:st|nd|rd|th)?\s+({month_pattern})(?:\s+(20\d{{2}}))?\b", normalized)
+        if day_first:
+            day = int(day_first.group(1))
+            month = month_names[day_first.group(2)]
+            year = int(day_first.group(3) or base_date.year)
+            try:
+                return date(year, month, day)
+            except ValueError:
+                return None
+        month_first = re.search(rf"\b({month_pattern})\s+([0-2]?\d|3[01])(?:st|nd|rd|th)?(?:,?\s+(20\d{{2}}))?\b", normalized)
+        if month_first:
+            month = month_names[month_first.group(1)]
+            day = int(month_first.group(2))
+            year = int(month_first.group(3) or base_date.year)
+            try:
+                return date(year, month, day)
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _has_explicit_date_phrase(question: str) -> bool:
+        normalized = str(question or "").lower()
+        if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", normalized):
+            return True
+        if re.search(r"\b\d{1,2}[/-]\d{1,2}[/-]20\d{2}\b", normalized):
+            return True
+        month_names = (
+            "january|february|march|april|may|june|july|august|"
+            "september|october|november|december"
+        )
+        return bool(
+            re.search(rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+(?:{month_names})(?:\s+20\d{{2}})?\b", normalized)
+            or re.search(rf"\b(?:{month_names})\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s+20\d{{2}})?\b", normalized)
+        )
 
     @staticmethod
     def _frequency_label(value: object) -> str:

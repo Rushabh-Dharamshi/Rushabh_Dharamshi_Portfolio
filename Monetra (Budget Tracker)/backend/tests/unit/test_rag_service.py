@@ -789,6 +789,7 @@ def test_rag_service_structured_answer_empty_and_next_week_edges(tmp_path):
     assert "could not find" in empty_service.answer_question("latest expense")["answer"]
     assert "none found" in empty_service.answer_question("recurring reminders")["answer"]
     assert "do not have any unverified" in empty_service.answer_question("all reminders that are due?")["answer"]
+    assert "do not have any completed" in empty_service.answer_question("all completed reminders")["answer"]
     assert "GBP 0.00" in empty_service.answer_question("total groceries in May 2026")["answer"]
     assert empty_service._structured_answer("general finance health") is None
     assert empty_service._matching_category("unknown category", []) is None
@@ -825,6 +826,11 @@ def test_rag_service_recurring_reminder_answers_exclude_one_time_reminders(tmp_p
                 {"id": 21, "category": "Food", "description": "Papa Johns", "amount": 13.0, "entry_type": "expense", "frequency": "once", "start_date": "2026-06-26", "end_date": "2026-06-26", "active": True},
                 {"id": 22, "category": "Food", "description": "Subway", "amount": 7.0, "entry_type": "expense", "frequency": "once", "start_date": "2026-06-27", "end_date": "2026-06-27", "active": True},
                 {"id": 23, "category": "Housing", "description": "University House Rent", "amount": 452.74, "entry_type": "expense", "frequency": "monthly", "start_date": "2026-07-23", "end_date": "2026-08-23", "active": True},
+                {"id": 26, "category": "Housing", "description": "Monthly Uni Rent", "amount": 500.0, "entry_type": "expense", "frequency": "monthly", "start_date": "2026-06-28", "end_date": "2026-08-28", "active": True},
+                {"id": 27, "category": "Travel", "description": "Expired Railcard", "amount": 30.0, "entry_type": "expense", "frequency": "monthly", "start_date": "2026-04-28", "end_date": "2026-05-28", "active": True},
+                {"id": 28, "category": "Food", "description": "Inactive Snacks", "amount": 3.0, "entry_type": "expense", "frequency": "weekly", "start_date": "2026-06-28", "end_date": None, "active": False},
+                {"id": 29, "category": "Food", "description": "One-time rule", "amount": 3.0, "entry_type": "expense", "frequency": "once", "start_date": "2026-06-28", "end_date": "2026-06-28", "active": True},
+                {"id": 30, "category": "Income", "description": "Income rule", "amount": 100.0, "entry_type": "income", "frequency": "monthly", "start_date": "2026-06-28", "end_date": None, "active": True},
             ]
 
         def upcoming_calendar(self, days):
@@ -885,6 +891,57 @@ def test_rag_service_recurring_reminder_answers_exclude_one_time_reminders(tmp_p
     assert "Music Subscription" in due["answer"]
     assert "Verified Coffee" not in due["answer"]
     assert all(source["doc_type"] == "recurring_due_occurrence" for source in due["sources"])
+
+    due_today = service.answer_question("all reminders due today?")
+
+    assert "1 unverified reminder occurrence due on 2026-06-27" in due_today["answer"]
+    assert "Subway" in due_today["answer"]
+    assert "Papa Johns" not in due_today["answer"]
+    assert "Music Subscription" not in due_today["answer"]
+
+    due_on_iso_date = service.answer_question("all reminder due 2026-06-29?")
+
+    assert "Music Subscription" in due_on_iso_date["answer"]
+    assert "Subway" not in due_on_iso_date["answer"]
+
+    completed = service.answer_question("all completed reminders")
+
+    assert "1 completed reminder occurrence" in completed["answer"]
+    assert "Verified Coffee" in completed["answer"]
+    assert "expense #9" in completed["answer"]
+
+    completed_today = service.answer_question("all completed reminders today")
+
+    assert "1 completed reminder occurrence on 2026-06-27" in completed_today["answer"]
+    assert "Verified Coffee" in completed_today["answer"]
+
+    all_reminders = service.answer_question("all reminders")
+
+    assert "All reminders:" in all_reminders["answer"]
+    assert "Due/unverified:" in all_reminders["answer"]
+    assert "Completed:" in all_reminders["answer"]
+    assert "Papa Johns" in all_reminders["answer"]
+    assert "Verified Coffee" in all_reminders["answer"]
+
+    recurring_due = service.answer_question("any recurring reminders due 2026-06-28?")
+
+    assert "Recurring reminders due on 2026-06-28:" in recurring_due["answer"]
+    assert "Monthly Uni Rent" in recurring_due["answer"]
+    assert "Expired Railcard" not in recurring_due["answer"]
+    assert "One-time rule" not in recurring_due["answer"]
+    assert all(source["doc_type"] == "recurring_occurrence" for source in recurring_due["sources"])
+
+    assert "Monthly Uni Rent" in service.answer_question("any recurring reminders due 28/06/2026?")["answer"]
+    assert "Monthly Uni Rent" in service.answer_question("any recurring reminders due 28 June 2026?")["answer"]
+    assert "Monthly Uni Rent" in service.answer_question("any recurring reminders due June 28 2026?")["answer"]
+    assert "Monthly Uni Rent" in service.answer_question("any recurring reminders due tomorrow?")["answer"]
+    assert "Monthly Uni Rent" in service.answer_question("any recurring reminders due 2026-07-28?")["answer"]
+    assert "none found" in service.answer_question("any recurring reminders due 2026-06-30?")["answer"]
+    assert "do not have any unverified" in service.answer_question("all reminder due 2026-02-31?")["answer"]
+    assert "none found" in service.answer_question("any recurring reminders due 2026-02-31?")["answer"]
+    assert "none found" in service.answer_question("any recurring reminders due 31/02/2026?")["answer"]
+    assert "none found" in service.answer_question("any recurring reminders due 31 June 2026?")["answer"]
+    assert "none found" in service.answer_question("any recurring reminders due June 31 2026?")["answer"]
 
 
 def test_rag_service_next_payment_due_uses_earliest_recurring_occurrence(tmp_path):
