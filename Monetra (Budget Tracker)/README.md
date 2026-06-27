@@ -668,7 +668,11 @@ powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill P
 
 ## 📝 Notes
 
-- 📁 Generated PDF reports are written to `backend/generated_reports/`
+- 📁 Generated PDF reports are written by the backend when `/api/reports/monthly` is opened, when the Operations PDF button is used, or when a report/email workflow calls report generation.
+  - Local Docker path: `Monetra (Budget Tracker)/backend/generated_reports/`
+  - Production VM path: `/opt/monetra/Monetra (Budget Tracker)/backend/generated_reports/`
+  - Backend container path: `/app/generated_reports/`
+  - Browser downloads are separate local copies of the PDF returned by the API.
 - 🧠 The AI layer is local-model based rather than dependent on paid hosted inference APIs
 - 🔐 The interactive app supports registered users with per-user finance records and settings
 - 📌 The backend owns the core business logic; the frontend is intentionally API-driven and thin in business rules
