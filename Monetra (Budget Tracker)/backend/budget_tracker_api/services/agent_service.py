@@ -767,6 +767,39 @@ class AgentService:
         if "reminder" not in lowered and "utility bills" not in lowered and "rent" not in lowered:
             return None
 
+        scheduled_match = re.search(
+            r"\b(?:add|create|set(?:\s+up)?)\s+(?:a\s+)?(?P<frequency>weekly|monthly)\s+reminder\s+for\s+(?P<description>.+?)\s+of\s+(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|£|Â£)?(?:\s+(?:from|starting|starting\s+on|on)\s+(?P<start_date>today|20\d{2}-\d{2}-\d{2}))?(?:\s+(?:to|until|through)\s+(?P<end_date>20\d{2}-\d{2}-\d{2}))?(?:\s+(?P<bound_type>inclusive|exclusive))?(?:\s+(?:under|in)\s+(?P<category>[A-Za-z][A-Za-z\s&-]+?))?\.?$",
+            normalized,
+            flags=re.IGNORECASE,
+        )
+        if scheduled_match:
+            raw_start = (scheduled_match.group("start_date") or "").strip().lower()
+            start_date = datetime.now().strftime("%Y-%m-%d") if raw_start in {"", "today"} else raw_start
+            description = scheduled_match.group("description").strip(" .").title()
+            category = (scheduled_match.group("category") or "").strip(" .")
+            category = re.sub(r"\s+(?:inclusive|exclusive)\s*$", "", category, flags=re.IGNORECASE).strip(" .")
+            if not category and "rent" in description.lower():
+                category = "Housing"
+            return {
+                "domain": "recurring",
+                "operation": "create",
+                "target": {},
+                "entity": {},
+                "reminder": self._parse_reminder_payload(
+                    {
+                        "category": (category or "General").title(),
+                        "description": description,
+                        "amount": scheduled_match.group("amount"),
+                        "entry_type": "expense",
+                        "frequency": scheduled_match.group("frequency").lower(),
+                        "start_date": start_date,
+                        "end_date": (scheduled_match.group("end_date") or "").strip() or None,
+                        "active": True,
+                    },
+                    datetime.now().strftime("%Y-%m-%d"),
+                ),
+            }
+
         one_time_match = re.search(
             r"\badd\s+(?:a\s+)?(?:(?:one[-\s]?time|one[-\s]?off|once)\s+)?reminder\s+for\s+(?P<description>.+?)\s+of\s+(?P<amount>\d+(?:\.\d{1,2})?)\s*(?:pounds|gbp|Â£)?(?:\s+(?:(?:for|on|due|starting|from)\s+)?(?P<date>today|20\d{2}-\d{2}-\d{2}))?(?:\s+to\s+(?P<end_date>20\d{2}-\d{2}-\d{2}))?(?:\s+(?:under|in)\s+(?P<category>[A-Za-z][A-Za-z\s&-]+?))?\.?$",
             normalized,
@@ -2575,6 +2608,10 @@ class AgentService:
             }
 
         end_date = str(explicit_end_date or "").strip() or None
+        if end_date and self._is_end_exclusive(task):
+            end_date = (datetime.strptime(end_date, "%Y-%m-%d").date() - timedelta(days=1)).isoformat()
+            if end_date < start_date:
+                raise ValidationError("The reminder range does not include any due dates.")
         return {
             "start_date": start_date,
             "end_date": end_date,

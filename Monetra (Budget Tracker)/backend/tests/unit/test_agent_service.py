@@ -1,6 +1,7 @@
 from budget_tracker_api.errors import ValidationError
 from budget_tracker_api.services.agent_service import AgentService
 from datetime import datetime, timedelta
+import pytest
 
 
 class FakeOllamaClient:
@@ -468,6 +469,124 @@ def test_agent_service_can_create_one_time_reminder_from_prompt():
     assert service._parse_direct_recurring_command(
         "Add a reminder for subway of 7 pounds from 2026-06-26 to 2026-06-27 under Food."
     ) is None
+
+
+def test_agent_service_can_create_bounded_weekly_and_monthly_reminders_from_prompt():
+    class RecordingRecurringService(FakeRecurringService):
+        def __init__(self):
+            self.created_payloads = []
+
+        def create_item(self, payload):
+            self.created_payloads.append(payload)
+            return {"id": len(self.created_payloads), **payload}
+
+    recurring_service = RecordingRecurringService()
+    service = AgentService(
+        FakeOllamaClient(),
+        FakeAnalyticsService(),
+        FakePredictionService(),
+        recurring_service,
+        FakeReportService(),
+        FakeExpenseService(),
+        FakeSettingsService(),
+        FakeAgentRunRepository(),
+    )
+
+    weekly_result = service.run_finance_briefing(
+        {"task": "Add a weekly reminder for demo portfolio rent of 850 pounds from 2026-06-27 to 2026-07-27 under Housing."}
+    )
+    weekly_payload = recurring_service.created_payloads[-1]
+    assert weekly_result["action_result"]["type"] == "recurring_item_created"
+    assert weekly_payload == {
+        "category": "Housing",
+        "description": "Demo Portfolio Rent",
+        "amount": 850.0,
+        "entry_type": "expense",
+        "frequency": "weekly",
+        "start_date": "2026-06-27",
+        "end_date": "2026-07-27",
+        "active": True,
+    }
+
+    monthly_result = service.run_finance_briefing(
+        {"task": "Add a monthly reminder for demo council tax of 125.50 pounds from 2026-06-28 to 2026-09-28 under Utilities inclusive."}
+    )
+    monthly_payload = recurring_service.created_payloads[-1]
+    assert monthly_result["action_result"]["type"] == "recurring_item_created"
+    assert monthly_payload["category"] == "Utilities"
+    assert monthly_payload["description"] == "Demo Council Tax"
+    assert monthly_payload["frequency"] == "monthly"
+    assert monthly_payload["start_date"] == "2026-06-28"
+    assert monthly_payload["end_date"] == "2026-09-28"
+
+
+def test_agent_service_exclusive_bounded_reminder_uses_day_before_end_bound():
+    class RecordingRecurringService(FakeRecurringService):
+        def __init__(self):
+            self.created_payload = None
+
+        def create_item(self, payload):
+            self.created_payload = payload
+            return {"id": 44, **payload}
+
+    recurring_service = RecordingRecurringService()
+    service = AgentService(
+        FakeOllamaClient(),
+        FakeAnalyticsService(),
+        FakePredictionService(),
+        recurring_service,
+        FakeReportService(),
+        FakeExpenseService(),
+        FakeSettingsService(),
+        FakeAgentRunRepository(),
+    )
+
+    result = service.run_finance_briefing(
+        {"task": "Add a weekly reminder for demo rent of 850 pounds from 2026-06-27 to 2026-07-27 under Housing exclusive."}
+    )
+
+    assert result["action_result"]["type"] == "recurring_item_created"
+    assert recurring_service.created_payload["category"] == "Housing"
+    assert recurring_service.created_payload["start_date"] == "2026-06-27"
+    assert recurring_service.created_payload["end_date"] == "2026-07-26"
+
+    with pytest.raises(ValidationError, match="does not include any due dates"):
+        service.run_finance_briefing(
+            {"task": "Add a weekly reminder for demo rent of 850 pounds from 2026-06-27 to 2026-06-27 under Housing exclusive."}
+        )
+
+
+def test_agent_service_keeps_legacy_weekly_rent_starting_parser(monkeypatch):
+    import budget_tracker_api.services.agent_service as agent_service_module
+
+    service = AgentService(
+        FakeOllamaClient(),
+        FakeAnalyticsService(),
+        FakePredictionService(),
+        FakeRecurringService(),
+        FakeReportService(),
+        FakeExpenseService(),
+        FakeSettingsService(),
+        FakeAgentRunRepository(),
+    )
+    original_search = agent_service_module.re.search
+
+    def skip_range_parser(pattern, string, flags=0):
+        if "?P<frequency>weekly|monthly" in str(pattern):
+            return None
+        return original_search(pattern, string, flags=flags)
+
+    monkeypatch.setattr(agent_service_module.re, "search", skip_range_parser)
+
+    parsed = service._parse_direct_recurring_command(
+        "Add a weekly reminder for rent of 850 pounds starting 2026-03-27."
+    )
+
+    assert parsed is not None
+    assert parsed["reminder"]["category"] == "Housing"
+    assert parsed["reminder"]["description"] == "Rent"
+    assert parsed["reminder"]["frequency"] == "weekly"
+    assert parsed["reminder"]["start_date"] == "2026-03-27"
 
 
 def test_agent_service_updates_existing_weekly_reminder_and_normalizes_next_monday():
