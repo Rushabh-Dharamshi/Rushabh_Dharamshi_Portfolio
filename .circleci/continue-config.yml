@@ -438,6 +438,16 @@ workflows:
           filters:
             branches:
               only: main
+      - hold-production-deploy:
+          type: approval
+          requires:
+            - monetra-system-build
+            - monetra-frontend-e2e
+            - monetra-dummy-load-tests
+            - monetra-chaos-smoke
+          filters:
+            branches:
+              only: main
       - monetra-deploy-oracle:
           name: monetra-deploy-production
           environment-name: production
@@ -449,10 +459,7 @@ workflows:
           frontend-url-env-var: PROD_MONETRA_FRONTEND_URL
           remote-env-file: .env.production
           requires:
-            - monetra-system-build
-            - monetra-frontend-e2e
-            - monetra-dummy-load-tests
-            - monetra-chaos-smoke
+            - hold-production-deploy
           filters:
             branches:
               only: main
