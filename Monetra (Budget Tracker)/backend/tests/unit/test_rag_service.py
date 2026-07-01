@@ -1,11 +1,37 @@
 from pathlib import Path
+from datetime import date, datetime
 
 import pytest
 
 from budget_tracker_api.errors import NotFoundError, ValidationError
 from budget_tracker_api.services.agent_memory_service import AgentMemoryService
 from budget_tracker_api.services.metric_registry import FinanceIntent, FinanceIntentRouter, MetricRegistry
+import budget_tracker_api.services.rag_service as rag_service_module
 from budget_tracker_api.services.rag_service import RagService
+
+
+@pytest.fixture(autouse=True)
+def freeze_rag_fixture_clock():
+    class FixtureDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 6, 27)
+
+    class FixtureDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = cls(2026, 6, 27, 12, 0, 0)
+            if tz is not None:
+                return value.replace(tzinfo=tz)
+            return value
+
+    original_date = rag_service_module.date
+    original_datetime = rag_service_module.datetime
+    rag_service_module.date = FixtureDate
+    rag_service_module.datetime = FixtureDatetime
+    yield
+    rag_service_module.date = original_date
+    rag_service_module.datetime = original_datetime
 
 
 class StubExpenseService:

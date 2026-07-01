@@ -1,5 +1,6 @@
 import pytest
 from pytest_bdd import given, parsers, scenarios, then, when
+from datetime import date
 
 from budget_tracker_api import create_app
 
@@ -43,7 +44,7 @@ def add_expense(bdd_context, amount, description, category):
     response = bdd_context["client"].post(
         "/api/expenses",
         json={
-            "date": "2026-06-16",
+            "date": date.today().isoformat(),
             "category": category,
             "description": description,
             "amount": amount,

@@ -1211,7 +1211,8 @@ class RagService:
         }
 
     def _recurring_reminder_answer(self, normalized_question: str) -> dict | None:
-        target_date = self._extract_requested_date(normalized_question)
+        calendar = self._recurring_service.upcoming_calendar(7)
+        target_date = self._extract_requested_date(normalized_question, calendar)
         if target_date is None and "due" in normalized_question and self._has_explicit_date_phrase(normalized_question):
             return {
                 "answer": "Recurring reminders due on the requested date: none found in the structured recurring reminder data.",
