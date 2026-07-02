@@ -10,7 +10,7 @@ It is designed to answer:
 
 - can new users register and log in?
 - does each user only see their own finance data?
-- can users create income and expenses?
+- can users create expenses and update monthly income planning values?
 - can users update budgets and monthly income?
 - does piggy bank carryover remain correct under repeated use?
 - do recurring payments work under repeated use?
@@ -25,7 +25,7 @@ It is designed to answer:
 | Scenario | What It Checks |
 | --- | --- |
 | `auth_lifecycle` | register, session check, logout, login, forgot-password response |
-| `end_to_end_finance_journeys` | income, expenses, budget, income settings, piggy bank carryover, recurring payments, dashboard, analytics, CSV export |
+| `end_to_end_finance_journeys` | expenses, budget, monthly income settings, piggy bank carryover, recurring payments, dashboard, analytics, CSV export |
 | `user_isolation_probes` | one user cannot list or fetch another user's transaction |
 | `concurrent_dashboard_reads` | many users repeatedly reading dashboard and analytics endpoints |
 | `concurrent_budget_updates` | repeated budget writes under concurrent pressure |
@@ -38,12 +38,12 @@ Use three email modes:
 
 | Test type | Sender | Recipient | Email mode |
 | --- | --- | --- | --- |
-| Mixed local testing | `rushabh.dharamshi@gmail.com` for allowlisted recipients, `demo@monetra.test` for simulated recipients | Your four Gmail accounts and `@monetra.test` demo users | `EMAIL_MODE=hybrid` |
-| Real email delivery | `rushabh.dharamshi@gmail.com` | Your four Gmail accounts | `EMAIL_MODE=real` |
+| Mixed local testing | `your.sender@gmail.com` for allowlisted recipients, `demo@monetra.test` for simulated recipients | Owned Gmail accounts and `@monetra.test` demo users | `EMAIL_MODE=hybrid` |
+| Real email delivery | `your.sender@gmail.com` | Owned Gmail accounts | `EMAIL_MODE=real` |
 | Load testing | none required | `@monetra.test` dummy users | `EMAIL_MODE=mock` |
 | PDF report logic | none required | `@monetra.test` dummy users | `EMAIL_MODE=mock` |
 | AI workflow tests | none required | `@monetra.test` dummy users | `EMAIL_MODE=mock` |
-| Production smoke test | `rushabh.dharamshi@gmail.com` | your main Gmail | `EMAIL_MODE=real` |
+| Production smoke test | `your.sender@gmail.com` | one owned Gmail account | `EMAIL_MODE=real` |
 | Fault testing | mock or intentionally broken service | `@monetra.test` dummy users | `EMAIL_MODE=mock` |
 
 For mixed local testing, configure only accounts you own and mock domains for fake users:
@@ -52,12 +52,12 @@ For mixed local testing, configure only accounts you own and mock domains for fa
 EMAIL_MODE=hybrid
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=rushabh.dharamshi@gmail.com
+SMTP_USER=your.sender@gmail.com
 SMTP_PASSWORD=your_gmail_app_password
 SMTP_USE_TLS=true
 SMTP_REQUIRE_AUTH=true
-EMAIL_FROM=rushabh.dharamshi@gmail.com
-ALLOWED_TEST_EMAILS=rushabh.dharamshi@gmail.com,testpurposes683@gmail.com,rushlovesgames28@gmail.com,rushabh.is.cool28@gmail.com
+EMAIL_FROM=your.sender@gmail.com
+ALLOWED_TEST_EMAILS=your.sender@gmail.com,owned.test.account@gmail.com
 EMAIL_MOCK_DOMAINS=monetra.test,example.test
 MOCK_EMAIL_FROM=demo@monetra.test
 ```

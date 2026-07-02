@@ -2,7 +2,7 @@
 
 This folder lets you create Monetra Oracle Cloud VMs without clicking through the OCI console.
 
-(First deployed to a staging environment, then to production.)
+(First deployed to a manually created Oracle staging VM, then to a Terraform-managed Oracle production VM.)
 
 It creates:
 

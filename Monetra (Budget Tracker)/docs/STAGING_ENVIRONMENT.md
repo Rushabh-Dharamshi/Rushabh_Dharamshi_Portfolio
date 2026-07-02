@@ -2,9 +2,9 @@
 
 This document records the staging setup used before production.
 
-(First deployed to a staging environment, then to production.)
+(First deployed to a manually created Oracle staging VM, then to a Terraform-managed Oracle production VM.)
 
-The current Oracle/Terraform setup is production-only, but these values remain useful if a temporary staging clone is recreated later. Staging should behave like production but use controlled data, controlled email recipients, and a separate database.
+The staging VM was created manually through the Oracle console. The current Oracle/Terraform setup is production-only, but these values remain useful if a temporary staging clone is recreated later. Staging should behave like production but use controlled data, controlled email recipients, and a separate database.
 
 ## Files To Prepare On The Oracle VM
 
@@ -31,7 +31,7 @@ The database password must match in both `.env` and `backend/.env`.
 ```env
 APP_ENV=staging
 EMAIL_MODE=hybrid
-EMAIL_ALLOWED_RECIPIENTS=Rushabh.Dharamshi@gmail.com,testpurposes683@gmail.com,rushlovesgames28@gmail.com,rushabh.is.cool28@gmail.com
+EMAIL_ALLOWED_RECIPIENTS=your.sender@gmail.com,owned.test.account@gmail.com
 EMAIL_MOCK_DOMAINS=monetra.test,example.test
 OLLAMA_MODEL=qwen2.5:7b
 RAG_EMBEDDING_MODEL=nomic-embed-text

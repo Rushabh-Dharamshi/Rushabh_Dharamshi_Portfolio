@@ -19,7 +19,7 @@ This file is useful for portfolio review, interview preparation, and planning th
 | Status | Feature | Evidence |
 | --- | --- | --- |
 | Done | Expense tracking | `POST/GET/PUT/DELETE /api/expenses` |
-| Done | Income tracking | income transaction support and monthly income settings |
+| Done | Income tracking | monthly income planning/settings support |
 | Done | Budget management | `/api/settings/budget` |
 | Done | Category-based spending | category analytics and dashboard cards |
 | Done | Recurring payments | `/api/recurring-items` |
@@ -77,4 +77,4 @@ This file is useful for portfolio review, interview preparation, and planning th
 
 ## Production Caveat
 
-Monetra has been deployed through a staging-to-production path (first deployed to a staging environment, then to production). Remaining hardening work includes a custom domain, TLS termination, managed backups, stricter SSH CIDR rules, rollback automation, and longer-running production monitoring.
+Monetra has been deployed through a staging-to-production path: first on a manually created Oracle staging VM, then on a Terraform-managed Oracle production VM. Remaining hardening work includes a custom domain, TLS termination, managed backups, stricter SSH CIDR rules, rollback automation, and longer-running production monitoring.

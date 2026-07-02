@@ -166,7 +166,7 @@ powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill P
 
 ## Phase 6: Oracle VM Readiness
 
-Create the Oracle VM only after local validation passes.
+Create the production Oracle VM only after local validation passes. Staging was created manually through the Oracle console; production infrastructure is managed with Terraform.
 
 You will need:
 
@@ -180,9 +180,9 @@ You will need:
 
 ## Phase 7: CircleCI Deployment
 
-Normal CI runs without Oracle deployment.
+Normal CI runs backend, frontend, build, and E2E checks. For Monetra changes on `main`, the production deploy workflow can also start, but it stops at the manual `hold-production-deploy` approval before touching the production VM.
 
-When Oracle is ready, trigger CircleCI with:
+You can also manually trigger the Oracle deploy workflow with:
 
 ```text
 deploy-oracle=true

@@ -23,3 +23,20 @@ Motivated Computer Science undergraduate at the **University of Southampton** wi
 
 - 🚀 **Innovation at Scale**  
   Excited by high-performance systems and how they drive innovation across industries like logistics, finance, and AI.
+
+---
+
+## Featured Project: Monetra
+
+**Monetra** is a production-deployed personal finance platform inside this portfolio. It combines expense tracking, recurring reminders, budgeting, monthly income planning, PDF reports, forecasting, RAG question answering, and local agentic AI workflows.
+
+Key engineering evidence:
+
+- Full-stack architecture with `Next.js`, `TypeScript`, `Flask`, and `PostgreSQL`.
+- RAG and agentic AI layer using `Ollama`, `LangChain`, `LangGraph`, `FastMCP`, and `Chroma`.
+- Dockerized services for frontend, backend, database, and vector store.
+- CI/CD through `CircleCI` with backend, frontend, E2E, dummy/load, and controlled chaos checks.
+- First validated on a manually created Oracle staging VM, then deployed to a Terraform-managed Oracle production VM.
+- Production infrastructure as code for the Oracle VM, VCN, subnet, route table, security list, and public IP.
+
+Repository path: [`Monetra (Budget Tracker)`](Monetra%20(Budget%20Tracker))

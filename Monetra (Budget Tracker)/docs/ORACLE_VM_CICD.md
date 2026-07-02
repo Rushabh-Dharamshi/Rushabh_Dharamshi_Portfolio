@@ -2,7 +2,7 @@
 
 Monetra deploys to one Oracle production VM through CircleCI.
 
-(First deployed to a staging environment, then to production.)
+(First deployed to a manually created Oracle staging VM, then to a Terraform-managed Oracle production VM.)
 
 The current workflow is production-only:
 
@@ -19,7 +19,7 @@ push to main
 -> production smoke check inside the VM
 ```
 
-Staging was validated before production. Terraform is now kept for production infrastructure only.
+Staging was created and validated manually through the Oracle console before production. Terraform is now kept for production infrastructure only.
 
 ## Required VM Setup
 
@@ -51,7 +51,7 @@ PROD_MONETRA_FRONTEND_URL=http://<production_public_ip>:3000
 Generate the SSH key value locally:
 
 ```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.ssh\monetra_staging.key")) | Set-Clipboard
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("$env:USERPROFILE\.ssh\monetra_oracle_vm.key")) | Set-Clipboard
 ```
 
 Paste the clipboard value into `PROD_ORACLE_VM_SSH_KEY_B64`.

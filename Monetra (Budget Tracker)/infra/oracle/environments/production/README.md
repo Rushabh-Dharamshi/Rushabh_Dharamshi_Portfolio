@@ -2,7 +2,7 @@
 
 Use this folder to create the production Oracle VM and its network from Terraform.
 
-(First deployed to a staging environment, then to production.)
+(First deployed to a manually created Oracle staging VM, then to a Terraform-managed Oracle production VM.)
 
 Production creates its own VCN, subnet, security list, public IP, and VM state.
 
@@ -22,7 +22,7 @@ If your Oracle tenancy only allows one `2 OCPU / 12 GB` A1 VM, terminate staging
 ## First-Time Setup
 
 ```powershell
-cd "C:\Users\rusha\RD Documents\Rushabh's career\GitHub Portfolio\Rushabh_Dharamshi_Portfolio\Monetra (Budget Tracker)\infra\oracle\environments\production"
+cd "C:\path\to\Rushabh_Dharamshi_Portfolio\Monetra (Budget Tracker)\infra\oracle\environments\production"
 Copy-Item terraform.tfvars.example terraform.tfvars
 notepad terraform.tfvars
 ```

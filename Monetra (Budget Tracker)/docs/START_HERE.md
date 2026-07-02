@@ -2,14 +2,14 @@
 
 This guide explains Monetra in plain English and points you to the right document for each task.
 
-(First deployed to a staging environment, then to production.)
+(First deployed to a manually created Oracle staging VM, then to a Terraform-managed Oracle production VM.)
 
 ## What Monetra Is
 
 Monetra is a personal finance web app. You can use it to:
 
 - register and log in as a user
-- add income and expenses
+- save monthly income planning values and add expenses
 - track spending by category
 - manage recurring payments
 - review piggy bank carryover
@@ -28,12 +28,12 @@ Follow this order:
 4. Run dummy-user/load tests.
 5. Run controlled chaos checks locally or through CI.
 6. Create an Oracle VM account.
-7. Create the production VM with Terraform.
+7. Create the production VM and network infrastructure with Terraform.
 8. Configure production environment variables on the VM and in CircleCI.
 9. Approve production deployment.
 10. Run production smoke checks.
 
-Staging was used to validate the first Oracle deployment. The current setup keeps one production Oracle VM and uses automated gates plus manual approval before deployment.
+Staging was used to validate the first Oracle deployment and was created manually through the Oracle console. The current setup keeps one production Oracle VM, uses Terraform for production infrastructure only, and uses automated gates plus manual approval before deployment.
 
 ## Which Document Should I Read?
 
@@ -75,7 +75,7 @@ You should be able to:
 - open the app in the browser
 - register a test user
 - log in and log out
-- add an income transaction
+- save monthly income for the selected month
 - add an expense transaction
 - create a budget
 - create a recurring payment

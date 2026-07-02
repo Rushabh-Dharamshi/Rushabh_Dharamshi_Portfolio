@@ -19,7 +19,7 @@
 
 Monetra is a full-stack personal finance platform for expense tracking, recurring payment management, KPI analytics, PDF reporting, predictive forecasting, and local agentic AI workflows. It combines a `Next.js + React + TypeScript` frontend with a `Flask + PostgreSQL` backend and a local `Ollama` runtime for AI-assisted finance operations.
 
-(First deployed to a staging environment, then to production.)
+(First deployed to a manually created Oracle staging VM, then to a Terraform-managed Oracle production VM.)
 
 ## Start Here
 
@@ -39,7 +39,7 @@ Recommended order:
 3. Check the core finance features.
 4. Run automated tests.
 5. Run dummy-user/load tests.
-6. Create/update the production Oracle VM with Terraform.
+6. Create/update the production Oracle VM infrastructure with Terraform.
 7. Approve production deployment in CircleCI only after all automated gates pass.
 
 ## 🌈 Highlights
@@ -434,6 +434,14 @@ Monetra (Budget Tracker)/
 │   ├── hooks/
 │   ├── lib/
 │   └── tests/
+├── screenshots/
+├── sample-data/
+│   └── user-expense-imports/
+├── docs/
+├── deploy/
+├── infra/
+├── load-tests/
+├── chaos/
 ├── docker-compose.yml
 └── README.md
 ```
@@ -480,12 +488,12 @@ Email safety is explicit:
 EMAIL_MODE=hybrid
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USER=rushabh.dharamshi@gmail.com
+SMTP_USER=your.sender@gmail.com
 SMTP_PASSWORD=your_gmail_app_password
 SMTP_USE_TLS=true
 SMTP_REQUIRE_AUTH=true
-EMAIL_FROM=rushabh.dharamshi@gmail.com
-ALLOWED_TEST_EMAILS=rushabh.dharamshi@gmail.com,testpurposes683@gmail.com,rushlovesgames28@gmail.com,rushabh.is.cool28@gmail.com
+EMAIL_FROM=your.sender@gmail.com
+ALLOWED_TEST_EMAILS=your.sender@gmail.com,owned.test.account@gmail.com
 EMAIL_MOCK_DOMAINS=monetra.test,example.test
 MOCK_EMAIL_FROM=demo@monetra.test
 ```
@@ -499,8 +507,8 @@ Demo users can view simulated reset-code and report emails from the **Forgot pas
 1. Open `http://localhost:3000`.
 2. Register a new test user.
 3. Log out and log back in.
-4. Add an income transaction and an expense transaction.
-5. Update the monthly budget and income.
+4. Add an expense transaction.
+5. Update the monthly budget and monthly income planning value.
 6. Create a recurring payment.
 7. Review the piggy bank carryover value.
 8. Generate the monthly report.
@@ -544,8 +552,8 @@ For multiple users, create a CSV such as `latency-users.local.csv`:
 
 ```csv
 label,username,password
-primary,Rushabh,password-for-that-account
-test-683,testpurposes683@gmail.com,password-for-that-account
+primary,demo-user,password-for-that-account
+test-gmail,owned.test.account@gmail.com,password-for-that-account
 ```
 
 Then run:
@@ -665,6 +673,17 @@ powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill P
 - `docs/DUMMY_USER_LOAD_TESTING.md` explains the rigorous fake-user concurrency and latency test suite
 - `docs/TESTING_STRATEGY.md` explains backend, frontend, E2E, load, and CI gates
 - `docs/FAULT_INJECTION.md` lists controlled local/non-production failure scenarios and expected behavior
+- `docs/ORACLE_VM_CICD.md` explains the Oracle production VM and CircleCI deployment flow
+
+## 🖼️ Portfolio Artifacts
+
+- Production demo screenshots are stored in `screenshots/`.
+- Importable generic demo expense CSVs are stored in `sample-data/user-expense-imports/`.
+  - `demo-screenshot-expenses.csv` is useful for screenshots with a larger historical dataset.
+  - `demo-portfolio-expenses-july.csv` is useful for July current-month screenshots.
+- Portfolio PDF report samples can be kept in `backend/generated_reports/` when intentionally force-added for evidence. At runtime, this folder is generated output and is ignored by default.
+- Ledger rows are expense records. Monthly income is tracked as a planning/settings value, not as an income transaction row.
+- Staging was created manually in the Oracle console. Terraform is used for production infrastructure only.
 
 ## 📝 Notes
 
@@ -673,6 +692,7 @@ powershell -ExecutionPolicy Bypass -File chaos\run-controlled-chaos.ps1 -Drill P
   - Production VM path: `/opt/monetra/Monetra (Budget Tracker)/backend/generated_reports/`
   - Backend container path: `/app/generated_reports/`
   - Browser downloads are separate local copies of the PDF returned by the API.
+  - The generated reports folder is ignored by default; use `git add -f` only when you intentionally want to commit a portfolio sample PDF.
 - 🧠 The AI layer is local-model based rather than dependent on paid hosted inference APIs
 - 🔐 The interactive app supports registered users with per-user finance records and settings
 - 📌 The backend owns the core business logic; the frontend is intentionally API-driven and thin in business rules

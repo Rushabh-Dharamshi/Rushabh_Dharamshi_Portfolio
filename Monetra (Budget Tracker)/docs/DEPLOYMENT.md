@@ -4,18 +4,18 @@
 
 Deployment means running Monetra somewhere other than your development laptop.
 
-(First deployed to a staging environment, then to production.)
+(First deployed to a manually created Oracle staging VM, then to a Terraform-managed Oracle production VM.)
 
 The safe path is:
 
 1. Run locally.
 2. Test locally.
 3. Run CI quality gates.
-4. Build and validate the production VM with Terraform.
+4. Build and validate the production VM infrastructure with Terraform.
 5. Manually approve production in CircleCI.
 6. Deploy to production.
 
-Staging was used to validate the first Oracle deployment. The current repository is configured for one production Oracle VM.
+Staging was used to validate the first Oracle deployment and was created manually through the Oracle console. The current repository is configured for one production Oracle VM, and Terraform is used for production infrastructure only.
 
 ## Local Production-Style Stack
 
@@ -43,7 +43,7 @@ Email delivery has three safe modes:
 | `EMAIL_MODE=real` | Gmail smoke tests and production SMTP | Sends only to allowlisted recipients |
 | `EMAIL_MODE=mock` | Dummy users, load tests, CI, fault testing | Records simulated sends and opens no SMTP connection |
 
-For Gmail delivery, use `rushabh.dharamshi@gmail.com` as the sender and only allowlist Gmail accounts you own.
+For Gmail delivery, use an owned Gmail account such as `your.sender@gmail.com` as the sender and only allowlist email accounts you own.
 
 ## Required Secrets
 
@@ -98,13 +98,23 @@ Automated CI/CD smoke checks are defined in `deploy/smoke-test.sh`.
 
 ## Production Deployment
 
-The current CircleCI workflow runs tests, Docker builds, E2E checks, dummy/load checks, and controlled chaos smoke checks. Production deployment then waits for the manual `hold-production-deploy` approval.
+The current CircleCI workflow runs tests, Docker builds, E2E checks, dummy/load checks, and controlled chaos smoke checks. For Monetra changes on `main`, the production deploy workflow can start automatically, but production deployment still waits for the manual `hold-production-deploy` approval.
 
 See `docs/ORACLE_VM_CICD.md` for the required Oracle VM and CircleCI environment variables.
 
 Before creating or changing the Oracle VM, complete `docs/LOCAL_VALIDATION_RUNBOOK.md`.
 
 Production infrastructure is created from `infra/oracle/environments/production`. The production VM needs `/opt/monetra/.env.production` and `Monetra (Budget Tracker)/backend/.env` before CircleCI deployment.
+
+## Portfolio Artifacts
+
+- Production screenshots are stored in `screenshots/`.
+- Generic import CSVs for screenshot/demo users are stored in `sample-data/user-expense-imports/`.
+- Generated monthly report PDFs are created by the backend at runtime:
+  - Local/repo path: `backend/generated_reports/`
+  - Production VM path: `/opt/monetra/Monetra (Budget Tracker)/backend/generated_reports/`
+  - Browser downloads are local copies returned by the report API.
+  - The generated reports folder is ignored by default; force-add only deliberate portfolio sample PDFs.
 
 ## Rollback Notes
 

@@ -52,7 +52,7 @@ npm.cmd run test:bdd
 Use `load-tests/k6/monetra-load.js` against a local API or a planned non-production clone. The scenarios are intentionally rigorous and cover:
 
 - auth lifecycle: register, session check, logout, login, forgot password response
-- full finance journey: income, expenses, budget, monthly income, piggy bank carryover, recurring payments, dashboard, analytics, CSV export
+- full finance journey: expenses, budget, monthly income settings, piggy bank carryover, recurring payments, dashboard, analytics, CSV export
 - user isolation: one user cannot list or fetch another user's transaction
 - read concurrency: many dashboard and analytics requests at once
 - write concurrency: repeated budget updates
@@ -90,8 +90,8 @@ For multiple users, pass a CSV:
 
 ```csv
 label,username,password
-primary,Rushabh,password-for-that-account
-test-683,testpurposes683@gmail.com,password-for-that-account
+primary,demo-user,password-for-that-account
+test-gmail,owned.test.account@gmail.com,password-for-that-account
 ```
 
 ```powershell
