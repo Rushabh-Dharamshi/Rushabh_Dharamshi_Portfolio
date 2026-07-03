@@ -55,6 +55,11 @@ jobs:
           command: |
             cd "Monetra (Budget Tracker)/frontend"
             npx tsc --noEmit
+      - run:
+          name: Run Cucumber BDD tests
+          command: |
+            cd "Monetra (Budget Tracker)/frontend"
+            npm run test:bdd
 
   monetra-system-build:
     machine:

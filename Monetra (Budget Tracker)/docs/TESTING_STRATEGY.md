@@ -105,6 +105,7 @@ CircleCI runs:
 - backend pytest suite
 - frontend Jest/integration suite
 - TypeScript checks
+- Cucumber BDD features
 - backend Docker build
 - frontend Docker build
 - Playwright E2E
