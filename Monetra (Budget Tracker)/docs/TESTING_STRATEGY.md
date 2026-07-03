@@ -9,6 +9,7 @@ Testing is how you prove the app still works after changes.
 Monetra uses several test types because one kind of test cannot catch every issue:
 
 - backend tests check server logic
+- BDD tests check business workflows in plain-language scenarios
 - frontend tests check screens and user interactions
 - E2E tests check browser workflows
 - load tests simulate many users
@@ -20,6 +21,7 @@ The goal is not just a high coverage number. The goal is confidence that importa
 
 - Unit tests: service, repository, validation, AI helpers.
 - Integration tests: Flask API, auth/session behavior, production guards.
+- BDD tests: pytest-bdd API scenarios.
 - Fault paths: email unavailable, Ollama timeout, RAG service errors, scheduler failures.
 
 Commands:
@@ -27,6 +29,7 @@ Commands:
 ```powershell
 cd "Monetra (Budget Tracker)/backend"
 .venv\Scripts\python.exe -m pytest
+.venv\Scripts\python.exe -m pytest tests\bdd --no-cov
 ```
 
 ## Frontend
@@ -105,7 +108,8 @@ CircleCI runs:
 - backend pytest suite
 - frontend Jest/integration suite
 - TypeScript checks
-- Cucumber BDD features
+- backend pytest-bdd scenarios
+- frontend Cucumber BDD features
 - backend Docker build
 - frontend Docker build
 - Playwright E2E

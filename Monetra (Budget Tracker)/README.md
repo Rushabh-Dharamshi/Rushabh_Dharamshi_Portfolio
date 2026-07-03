@@ -633,6 +633,7 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements-dev.txt
 pytest
+pytest tests/bdd --no-cov
 ```
 
 ### 🎨 Frontend

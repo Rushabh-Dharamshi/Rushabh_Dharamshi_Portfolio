@@ -32,6 +32,12 @@ jobs:
             cd "Monetra (Budget Tracker)/backend"
             . .venv/bin/activate
             pytest
+      - run:
+          name: Run backend BDD tests
+          command: |
+            cd "Monetra (Budget Tracker)/backend"
+            . .venv/bin/activate
+            pytest tests/bdd --no-cov
 
   monetra-frontend-tests:
     docker:
